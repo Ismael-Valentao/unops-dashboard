@@ -105,6 +105,10 @@ app.get("/", (_req, res) => {
   res.sendFile(path.join(__dirname, "templates", "index.html"));
 });
 
+app.get("/dashboard", (_req, res) => {
+  res.sendFile(path.join(__dirname, "templates", "ceo-dashboard.html"));
+});
+
 app.get("/api/data", (_req, res) => {
   res.json({ rows: cache.data, last_updated: cache.lastUpdated });
 });
@@ -301,6 +305,120 @@ app.get("/api/analytics/progress", (_req, res) => {
     total_packages: s.total_packages,
   }));
   res.json(progress);
+});
+
+// ── CEO Dashboard endpoint ────────────────────────────────────
+app.get("/api/ceo-overview", (_req, res) => {
+  const rows = cache.data;
+  const comparison = planning.buildComparison(rows);
+  if (!comparison) return res.status(500).json({ error: "No data" });
+
+  const totalDelivered = rows.reduce((s, r) => s + (Number(r.delivered_qty) || 0), 0);
+  const totalPlanned = comparison.totals.planned_kg;
+  const globalPct = comparison.totals.pct;
+
+  // Dates
+  const dates = [...new Set(rows.map((r) => r.delivery_date_iso).filter(Boolean))].sort();
+  const firstDate = dates[0] || null;
+  const lastDate = dates[dates.length - 1] || null;
+  const daySpan = dates.length > 1 ? Math.max(1, (new Date(lastDate) - new Date(firstDate)) / 86400000 + 1) : 1;
+  const avgKgPerDay = totalDelivered / daySpan;
+  const remaining = totalPlanned - totalDelivered;
+  const estDaysLeft = avgKgPerDay > 0 ? Math.ceil(remaining / avgKgPerDay) : null;
+
+  // Province scorecard
+  const provMap = {};
+  comparison.by_district.forEach((d) => {
+    const p = d.province || "N/A";
+    if (!provMap[p]) provMap[p] = { province: p, planned_kg: 0, delivered_kg: 0, districts_total: 0, districts_active: 0 };
+    provMap[p].planned_kg += d.planned_kg;
+    provMap[p].delivered_kg += d.delivered_kg;
+    provMap[p].districts_total++;
+    if (d.delivered_kg > 0) provMap[p].districts_active++;
+  });
+  const provinces = Object.values(provMap).map((p) => ({
+    ...p,
+    pct: p.planned_kg > 0 ? +((p.delivered_kg / p.planned_kg) * 100).toFixed(1) : 0,
+    status: p.planned_kg <= 0 ? "N/A" : (p.delivered_kg / p.planned_kg) >= 0.95 ? "Completo" : p.delivered_kg > 0 ? "Em progresso" : "Sem entregas",
+  })).sort((a, b) => b.planned_kg - a.planned_kg);
+
+  // Smart alerts with impact
+  const alerts = [];
+  // Duplicate GTUs
+  const gtuMap = {};
+  rows.forEach((r) => { const g = (r.delivery_note_number || "").trim(); if (g) { if (!gtuMap[g]) gtuMap[g] = []; gtuMap[g].push(r); } });
+  let dupKg = 0, dupCount = 0;
+  for (const [, entries] of Object.entries(gtuMap)) {
+    if (entries.length > 1) { dupCount++; dupKg += entries.slice(1).reduce((s, e) => s + (Number(e.delivered_qty) || 0), 0); }
+  }
+  if (dupCount > 0) alerts.push({ severity: "critical", icon: "⚠", msg: `${dupCount} GTUs duplicados — possivel dupla contagem de ${Math.round(dupKg).toLocaleString()} kg`, impact: dupKg });
+  // Errors
+  const errCount = rows.filter((r) => r.verification_status === "#ERROR!").length;
+  if (errCount > 0) alerts.push({ severity: "critical", icon: "🔴", msg: `${errCount} registos com #ERROR! — dados corrompidos`, impact: errCount * 1000 });
+  // Worst districts
+  const worstDistricts = comparison.by_district.filter((d) => d.planned_kg > 50000 && d.pct === 0).slice(0, 5);
+  worstDistricts.forEach((d) => {
+    alerts.push({ severity: "high", icon: "🟠", msg: `${d.district} (${d.province}): ${Math.round(d.planned_kg/1000)}t planeadas, 0% entregue`, impact: d.planned_kg });
+  });
+  // Weight mismatches
+  let wmCount = 0;
+  rows.forEach((r) => { if (r.packages > 0 && Math.abs(r.delivered_qty - r.packages * 12.5) > 0.01) wmCount++; });
+  if (wmCount > 0) alerts.push({ severity: "medium", icon: "🟡", msg: `${wmCount} registos com discrepancia de peso (Pacotes x 12.5 ≠ Qtd)`, impact: wmCount * 500 });
+  alerts.sort((a, b) => b.impact - a.impact);
+
+  // Supervisor performance
+  const supervisors = {};
+  rows.forEach((r) => {
+    const s = r.submitted_by || "N/A";
+    if (!supervisors[s]) supervisors[s] = { name: s, deliveries: 0, total_kg: 0, districts: new Set(), errors: 0 };
+    supervisors[s].deliveries++;
+    supervisors[s].total_kg += Number(r.delivered_qty) || 0;
+    supervisors[s].districts.add(r.district);
+    if (r.verification_status === "#ERROR!") supervisors[s].errors++;
+  });
+  const supervisorList = Object.values(supervisors).map((s) => ({
+    name: s.name, deliveries: s.deliveries, total_kg: s.total_kg,
+    districts: s.districts.size, errors: s.errors,
+  })).sort((a, b) => b.total_kg - a.total_kg);
+
+  // Weekly briefing data
+  const now = new Date();
+  const d7 = new Date(now); d7.setDate(d7.getDate() - 7);
+  const iso7 = d7.toISOString().slice(0, 10);
+  const last7 = rows.filter((r) => r.delivery_date_iso >= iso7);
+  const last7Kg = last7.reduce((s, r) => s + (Number(r.delivered_qty) || 0), 0);
+  const newDistricts = [...new Set(last7.map((r) => r.district))];
+
+  // Progress from snapshots
+  const snaps = snapDb.listSnapshots().reverse();
+
+  res.json({
+    kpi: {
+      global_pct: globalPct,
+      total_planned: totalPlanned,
+      total_delivered: totalDelivered,
+      remaining,
+      avg_kg_per_day: Math.round(avgKgPerDay),
+      est_days_left: estDaysLeft,
+      first_date: firstDate,
+      last_date: lastDate,
+      day_span: daySpan,
+      total_deliveries: rows.length,
+    },
+    provinces,
+    alerts,
+    supervisors: supervisorList,
+    weekly: {
+      kg: last7Kg,
+      deliveries: last7.length,
+      districts: newDistricts,
+    },
+    gaps: comparison.by_product.map((p) => ({
+      product: p.product, planned_kg: p.planned_kg,
+      delivered_kg: p.delivered_kg, gap_kg: p.planned_kg - p.delivered_kg, pct: p.pct,
+    })).sort((a, b) => b.gap_kg - a.gap_kg),
+    progress: snaps.map((s) => ({ date: s.date, total: s.total, total_qty: s.total_qty })),
+  });
 });
 
 // ── Planned vs Delivered endpoints ────────────────────────────

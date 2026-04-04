@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Director Dashboard 2026</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/ceo-style.css">
+</head>
+<body>
+  <!-- HEADER -->
+  <header class="hdr">
+    <div class="hdr-left">
+      <h1>AQI Director Dashboard</h1>
+      <span class="hdr-sub">Visao Executiva 2026</span>
+    </div>
+    <div class="hdr-right">
+      <a href="/" class="hdr-link">Dashboard Operacional</a>
+      <span id="hdr-updated" class="hdr-ts"></span>
+      <button class="hdr-btn" onclick="location.reload()">&#8635; Actualizar</button>
+      <button class="hdr-btn" onclick="window.print()">&#128424; Imprimir</button>
+      <button class="hdr-btn hdr-btn-accent" id="btn-briefing">&#128221; Gerar Briefing</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- KPI STRIP -->
+    <section class="kpi-strip" id="kpi-strip">
+      <div class="kpi-big">
+        <div class="kpi-big-pct" id="kpi-pct">—</div>
+        <div class="kpi-big-label">Execucao Global</div>
+        <div class="kpi-big-bar"><div class="kpi-big-bar-fill" id="kpi-bar"></div></div>
+        <div class="kpi-big-sub" id="kpi-sub"></div>
+      </div>
+      <div class="kpi-cards">
+        <div class="kpi-card">
+          <div class="kpi-card-val" id="kpi-delivered">—</div>
+          <div class="kpi-card-lbl">Entregue (t)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-card-val" id="kpi-remaining">—</div>
+          <div class="kpi-card-lbl">Falta (t)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-card-val" id="kpi-velocity">—</div>
+          <div class="kpi-card-lbl">t/dia (ritmo)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-card-val" id="kpi-days">—</div>
+          <div class="kpi-card-lbl">dias restantes</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TIMELINE -->
+    <section class="timeline-section" id="timeline-section">
+      <h2>Timeline do Projecto</h2>
+      <div class="timeline-bar-wrap">
+        <div class="timeline-bar">
+          <div class="timeline-bar-fill" id="timeline-fill"></div>
+          <div class="timeline-marker" id="timeline-today" title="Hoje"></div>
+        </div>
+        <div class="timeline-labels">
+          <span id="tl-start"></span>
+          <span id="tl-today" class="tl-today"></span>
+          <span id="tl-end"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROVINCE SCORECARD -->
+    <section class="score-section">
+      <h2>Scorecard por Provincia</h2>
+      <div class="score-grid" id="score-grid"></div>
+    </section>
+
+    <!-- ALERTS -->
+    <section class="alerts-section">
+      <h2>Alertas Operacionais</h2>
+      <div id="alerts-list"></div>
+    </section>
+
+    <div class="two-col">
+      <!-- GAP ANALYSIS -->
+      <section class="box-section">
+        <h2>Gap por Produto</h2>
+        <div id="ceo-gaps"></div>
+      </section>
+
+      <!-- PROGRESS CHART -->
+      <section class="box-section">
+        <h2>Evolucao (Snapshots)</h2>
+        <canvas id="ceo-progress"></canvas>
+      </section>
+    </div>
+
+    <!-- SUPERVISOR TABLE -->
+    <section class="box-section">
+      <h2>Desempenho por Responsavel</h2>
+      <div class="tbl-wrap">
+        <table class="tbl" id="sup-table">
+          <thead><tr>
+            <th>#</th><th>Responsavel</th><th>Entregas</th>
+            <th>Total (kg)</th><th>Distritos</th><th>Erros</th>
+          </tr></thead>
+          <tbody id="sup-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- BRIEFING MODAL -->
+    <div class="modal-overlay" id="briefing-modal" style="display:none">
+      <div class="modal">
+        <div class="modal-header">
+          <h2>Briefing Semanal</h2>
+          <button class="modal-close" id="briefing-close">&times;</button>
+        </div>
+        <div class="modal-body" id="briefing-content"></div>
+        <div class="modal-footer">
+          <button class="hdr-btn" onclick="navigator.clipboard.writeText(document.getElementById('briefing-content').innerText).then(()=>this.textContent='Copiado!')">Copiar Texto</button>
+          <button class="hdr-btn hdr-btn-accent" onclick="window.print()">Imprimir</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/ceo-dashboard.js"></script>
+</body>
+</html>
