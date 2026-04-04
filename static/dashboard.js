@@ -213,7 +213,6 @@
     const total = rows.length;
     const qty = rows.reduce((s, r) => s + (Number(r.delivered_qty) || 0), 0);
     const pkgs = rows.reduce((s, r) => s + (Number(r.packages) || 0), 0);
-    const bens = new Set(rows.map((r) => r.beneficiary_id).filter(Boolean)).size;
     const verified = rows.filter(
       (r) => r.verification_status === "Verified"
     ).length;
@@ -228,7 +227,7 @@
     $("#m-total").textContent = fmt(total);
     $("#m-qty").textContent = fmtDec(qty);
     $("#m-packages").textContent = fmt(pkgs);
-    $("#m-beneficiaries").textContent = fmt(bens);
+    // Gap will be updated when PvD loads
     $("#m-verified-pct").textContent = pct + "%";
     $("#m-pending").textContent = fmt(pending);
     $("#m-errors").textContent = fmt(errors);
@@ -289,35 +288,41 @@
   }
 
   function renderVerificationChart() {
-    const verified = filteredRows.filter(
-      (r) => r.verification_status === "Verified"
-    ).length;
-    const pending = filteredRows.filter(
-      (r) => r.verification_status === "Pending Verification"
-    ).length;
-    const errors = filteredRows.filter(
-      (r) => r.verification_status === "#ERROR!"
-    ).length;
-    const other = filteredRows.length - verified - pending - errors;
+    // Show execution gap: Entregue vs Falta
+    const delivered = filteredRows.reduce((s, r) => s + (Number(r.delivered_qty) || 0), 0);
+    const planned = pvdData ? pvdData.totals.planned_kg : delivered;
+    const remaining = Math.max(0, planned - delivered);
 
     if (chartVerification) chartVerification.destroy();
     chartVerification = new Chart($("#chart-verification"), {
       type: "doughnut",
       data: {
-        labels: ["Verified", "Pending Verification", "#ERROR!", "Outro"],
+        labels: ["Entregue (kg)", "Falta entregar (kg)"],
         datasets: [
           {
-            data: [verified, pending, errors, other],
-            backgroundColor: ["#16a34a", "#d97706", "#dc2626", "#94a3b8"],
-            borderWidth: 0,
+            data: [delivered, remaining],
+            backgroundColor: ["#16a34a", "#e2e8f0"],
+            borderWidth: 2,
+            borderColor: "#fff",
           },
         ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        cutout: "65%",
         plugins: {
           legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                const val = ctx.parsed;
+                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+                return ctx.label + ": " + Number(val).toLocaleString("pt-PT") + " (" + pct + "%)";
+              }
+            }
+          }
         },
       },
     });
@@ -966,6 +971,18 @@
     $("#pvd-pct").textContent = t.pct + "%";
     $("#pvd-progress-bar").style.width = Math.min(t.pct, 100) + "%";
 
+    // Populate chart province filter
+    const provs = [...new Set(pvdData.by_district.map((d) => d.province).filter(Boolean))].sort();
+    const provSel = $("#pvd-chart-province");
+    const curProv = provSel.value;
+    provSel.innerHTML = '<option value="">Todas Provincias</option>' +
+      provs.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
+    if (provs.includes(curProv)) provSel.value = curProv;
+
+    // Update top gap card
+    const gap = Math.max(0, t.planned_kg - t.delivered_kg);
+    $("#m-gap").textContent = fmtDec(gap);
+
     // Charts
     renderPvdDistrictChart();
     renderPvdProductChart();
@@ -973,9 +990,10 @@
   }
 
   function renderPvdDistrictChart() {
-    const limit = Number($("#pvd-district-limit").value) || 0;
-    const all = pvdData.by_district.filter((d) => d.planned_kg > 0);
-    const items = limit > 0 ? all.slice(0, limit) : all;
+    const provFilter = ($("#pvd-chart-province") || {}).value || "";
+    let all = pvdData.by_district.filter((d) => d.planned_kg > 0);
+    if (provFilter) all = all.filter((d) => d.province === provFilter);
+    const items = all.slice(0, 20);
     const labels = items.map((d) => d.district);
 
     if (chartPvdDistrict) chartPvdDistrict.destroy();
@@ -1032,8 +1050,13 @@
     return esc(status);
   }
 
-  function renderPvdTable() {
-    let rows = pvdData.details.slice();
+  const PVD_PAGE_SIZE = 20;
+  let pvdPage = 1;
+
+  function getPvdFilteredRows() {
+    let rows = pvdData ? pvdData.details.slice() : [];
+    const statusFilter = ($("#pvd-f-status") || {}).value || "";
+    if (statusFilter) rows = rows.filter((r) => r.status === statusFilter);
     if (pvdSearchTerm) {
       const q = pvdSearchTerm.toLowerCase();
       rows = rows.filter((r) => (r.district + " " + r.product + " " + r.province).toLowerCase().includes(q));
@@ -1048,8 +1071,17 @@
       }
       return pvdSortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
     });
+    return rows;
+  }
 
-    $("#pvd-table-body").innerHTML = rows
+  function renderPvdTable() {
+    const rows = getPvdFilteredRows();
+    const totalPages = Math.max(1, Math.ceil(rows.length / PVD_PAGE_SIZE));
+    if (pvdPage > totalPages) pvdPage = totalPages;
+    const start = (pvdPage - 1) * PVD_PAGE_SIZE;
+    const page = rows.slice(start, start + PVD_PAGE_SIZE);
+
+    $("#pvd-table-body").innerHTML = page
       .map(
         (r) => `<tr>
           <td>${esc(r.district)}</td>
@@ -1067,6 +1099,17 @@
         </tr>`
       )
       .join("");
+
+    // Pagination
+    const pagEl = $("#pvd-pagination");
+    let html = `<button ${pvdPage <= 1 ? "disabled" : ""} data-p="${pvdPage - 1}">&laquo;</button>`;
+    for (let i = 1; i <= Math.min(totalPages, 7); i++) {
+      html += `<button class="${i === pvdPage ? "active" : ""}" data-p="${i}">${i}</button>`;
+    }
+    if (totalPages > 7) html += `<span class="page-info">…${totalPages}</span>`;
+    html += `<button ${pvdPage >= totalPages ? "disabled" : ""} data-p="${pvdPage + 1}">&raquo;</button>`;
+    html += `<span class="page-info">${rows.length} linhas</span>`;
+    pagEl.innerHTML = html;
   }
 
   // ── History / Snapshot navigation ───────────────────────────
@@ -1222,11 +1265,22 @@
     });
 
     // Planned vs Delivered
-    $("#pvd-district-limit").addEventListener("change", () => {
+    $("#pvd-chart-province").addEventListener("change", () => {
       if (pvdData) renderPvdDistrictChart();
     });
     $("#pvd-search").addEventListener("input", (e) => {
       pvdSearchTerm = e.target.value.trim();
+      pvdPage = 1;
+      renderPvdTable();
+    });
+    $("#pvd-f-status").addEventListener("change", () => {
+      pvdPage = 1;
+      renderPvdTable();
+    });
+    $("#pvd-pagination").addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn || btn.disabled) return;
+      pvdPage = Number(btn.dataset.p);
       renderPvdTable();
     });
     $$("#pvd-table thead th").forEach((th) => {

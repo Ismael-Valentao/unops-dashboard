@@ -60,9 +60,9 @@
         <div class="card-label">Total Pacotes</div>
         <div class="card-value" id="m-packages">—</div>
       </div>
-      <div class="card">
-        <div class="card-label">Beneficiários Únicos</div>
-        <div class="card-value" id="m-beneficiaries">—</div>
+      <div class="card card-gap">
+        <div class="card-label">Falta Entregar (kg)</div>
+        <div class="card-value" id="m-gap">—</div>
       </div>
       <div class="card card-accent">
         <div class="card-label">Taxa Verificação</div>
@@ -255,11 +255,8 @@
         <div class="chart-box">
           <div class="chart-box-header">
             <h3>Por Distrito</h3>
-            <select id="pvd-district-limit" class="pvd-chart-filter">
-              <option value="10">Top 10</option>
-              <option value="15" selected>Top 15</option>
-              <option value="25">Top 25</option>
-              <option value="0">Todos</option>
+            <select id="pvd-chart-province" class="pvd-chart-filter">
+              <option value="">Todas Provincias</option>
             </select>
           </div>
           <canvas id="chart-pvd-district"></canvas>
@@ -275,7 +272,15 @@
       <div class="pvd-table-section">
         <div class="pvd-table-header">
           <h4>Detalhe por Distrito e Produto</h4>
-          <input type="text" id="pvd-search" placeholder="Pesquisar distrito ou produto...">
+          <div class="pvd-table-filters">
+            <select id="pvd-f-status" class="pvd-mini-filter">
+              <option value="">Todos Status</option>
+              <option value="Completo">Completo</option>
+              <option value="Em progresso">Em progresso</option>
+              <option value="Sem entregas">Sem entregas</option>
+            </select>
+            <input type="text" id="pvd-search" placeholder="Pesquisar distrito ou produto...">
+          </div>
         </div>
         <div class="table-wrap">
           <table class="pvd-table" id="pvd-table">
@@ -294,6 +299,7 @@
             <tbody id="pvd-table-body"></tbody>
           </table>
         </div>
+        <div class="pagination" id="pvd-pagination"></div>
       </div>
     </section>
 
@@ -333,7 +339,7 @@
         <canvas id="chart-district"></canvas>
       </div>
       <div class="chart-box">
-        <h3>Estado de Verificação</h3>
+        <h3>Execucao Global</h3>
         <canvas id="chart-verification"></canvas>
       </div>
       <div class="chart-box chart-wide">
