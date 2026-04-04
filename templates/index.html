@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Control File 2026</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-left">
+      <h1 class="logo">AQI Control File 2026</h1>
+      <span class="subtitle">Delivery Monitoring Dashboard</span>
+    </div>
+    <div class="header-right">
+      <div class="history-picker">
+        <select id="history-select">
+          <option value="live" selected>Hoje (live)</option>
+        </select>
+      </div>
+      <div class="refresh-info">
+        <span id="last-updated"></span>
+        <span id="countdown" class="countdown"></span>
+      </div>
+      <button id="btn-refresh" class="btn btn-primary" title="Actualizar agora">
+        &#8635; Actualizar
+      </button>
+      <button id="btn-print" class="btn btn-save" title="Imprimir / PDF" onclick="window.print()">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="vertical-align:-2px;margin-right:3px"><path fill-rule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v2a2 2 0 002 2h6a2 2 0 002-2v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm8 0H7v3h6V4zm0 8H7v4h6v-4z" clip-rule="evenodd"/></svg>
+        Imprimir
+      </button>
+      <button id="btn-save-snapshot" class="btn btn-save" title="Guardar snapshot de hoje">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="vertical-align:-2px;margin-right:3px"><path d="M15.988 3.012A2.25 2.25 0 0118 5.25v9.5A2.25 2.25 0 0115.75 17h-11.5A2.25 2.25 0 012 14.75v-9.5A2.25 2.25 0 014.012 3.012L4.25 3h11.5l.238.012zM6 3.5v3.25c0 .414.336.75.75.75h6.5a.75.75 0 00.75-.75V3.5H6zm4 8a2 2 0 100 4 2 2 0 000-4z"/></svg>
+        Guardar
+      </button>
+    </div>
+  </header>
+
+  <!-- History mode banner -->
+  <div id="history-banner" class="history-banner" style="display:none">
+    <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clip-rule="evenodd"/></svg>
+    <span>A visualizar snapshot historico de <strong id="history-date-label"></strong></span>
+    <button id="btn-back-live" class="btn-back-live">Voltar ao Live</button>
+  </div>
+
+  <main class="container">
+    <!-- METRICS CARDS -->
+    <section class="metrics" id="metrics">
+      <div class="card">
+        <div class="card-label">Total Entregas</div>
+        <div class="card-value" id="m-total">—</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Qtd. Entregue (kg)</div>
+        <div class="card-value" id="m-qty">—</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Total Pacotes</div>
+        <div class="card-value" id="m-packages">—</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Beneficiários Únicos</div>
+        <div class="card-value" id="m-beneficiaries">—</div>
+      </div>
+      <div class="card card-accent">
+        <div class="card-label">Taxa Verificação</div>
+        <div class="card-value" id="m-verified-pct">—</div>
+      </div>
+      <div class="card card-warn">
+        <div class="card-label">Por Verificar</div>
+        <div class="card-value" id="m-pending">—</div>
+      </div>
+      <div class="card card-error">
+        <div class="card-label">Em Erro</div>
+        <div class="card-value" id="m-errors">—</div>
+      </div>
+    </section>
+
+    <!-- EXECUTIVE SUMMARY -->
+    <section class="exec-section" id="exec-section">
+      <div class="exec-row">
+        <div class="exec-summary" id="exec-summary">
+          <div class="exec-title">Resumo Executivo</div>
+          <div class="exec-lines" id="exec-lines"></div>
+        </div>
+        <div class="exec-cards">
+          <div class="exec-card">
+            <div class="exec-card-icon">&#9889;</div>
+            <div class="exec-card-body">
+              <div class="exec-card-value" id="exec-velocity">—</div>
+              <div class="exec-card-label">kg/dia (ritmo)</div>
+            </div>
+          </div>
+          <div class="exec-card">
+            <div class="exec-card-icon">&#9202;</div>
+            <div class="exec-card-body">
+              <div class="exec-card-value" id="exec-est-days">—</div>
+              <div class="exec-card-label">dias restantes (est.)</div>
+            </div>
+          </div>
+          <div class="exec-card">
+            <div class="exec-card-icon">&#128197;</div>
+            <div class="exec-card-body">
+              <div class="exec-card-value" id="exec-last7">—</div>
+              <div class="exec-card-label">kg ultimos 7 dias</div>
+            </div>
+          </div>
+          <div class="exec-card">
+            <div class="exec-card-icon" id="exec-trend-icon">&#8594;</div>
+            <div class="exec-card-body">
+              <div class="exec-card-value" id="exec-trend">—</div>
+              <div class="exec-card-label">vs semana anterior</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FILTERS -->
+    <section class="filters">
+      <select id="f-province"><option value="">Todas Províncias</option></select>
+      <select id="f-district"><option value="">Todos Distritos</option></select>
+      <select id="f-status">
+        <option value="">Todos Estados</option>
+        <option value="Verified">Verified</option>
+        <option value="Pending Verification">Pending Verification</option>
+        <option value="#ERROR!">#ERROR!</option>
+      </select>
+      <select id="f-supplier"><option value="">Todos Fornecedores</option></select>
+      <select id="f-product"><option value="">Todos Produtos</option></select>
+      <input type="text" id="f-search" placeholder="Pesquisar beneficiário ou ID…">
+      <button id="btn-clear-filters" class="btn btn-secondary">Limpar filtros</button>
+    </section>
+
+    <!-- VERIFICATION ALERTS -->
+    <section class="verify-section" id="verify-section" style="display:none">
+      <div class="verify-header">
+        <h3>Verificacao de Dados</h3>
+        <div class="verify-actions">
+          <button id="btn-export-full" class="btn btn-export-sm" title="Relatorio completo com todas as folhas">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" style="vertical-align:-2px;margin-right:3px"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
+            Relatorio Completo (.xlsx)
+          </button>
+          <button id="btn-run-verify" class="btn btn-danger">Verificar GTUs &amp; Pesos</button>
+        </div>
+      </div>
+      <div id="verify-summary" class="verify-summary"></div>
+
+      <!-- Duplicate GTUs -->
+      <div id="verify-dup-wrap" style="display:none">
+        <div class="verify-sub-header">
+          <h4 class="verify-subtitle alert-red">GTUs Duplicados (Delivery Note Number)</h4>
+          <button class="btn-export-xs" data-export="duplicados" title="Exportar para Excel">Excel</button>
+        </div>
+        <div class="table-wrap">
+          <table class="verify-table" id="dup-table">
+            <thead>
+              <tr>
+                <th>GTU</th>
+                <th>Ocorr.</th>
+                <th>Delivery ID</th>
+                <th>Beneficiario</th>
+                <th>Distrito</th>
+                <th>Pacotes</th>
+                <th>Qtd.</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="dup-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Weight mismatches -->
+      <div id="verify-weight-wrap" style="display:none">
+        <div class="verify-sub-header">
+          <h4 class="verify-subtitle alert-orange">Discrepancias Peso (Pacotes x 12,5 &ne; Qtd. Entregue)</h4>
+          <button class="btn-export-xs" data-export="peso" title="Exportar para Excel">Excel</button>
+        </div>
+        <div class="table-wrap">
+          <table class="verify-table" id="weight-table">
+            <thead>
+              <tr>
+                <th>GTU</th>
+                <th>Delivery ID</th>
+                <th>Beneficiario</th>
+                <th>Distrito</th>
+                <th>Pacotes</th>
+                <th>Qtd. Entregue</th>
+                <th>Esperado (x12,5)</th>
+                <th>Diferenca</th>
+              </tr>
+            </thead>
+            <tbody id="weight-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Malformed GTUs -->
+      <div id="verify-pattern-wrap" style="display:none">
+        <div class="verify-sub-header">
+          <h4 class="verify-subtitle alert-purple">GTUs Fora do Padrao (esperado: GTU98/XXXXXXXXX)</h4>
+          <button class="btn-export-xs" data-export="padrao" title="Exportar para Excel">Excel</button>
+        </div>
+        <div class="table-wrap">
+          <table class="verify-table verify-table-pattern" id="pattern-table">
+            <thead>
+              <tr>
+                <th>GTU Actual</th>
+                <th>Delivery ID</th>
+                <th>Beneficiario</th>
+                <th>Distrito</th>
+                <th>Motivo</th>
+              </tr>
+            </thead>
+            <tbody id="pattern-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- PLANNED VS DELIVERED -->
+    <section class="pvd-section" id="pvd-section">
+      <div class="pvd-header">
+        <h3>Planeado vs Entregue</h3>
+        <div class="pvd-actions">
+          <button class="btn btn-export-sm" id="btn-export-pvd">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" style="vertical-align:-2px;margin-right:3px"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
+            Excel
+          </button>
+        </div>
+      </div>
+      <!-- PVD Metrics -->
+      <div class="pvd-metrics" id="pvd-metrics">
+        <div class="pvd-card">
+          <div class="pvd-card-label">Total Planeado</div>
+          <div class="pvd-card-value" id="pvd-planned">—</div>
+          <div class="pvd-card-unit">kg</div>
+        </div>
+        <div class="pvd-card">
+          <div class="pvd-card-label">Total Entregue</div>
+          <div class="pvd-card-value" id="pvd-delivered">—</div>
+          <div class="pvd-card-unit">kg</div>
+        </div>
+        <div class="pvd-card pvd-card-main">
+          <div class="pvd-card-label">Taxa de Execucao</div>
+          <div class="pvd-card-value" id="pvd-pct">—</div>
+          <div class="pvd-progress"><div class="pvd-progress-bar" id="pvd-progress-bar"></div></div>
+        </div>
+      </div>
+      <!-- PVD Charts -->
+      <div class="pvd-charts">
+        <div class="chart-box">
+          <div class="chart-box-header">
+            <h3>Por Distrito</h3>
+            <select id="pvd-district-limit" class="pvd-chart-filter">
+              <option value="10">Top 10</option>
+              <option value="15" selected>Top 15</option>
+              <option value="25">Top 25</option>
+              <option value="0">Todos</option>
+            </select>
+          </div>
+          <canvas id="chart-pvd-district"></canvas>
+        </div>
+        <div class="chart-box">
+          <div class="chart-box-header">
+            <h3>Por Produto</h3>
+          </div>
+          <canvas id="chart-pvd-product"></canvas>
+        </div>
+      </div>
+      <!-- PVD Table -->
+      <div class="pvd-table-section">
+        <div class="pvd-table-header">
+          <h4>Detalhe por Distrito e Produto</h4>
+          <input type="text" id="pvd-search" placeholder="Pesquisar distrito ou produto...">
+        </div>
+        <div class="table-wrap">
+          <table class="pvd-table" id="pvd-table">
+            <thead>
+              <tr>
+                <th data-sort="district">Distrito</th>
+                <th data-sort="province">Provincia</th>
+                <th data-sort="product">Produto</th>
+                <th data-sort="planned_kg">Planeado (kg)</th>
+                <th data-sort="delivered_kg">Entregue (kg)</th>
+                <th data-sort="diff">Diferenca</th>
+                <th data-sort="pct">% Execucao</th>
+                <th data-sort="status">Status</th>
+              </tr>
+            </thead>
+            <tbody id="pvd-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- OPERATIONAL ANALYTICS -->
+    <section class="analytics-grid">
+      <!-- Gap Analysis by Product -->
+      <div class="analytics-box">
+        <h3>Gap Analysis por Produto</h3>
+        <div id="gap-analysis"></div>
+      </div>
+      <!-- District Urgency -->
+      <div class="analytics-box">
+        <h3>Distritos por Urgencia</h3>
+        <div class="table-wrap" style="max-height:360px;overflow-y:auto">
+          <table class="mini-table" id="urgency-table">
+            <thead><tr><th>#</th><th>Distrito</th><th>Provincia</th><th>Planeado</th><th>Entregue</th><th>%</th><th>Status</th></tr></thead>
+            <tbody id="urgency-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Supplier Performance -->
+      <div class="analytics-box">
+        <h3>Fornecedores</h3>
+        <div id="supplier-perf"></div>
+      </div>
+      <!-- Daily Progress -->
+      <div class="analytics-box">
+        <h3>Progresso Diario (snapshots)</h3>
+        <canvas id="chart-progress"></canvas>
+      </div>
+    </section>
+
+    <!-- CHARTS -->
+    <section class="charts">
+      <div class="chart-box chart-wide">
+        <h3>Quantidade Entregue por Distrito</h3>
+        <canvas id="chart-district"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3>Estado de Verificação</h3>
+        <canvas id="chart-verification"></canvas>
+      </div>
+      <div class="chart-box chart-wide">
+        <h3>Evolução de Entregas por Data</h3>
+        <canvas id="chart-timeline"></canvas>
+      </div>
+    </section>
+
+    <!-- TABLE -->
+    <section class="table-section">
+      <div class="table-header">
+        <h3>Registos de Entregas</h3>
+        <div class="table-actions">
+          <div class="table-search-wrap">
+            <svg class="search-icon" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+              <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/>
+            </svg>
+            <input type="text" id="table-search" placeholder="Pesquisar na tabela... (nome, ID, distrito, GTU, email)">
+            <span id="table-search-count" class="search-count"></span>
+            <button id="btn-clear-table-search" class="search-clear" title="Limpar" style="display:none">&times;</button>
+          </div>
+          <button id="btn-columns-toggle" class="btn btn-columns" title="Colunas">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="vertical-align:-2px;margin-right:4px">
+              <path fill-rule="evenodd" d="M.99 5.24A2.25 2.25 0 013.25 3h13.5A2.25 2.25 0 0119 5.25l.01 9.5A2.25 2.25 0 0116.76 17H3.26A2.25 2.25 0 011 14.75l-.01-9.51zm8.26 9.51v-3.5H4.26v3.5h4.99zm0-5v-3.5H4.26v3.5h4.99zm1.5 5h4.99v-3.5h-4.99v3.5zm4.99-5v-3.5h-4.99v3.5h4.99z" clip-rule="evenodd"/>
+            </svg>
+            Colunas
+          </button>
+          <button id="btn-export" class="btn btn-export">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="vertical-align:-2px;margin-right:4px">
+              <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/>
+              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/>
+            </svg>
+            Exportar CSV
+          </button>
+        </div>
+      </div>
+      <!-- Column picker dropdown -->
+      <div id="col-picker" class="col-picker" style="display:none">
+        <div class="col-picker-header">
+          <span>Colunas visiveis</span>
+          <button id="btn-col-reset" class="col-picker-reset">Repor default</button>
+        </div>
+        <div id="col-picker-list" class="col-picker-list"></div>
+      </div>
+      <div class="table-wrap">
+        <table id="data-table">
+          <thead><tr id="table-thead-row"></tr></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+    </section>
+  </main>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>
