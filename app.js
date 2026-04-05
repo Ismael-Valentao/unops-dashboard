@@ -118,6 +118,18 @@ app.post("/api/refresh", async (_req, res) => {
   res.json({ rows: cache.data, last_updated: cache.lastUpdated });
 });
 
+// ── Cron keep-alive + refresh endpoint ────────────────────────
+app.get("/cron", async (_req, res) => {
+  await refreshCache();
+  const today = snapDb.todayStr();
+  res.json({
+    status: "ok",
+    rows: cache.data.length,
+    last_updated: cache.lastUpdated,
+    snapshot_today: snapDb.hasSnapshot(today),
+  });
+});
+
 // ── Verification endpoint ────────────────────────────────────
 app.get("/api/verify", (_req, res) => {
   const rows = cache.data;
