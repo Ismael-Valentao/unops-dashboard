@@ -74,9 +74,9 @@
       <div class="score-grid" id="score-grid"></div>
     </section>
 
-    <!-- ALERTS -->
+    <!-- ATTENTION POINTS (strategic, not technical) -->
     <section class="alerts-section">
-      <h2>Alertas Operacionais</h2>
+      <h2>Pontos de Atencao</h2>
       <div id="alerts-list"></div>
     </section>
 
@@ -94,19 +94,27 @@
       </section>
     </div>
 
-    <!-- SUPERVISOR TABLE -->
-    <section class="box-section">
-      <h2>Desempenho por Responsavel</h2>
-      <div class="tbl-wrap">
-        <table class="tbl" id="sup-table">
-          <thead><tr>
-            <th>#</th><th>Responsavel</th><th>Entregas</th>
-            <th>Total (kg)</th><th>Distritos</th><th>Erros</th>
-          </tr></thead>
-          <tbody id="sup-body"></tbody>
-        </table>
-      </div>
-    </section>
+    <div class="two-col">
+      <!-- DELIVERIES BY PROVINCE CHART -->
+      <section class="box-section">
+        <h2>Entregas por Provincia</h2>
+        <canvas id="ceo-province-chart"></canvas>
+      </section>
+
+      <!-- SUPERVISOR TABLE -->
+      <section class="box-section">
+        <h2>Desempenho por Responsavel</h2>
+        <div class="tbl-wrap">
+          <table class="tbl" id="sup-table">
+            <thead><tr>
+              <th>#</th><th>Responsavel</th><th>Entregas</th>
+              <th>Total (t)</th><th>Distritos</th>
+            </tr></thead>
+            <tbody id="sup-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
 
     <!-- BRIEFING MODAL -->
     <div class="modal-overlay" id="briefing-modal" style="display:none">

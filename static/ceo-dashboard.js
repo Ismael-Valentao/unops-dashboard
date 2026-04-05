@@ -21,6 +21,7 @@
       renderAlerts();
       renderGaps();
       renderProgress();
+      renderProvinceChart();
       renderSupervisors();
     } catch (e) {
       console.error("Load error:", e);
@@ -83,19 +84,43 @@
     }).join("");
   }
 
-  // ── Alerts ──────────────────────────────────────────────────
+  // ── Attention Points (strategic only, no technical errors) ──
   function renderAlerts() {
     const list = $("#alerts-list");
-    if (data.alerts.length === 0) {
-      list.innerHTML = '<div class="alert-item" style="border-left-color:#16a34a"><span class="alert-icon">&#10003;</span><span class="alert-msg" style="color:#4ade80">Sem alertas activos</span></div>';
+
+    // Only show strategic items: provinces/districts without deliveries
+    const items = [];
+    const noDeliveryProv = data.provinces.filter((p) => p.pct === 0 && p.planned_kg > 0);
+    noDeliveryProv.forEach((p) => {
+      items.push({ icon: "🔴", msg: `${p.province}: ${fmtDec(p.planned_kg / 1000)}t planeadas, nenhuma entrega iniciada (${p.districts_total} distritos)`, severity: "critical" });
+    });
+
+    const slowProv = data.provinces.filter((p) => p.pct > 0 && p.pct < 20);
+    slowProv.forEach((p) => {
+      items.push({ icon: "🟠", msg: `${p.province}: apenas ${p.pct}% de execucao (${p.districts_active}/${p.districts_total} distritos activos)`, severity: "high" });
+    });
+
+    const weeklyKg = data.weekly.kg;
+    const k = data.kpi;
+    if (k.est_days_left && k.est_days_left > 120) {
+      items.push({ icon: "🟡", msg: `Ao ritmo actual, o projecto levara ~${k.est_days_left} dias para concluir. Considerar acelerar entregas.`, severity: "medium" });
+    }
+
+    const noProductDelivery = data.gaps.filter((g) => g.pct === 0 && g.planned_kg > 0);
+    noProductDelivery.forEach((g) => {
+      items.push({ icon: "🟠", msg: `Produto "${g.product}": ${fmtDec(g.planned_kg / 1000)}t planeadas, sem qualquer entrega`, severity: "high" });
+    });
+
+    if (items.length === 0) {
+      list.innerHTML = '<div class="alert-item" style="border-left-color:#16a34a"><span class="alert-icon">&#10003;</span><span class="alert-msg" style="color:#4ade80">Sem pontos de atencao — operacao no caminho certo</span></div>';
       return;
     }
-    list.innerHTML = data.alerts.map((a) => {
-      const sv = a.severity;
-      return `<div class="alert-item al-${sv}">
+
+    list.innerHTML = items.map((a) => {
+      return `<div class="alert-item al-${a.severity}">
         <span class="alert-icon">${a.icon}</span>
         <span class="alert-msg">${esc(a.msg)}</span>
-        <span class="alert-sev sv-${sv}">${sv}</span>
+        <span class="alert-sev sv-${a.severity}">${a.severity === "critical" ? "critico" : a.severity === "high" ? "alto" : "medio"}</span>
       </div>`;
     }).join("");
   }
@@ -151,17 +176,44 @@
     });
   }
 
-  // ── Supervisors ─────────────────────────────────────────────
+  // ── Supervisors (no error column for CEO view) ──────────────
   function renderSupervisors() {
     const body = $("#sup-body");
     body.innerHTML = data.supervisors.map((s, i) => `<tr>
       <td style="font-weight:700;color:${i < 3 ? "#4ade80" : "#64748b"}">${i + 1}</td>
       <td style="font-weight:600;color:#fff">${esc(s.name)}</td>
       <td style="text-align:right">${fmt(s.deliveries)}</td>
-      <td style="text-align:right">${fmtDec(s.total_kg)}</td>
+      <td style="text-align:right">${fmtDec(s.total_kg / 1000)}</td>
       <td style="text-align:right">${fmt(s.districts)}</td>
-      <td style="text-align:right;color:${s.errors > 0 ? "#f87171" : "#4ade80"}">${s.errors}</td>
     </tr>`).join("");
+  }
+
+  // ── Province Chart ──────────────────────────────────────────
+  let chartProvince = null;
+  function renderProvinceChart() {
+    const provs = data.provinces.filter((p) => p.planned_kg > 0);
+    const labels = provs.map((p) => p.province);
+
+    if (chartProvince) chartProvince.destroy();
+    chartProvince = new Chart($("#ceo-province-chart"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "Planeado (t)", data: provs.map((p) => +(p.planned_kg / 1000).toFixed(1)), backgroundColor: "rgba(148,163,184,.4)", borderRadius: 6 },
+          { label: "Entregue (t)", data: provs.map((p) => +(p.delivered_kg / 1000).toFixed(1)), backgroundColor: "#4ade80", borderRadius: 6 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "top", labels: { color: "#94a3b8", boxWidth: 12, font: { size: 10 } } } },
+        scales: {
+          x: { grid: { color: "#1e293b" }, ticks: { color: "#94a3b8", font: { size: 10 } } },
+          y: { grid: { color: "#1e293b" }, ticks: { color: "#94a3b8", font: { size: 9 } },
+            title: { display: true, text: "Toneladas", color: "#64748b", font: { size: 10 } } },
+        },
+      },
+    });
   }
 
   // ── Briefing Generator ──────────────────────────────────────
@@ -181,8 +233,14 @@
     statusLines.push(`Ritmo actual: ${(k.avg_kg_per_day / 1000).toFixed(1)}t/dia. Estimativa de conclusao: ${k.est_days_left ? k.est_days_left + " dias" : "indeterminado"}.`);
     statusLines.push(`${k.total_deliveries} entregas registadas em ${k.day_span} dias de operacao.`);
 
-    // Risks
-    const risks = data.alerts.slice(0, 5).map((a) => a.msg);
+    // Risks (strategic only)
+    const risks = [];
+    const noProv = data.provinces.filter((p) => p.pct === 0 && p.planned_kg > 0);
+    if (noProv.length > 0) risks.push(`${noProv.length} provincia(s) sem qualquer entrega: ${noProv.map((p) => p.province).join(", ")}`);
+    const noProd = data.gaps.filter((g) => g.pct === 0 && g.planned_kg > 0);
+    if (noProd.length > 0) risks.push(`${noProd.length} produto(s) sem entregas: ${noProd.map((g) => g.product).join(", ")}`);
+    if (k.est_days_left && k.est_days_left > 120) risks.push(`Projeccao de conclusao excede 120 dias ao ritmo actual`);
+    if (risks.length === 0) risks.push("Sem riscos significativos identificados");
 
     // Progress
     const progressItems = [];
@@ -196,7 +254,7 @@
     if (noDelivery.length > 0) decisions.push(`Priorizar inicio de entregas em: ${noDelivery.map((p) => p.province).join(", ")}`);
     const worstProducts = data.gaps.filter((g) => g.pct === 0);
     if (worstProducts.length > 0) decisions.push(`Produtos sem qualquer entrega: ${worstProducts.map((g) => g.product).join(", ")}`);
-    if (data.alerts.filter((a) => a.severity === "critical").length > 0) decisions.push("Resolver alertas criticos (GTUs duplicados / erros) antes do proximo reporte");
+    if (noDelivery.length > 0) decisions.push(`Alocar recursos para iniciar operacoes em ${noDelivery.length} provincia(s) sem entregas`);
     decisions.push(`Manter ritmo minimo de ${Math.round(remainingT / 90)}t/dia para concluir em 90 dias`);
 
     const content = $("#briefing-content");
