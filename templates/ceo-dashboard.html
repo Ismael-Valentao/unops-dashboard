@@ -52,6 +52,14 @@
       </div>
     </section>
 
+    <!-- FILTERS -->
+    <section class="ceo-filters">
+      <select id="cf-province"><option value="">Todas Provincias</option></select>
+      <select id="cf-district"><option value="">Todos Distritos</option></select>
+      <select id="cf-product"><option value="">Todos Produtos</option></select>
+      <button class="hdr-btn" id="cf-clear">Limpar filtros</button>
+    </section>
+
     <!-- TIMELINE -->
     <section class="timeline-section" id="timeline-section">
       <h2>Timeline do Projecto</h2>
@@ -72,6 +80,32 @@
     <section class="score-section">
       <h2>Scorecard por Provincia</h2>
       <div class="score-grid" id="score-grid"></div>
+    </section>
+
+    <!-- PVD COMPARISON CHARTS -->
+    <div class="two-col">
+      <section class="box-section">
+        <h2>Planeado vs Entregue por Distrito</h2>
+        <canvas id="ceo-pvd-district"></canvas>
+      </section>
+      <section class="box-section">
+        <h2>Planeado vs Entregue por Produto</h2>
+        <canvas id="ceo-pvd-product"></canvas>
+      </section>
+    </div>
+
+    <!-- DISTRICT SUMMARY TABLE -->
+    <section class="box-section">
+      <h2>Resumo por Distrito</h2>
+      <div class="tbl-wrap" style="max-height:400px;overflow-y:auto">
+        <table class="tbl" id="ceo-district-table">
+          <thead><tr>
+            <th>Distrito</th><th>Provincia</th><th>Planeado (t)</th>
+            <th>Entregue (t)</th><th>Falta (t)</th><th>% Execucao</th><th>Status</th>
+          </tr></thead>
+          <tbody id="ceo-district-body"></tbody>
+        </table>
+      </div>
     </section>
 
     <!-- ATTENTION POINTS (strategic, not technical) -->

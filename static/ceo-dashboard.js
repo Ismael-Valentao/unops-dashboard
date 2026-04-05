@@ -3,29 +3,108 @@
   "use strict";
 
   const $ = (s) => document.querySelector(s);
+  const $$ = (s) => document.querySelectorAll(s);
   let data = null;
+  let pvdData = null;
   let chartProgress = null;
+  let chartProvince = null;
+  let chartPvdDistrict = null;
+  let chartPvdProduct = null;
 
   function fmt(n) { return Number(n).toLocaleString("pt-PT"); }
   function fmtDec(n) { return Number(n).toLocaleString("pt-PT", { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
   function esc(s) { if (!s) return ""; const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
+  // ── Filters ─────────────────────────────────────────────────
+  const cfProvince = $("#cf-province");
+  const cfDistrict = $("#cf-district");
+  const cfProduct = $("#cf-product");
+
+  function getFilters() {
+    return { province: cfProvince.value, district: cfDistrict.value, product: cfProduct.value };
+  }
+
+  function buildQS() {
+    const f = getFilters();
+    const p = new URLSearchParams();
+    if (f.province) p.set("province", f.province);
+    if (f.district) p.set("district", f.district);
+    if (f.product) p.set("product", f.product);
+    return p.toString();
+  }
+
+  function populateFilters() {
+    if (!data) return;
+    // Provinces from overview
+    const provs = data.provinces.map((p) => p.province).sort();
+    fillSelect(cfProvince, provs, "Todas Provincias");
+
+    // Districts from PvD data
+    if (pvdData) {
+      let dists = pvdData.by_district.map((d) => d.district);
+      const prov = cfProvince.value;
+      if (prov) dists = pvdData.by_district.filter((d) => d.province === prov).map((d) => d.district);
+      fillSelect(cfDistrict, [...new Set(dists)].sort(), "Todos Distritos");
+    }
+
+    // Products from PvD data
+    if (pvdData) {
+      const prods = pvdData.by_product.map((p) => p.product);
+      fillSelect(cfProduct, prods.sort(), "Todos Produtos");
+    }
+  }
+
+  function fillSelect(el, values, placeholder) {
+    const cur = el.value;
+    el.innerHTML = `<option value="">${placeholder}</option>` +
+      values.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+    if (values.includes(cur)) el.value = cur;
+  }
+
+  // ── Data Loading ────────────────────────────────────────────
   async function load() {
     try {
-      const res = await fetch("/api/ceo-overview");
-      data = await res.json();
+      const [ovRes, pvdRes] = await Promise.all([
+        fetch("/api/ceo-overview"),
+        fetch("/api/planned-vs-delivered?" + buildQS()),
+      ]);
+      data = await ovRes.json();
+      pvdData = await pvdRes.json();
+
       $("#hdr-updated").textContent = "Actualizado: " + new Date().toLocaleString("pt-PT");
-      renderKPI();
-      renderTimeline();
-      renderScorecard();
-      renderAlerts();
-      renderGaps();
-      renderProgress();
-      renderProvinceChart();
-      renderSupervisors();
+      populateFilters();
+      renderAll();
     } catch (e) {
       console.error("Load error:", e);
     }
+  }
+
+  async function reloadPvD() {
+    try {
+      const res = await fetch("/api/planned-vs-delivered?" + buildQS());
+      pvdData = await res.json();
+      renderPvD();
+    } catch (e) {
+      console.error("PvD reload error:", e);
+    }
+  }
+
+  function renderAll() {
+    renderKPI();
+    renderTimeline();
+    renderScorecard();
+    renderPvD();
+    renderAlerts();
+    renderGaps();
+    renderProgress();
+    renderProvinceChart();
+    renderSupervisors();
+  }
+
+  function renderPvD() {
+    renderPvdDistrictChart();
+    renderPvdProductChart();
+    renderDistrictTable();
   }
 
   // ── KPI Strip ───────────────────────────────────────────────
@@ -48,7 +127,6 @@
   function renderTimeline() {
     const k = data.kpi;
     if (!k.first_date) return;
-
     const start = new Date(k.first_date);
     const today = new Date();
     const estEnd = k.est_days_left ? new Date(today.getTime() + k.est_days_left * 86400000) : new Date(today.getTime() + 90 * 86400000);
@@ -84,45 +162,111 @@
     }).join("");
   }
 
-  // ── Attention Points (strategic only, no technical errors) ──
+  // ── PvD District Chart ──────────────────────────────────────
+  function renderPvdDistrictChart() {
+    if (!pvdData) return;
+    const items = pvdData.by_district.filter((d) => d.planned_kg > 0).slice(0, 20);
+    const labels = items.map((d) => d.district);
+    const darkOpts = { color: "#94a3b8", font: { size: 9 } };
+
+    if (chartPvdDistrict) chartPvdDistrict.destroy();
+    chartPvdDistrict = new Chart($("#ceo-pvd-district"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "Planeado (t)", data: items.map((d) => +(d.planned_kg / 1000).toFixed(1)), backgroundColor: "rgba(148,163,184,.35)", borderRadius: 4 },
+          { label: "Entregue (t)", data: items.map((d) => +(d.delivered_kg / 1000).toFixed(1)), backgroundColor: "#4ade80", borderRadius: 4 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "top", labels: { color: "#94a3b8", boxWidth: 12, font: { size: 10 } } } },
+        scales: {
+          x: { grid: { color: "#1e293b" }, ticks: { ...darkOpts, maxRotation: 45 } },
+          y: { grid: { color: "#1e293b" }, ticks: darkOpts },
+        },
+      },
+    });
+  }
+
+  // ── PvD Product Chart ───────────────────────────────────────
+  function renderPvdProductChart() {
+    if (!pvdData) return;
+    const items = pvdData.by_product.filter((p) => p.planned_kg > 0);
+    const labels = items.map((p) => p.product);
+    const darkOpts = { color: "#94a3b8", font: { size: 10 } };
+
+    if (chartPvdProduct) chartPvdProduct.destroy();
+    chartPvdProduct = new Chart($("#ceo-pvd-product"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "Planeado (t)", data: items.map((p) => +(p.planned_kg / 1000).toFixed(1)), backgroundColor: "rgba(148,163,184,.35)", borderRadius: 4 },
+          { label: "Entregue (t)", data: items.map((p) => +(p.delivered_kg / 1000).toFixed(1)), backgroundColor: "#4ade80", borderRadius: 4 },
+        ],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "top", labels: { color: "#94a3b8", boxWidth: 12, font: { size: 10 } } } },
+        scales: {
+          x: { grid: { color: "#1e293b" }, ticks: darkOpts },
+          y: { grid: { display: false }, ticks: darkOpts },
+        },
+      },
+    });
+  }
+
+  // ── District Summary Table ──────────────────────────────────
+  function renderDistrictTable() {
+    if (!pvdData) return;
+    const rows = pvdData.by_district.filter((d) => d.planned_kg > 0);
+    const statusBadge = (s) => {
+      if (s === "Completo") return '<span style="color:#4ade80;font-weight:700">Completo</span>';
+      if (s === "Em progresso") return '<span style="color:#fbbf24;font-weight:700">Em progresso</span>';
+      return '<span style="color:#f87171;font-weight:700">Sem entregas</span>';
+    };
+    $("#ceo-district-body").innerHTML = rows.map((d) => `<tr>
+      <td style="font-weight:600;color:#fff">${esc(d.district)}</td>
+      <td>${esc(d.province)}</td>
+      <td style="text-align:right">${fmtDec(d.planned_kg / 1000)}</td>
+      <td style="text-align:right">${fmtDec(d.delivered_kg / 1000)}</td>
+      <td style="text-align:right;color:${d.diff < 0 ? "#f87171" : "#4ade80"}">${fmtDec(Math.abs(d.planned_kg - d.delivered_kg) / 1000)}</td>
+      <td style="text-align:right;font-weight:700;color:${d.pct >= 95 ? "#4ade80" : d.pct > 0 ? "#fbbf24" : "#f87171"}">${d.pct}%</td>
+      <td>${statusBadge(d.status)}</td>
+    </tr>`).join("");
+  }
+
+  // ── Attention Points ────────────────────────────────────────
   function renderAlerts() {
     const list = $("#alerts-list");
-
-    // Only show strategic items: provinces/districts without deliveries
     const items = [];
     const noDeliveryProv = data.provinces.filter((p) => p.pct === 0 && p.planned_kg > 0);
     noDeliveryProv.forEach((p) => {
-      items.push({ icon: "🔴", msg: `${p.province}: ${fmtDec(p.planned_kg / 1000)}t planeadas, nenhuma entrega iniciada (${p.districts_total} distritos)`, severity: "critical" });
+      items.push({ icon: "&#128308;", msg: `${p.province}: ${fmtDec(p.planned_kg / 1000)}t planeadas, nenhuma entrega iniciada (${p.districts_total} distritos)`, severity: "critical" });
     });
-
     const slowProv = data.provinces.filter((p) => p.pct > 0 && p.pct < 20);
     slowProv.forEach((p) => {
-      items.push({ icon: "🟠", msg: `${p.province}: apenas ${p.pct}% de execucao (${p.districts_active}/${p.districts_total} distritos activos)`, severity: "high" });
+      items.push({ icon: "&#128992;", msg: `${p.province}: apenas ${p.pct}% de execucao (${p.districts_active}/${p.districts_total} distritos activos)`, severity: "high" });
     });
-
-    const weeklyKg = data.weekly.kg;
-    const k = data.kpi;
-    if (k.est_days_left && k.est_days_left > 120) {
-      items.push({ icon: "🟡", msg: `Ao ritmo actual, o projecto levara ~${k.est_days_left} dias para concluir. Considerar acelerar entregas.`, severity: "medium" });
+    if (data.kpi.est_days_left && data.kpi.est_days_left > 120) {
+      items.push({ icon: "&#128993;", msg: `Ao ritmo actual, o projecto levara ~${data.kpi.est_days_left} dias para concluir. Considerar acelerar entregas.`, severity: "medium" });
     }
-
-    const noProductDelivery = data.gaps.filter((g) => g.pct === 0 && g.planned_kg > 0);
-    noProductDelivery.forEach((g) => {
-      items.push({ icon: "🟠", msg: `Produto "${g.product}": ${fmtDec(g.planned_kg / 1000)}t planeadas, sem qualquer entrega`, severity: "high" });
+    const noProd = data.gaps.filter((g) => g.pct === 0 && g.planned_kg > 0);
+    noProd.forEach((g) => {
+      items.push({ icon: "&#128992;", msg: `Produto "${g.product}": ${fmtDec(g.planned_kg / 1000)}t planeadas, sem qualquer entrega`, severity: "high" });
     });
-
     if (items.length === 0) {
-      list.innerHTML = '<div class="alert-item" style="border-left-color:#16a34a"><span class="alert-icon">&#10003;</span><span class="alert-msg" style="color:#4ade80">Sem pontos de atencao — operacao no caminho certo</span></div>';
+      list.innerHTML = '<div class="alert-item" style="border-left-color:#16a34a"><span class="alert-icon">&#10003;</span><span class="alert-msg" style="color:#4ade80">Sem pontos de atencao</span></div>';
       return;
     }
-
-    list.innerHTML = items.map((a) => {
-      return `<div class="alert-item al-${a.severity}">
-        <span class="alert-icon">${a.icon}</span>
-        <span class="alert-msg">${esc(a.msg)}</span>
-        <span class="alert-sev sv-${a.severity}">${a.severity === "critical" ? "critico" : a.severity === "high" ? "alto" : "medio"}</span>
-      </div>`;
-    }).join("");
+    list.innerHTML = items.map((a) => `<div class="alert-item al-${a.severity}">
+      <span class="alert-icon">${a.icon}</span>
+      <span class="alert-msg">${esc(a.msg)}</span>
+      <span class="alert-sev sv-${a.severity}">${a.severity === "critical" ? "critico" : a.severity === "high" ? "alto" : "medio"}</span>
+    </div>`).join("");
   }
 
   // ── Gap Analysis ────────────────────────────────────────────
@@ -149,21 +293,14 @@
     const prog = data.progress;
     if (prog.length === 0) return;
     const labels = prog.map((p) => { const s = p.date.split("-"); return s[2] + "/" + s[1]; });
-
     if (chartProgress) chartProgress.destroy();
     chartProgress = new Chart($("#ceo-progress"), {
       type: "line",
-      data: {
-        labels,
-        datasets: [{
-          label: "Entregue (t)",
-          data: prog.map((p) => +(p.total_qty / 1000).toFixed(1)),
-          borderColor: "#4ade80",
-          backgroundColor: "rgba(74,222,128,.1)",
-          fill: true, tension: .3, pointRadius: 5,
-          pointBackgroundColor: "#4ade80",
-        }],
-      },
+      data: { labels, datasets: [{
+        label: "Entregue (t)", data: prog.map((p) => +(p.total_qty / 1000).toFixed(1)),
+        borderColor: "#4ade80", backgroundColor: "rgba(74,222,128,.1)",
+        fill: true, tension: .3, pointRadius: 5, pointBackgroundColor: "#4ade80",
+      }] },
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: false } },
@@ -176,34 +313,17 @@
     });
   }
 
-  // ── Supervisors (no error column for CEO view) ──────────────
-  function renderSupervisors() {
-    const body = $("#sup-body");
-    body.innerHTML = data.supervisors.map((s, i) => `<tr>
-      <td style="font-weight:700;color:${i < 3 ? "#4ade80" : "#64748b"}">${i + 1}</td>
-      <td style="font-weight:600;color:#fff">${esc(s.name)}</td>
-      <td style="text-align:right">${fmt(s.deliveries)}</td>
-      <td style="text-align:right">${fmtDec(s.total_kg / 1000)}</td>
-      <td style="text-align:right">${fmt(s.districts)}</td>
-    </tr>`).join("");
-  }
-
   // ── Province Chart ──────────────────────────────────────────
-  let chartProvince = null;
   function renderProvinceChart() {
     const provs = data.provinces.filter((p) => p.planned_kg > 0);
     const labels = provs.map((p) => p.province);
-
     if (chartProvince) chartProvince.destroy();
     chartProvince = new Chart($("#ceo-province-chart"), {
       type: "bar",
-      data: {
-        labels,
-        datasets: [
-          { label: "Planeado (t)", data: provs.map((p) => +(p.planned_kg / 1000).toFixed(1)), backgroundColor: "rgba(148,163,184,.4)", borderRadius: 6 },
-          { label: "Entregue (t)", data: provs.map((p) => +(p.delivered_kg / 1000).toFixed(1)), backgroundColor: "#4ade80", borderRadius: 6 },
-        ],
-      },
+      data: { labels, datasets: [
+        { label: "Planeado (t)", data: provs.map((p) => +(p.planned_kg / 1000).toFixed(1)), backgroundColor: "rgba(148,163,184,.4)", borderRadius: 6 },
+        { label: "Entregue (t)", data: provs.map((p) => +(p.delivered_kg / 1000).toFixed(1)), backgroundColor: "#4ade80", borderRadius: 6 },
+      ] },
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: { legend: { position: "top", labels: { color: "#94a3b8", boxWidth: 12, font: { size: 10 } } } },
@@ -216,70 +336,61 @@
     });
   }
 
+  // ── Supervisors ─────────────────────────────────────────────
+  function renderSupervisors() {
+    $("#sup-body").innerHTML = data.supervisors.map((s, i) => `<tr>
+      <td style="font-weight:700;color:${i < 3 ? "#4ade80" : "#64748b"}">${i + 1}</td>
+      <td style="font-weight:600;color:#fff">${esc(s.name)}</td>
+      <td style="text-align:right">${fmt(s.deliveries)}</td>
+      <td style="text-align:right">${fmtDec(s.total_kg / 1000)}</td>
+      <td style="text-align:right">${fmt(s.districts)}</td>
+    </tr>`).join("");
+  }
+
   // ── Briefing Generator ──────────────────────────────────────
   function generateBriefing() {
     const k = data.kpi;
     const pad = (n) => String(n).padStart(2, "0");
     const today = new Date();
     const dateStr = pad(today.getDate()) + "/" + pad(today.getMonth() + 1) + "/" + today.getFullYear();
-
     const deliveredT = Math.round(k.total_delivered / 1000);
     const plannedT = Math.round(k.total_planned / 1000);
     const remainingT = plannedT - deliveredT;
 
-    // Status
-    let statusLines = [];
-    statusLines.push(`Execucao global a ${k.global_pct}%: ${fmt(deliveredT)}t entregues de ${fmt(plannedT)}t planeadas.`);
-    statusLines.push(`Ritmo actual: ${(k.avg_kg_per_day / 1000).toFixed(1)}t/dia. Estimativa de conclusao: ${k.est_days_left ? k.est_days_left + " dias" : "indeterminado"}.`);
-    statusLines.push(`${k.total_deliveries} entregas registadas em ${k.day_span} dias de operacao.`);
-
-    // Risks (strategic only)
+    const statusLines = [
+      `Execucao global a ${k.global_pct}%: ${fmt(deliveredT)}t entregues de ${fmt(plannedT)}t planeadas.`,
+      `Ritmo actual: ${(k.avg_kg_per_day / 1000).toFixed(1)}t/dia. Estimativa de conclusao: ${k.est_days_left ? k.est_days_left + " dias" : "indeterminado"}.`,
+      `${k.total_deliveries} entregas registadas em ${k.day_span} dias de operacao.`,
+    ];
     const risks = [];
     const noProv = data.provinces.filter((p) => p.pct === 0 && p.planned_kg > 0);
-    if (noProv.length > 0) risks.push(`${noProv.length} provincia(s) sem qualquer entrega: ${noProv.map((p) => p.province).join(", ")}`);
+    if (noProv.length > 0) risks.push(`${noProv.length} provincia(s) sem entregas: ${noProv.map((p) => p.province).join(", ")}`);
     const noProd = data.gaps.filter((g) => g.pct === 0 && g.planned_kg > 0);
     if (noProd.length > 0) risks.push(`${noProd.length} produto(s) sem entregas: ${noProd.map((g) => g.product).join(", ")}`);
-    if (k.est_days_left && k.est_days_left > 120) risks.push(`Projeccao de conclusao excede 120 dias ao ritmo actual`);
-    if (risks.length === 0) risks.push("Sem riscos significativos identificados");
+    if (k.est_days_left && k.est_days_left > 120) risks.push("Projeccao de conclusao excede 120 dias");
+    if (risks.length === 0) risks.push("Sem riscos significativos");
 
-    // Progress
     const progressItems = [];
     data.provinces.filter((p) => p.pct > 0).sort((a, b) => b.pct - a.pct).slice(0, 5)
       .forEach((p) => progressItems.push(`${p.province}: ${p.pct}% (${p.districts_active} distritos activos)`));
     if (data.weekly.kg > 0) progressItems.push(`Ultimos 7 dias: ${fmtDec(data.weekly.kg / 1000)}t em ${data.weekly.deliveries} entregas`);
 
-    // Decisions
     const decisions = [];
-    const noDelivery = data.provinces.filter((p) => p.pct === 0);
-    if (noDelivery.length > 0) decisions.push(`Priorizar inicio de entregas em: ${noDelivery.map((p) => p.province).join(", ")}`);
-    const worstProducts = data.gaps.filter((g) => g.pct === 0);
-    if (worstProducts.length > 0) decisions.push(`Produtos sem qualquer entrega: ${worstProducts.map((g) => g.product).join(", ")}`);
-    if (noDelivery.length > 0) decisions.push(`Alocar recursos para iniciar operacoes em ${noDelivery.length} provincia(s) sem entregas`);
+    if (noProv.length > 0) decisions.push(`Priorizar inicio de entregas em: ${noProv.map((p) => p.province).join(", ")}`);
+    if (noProd.length > 0) decisions.push(`Activar entregas de: ${noProd.map((g) => g.product).join(", ")}`);
     decisions.push(`Manter ritmo minimo de ${Math.round(remainingT / 90)}t/dia para concluir em 90 dias`);
 
-    const content = $("#briefing-content");
-    content.innerHTML = `
-      <div class="brief-section">
-        <div class="brief-title">Briefing Semanal — ${dateStr}</div>
-      </div>
-      <div class="brief-section">
-        <div class="brief-title">Estado Actual</div>
-        ${statusLines.map((s) => `<div class="brief-item">${esc(s)}</div>`).join("")}
-      </div>
-      <div class="brief-section">
-        <div class="brief-title">Riscos e Problemas (${risks.length})</div>
-        ${risks.length > 0 ? risks.map((r) => `<div class="brief-item bi-risk">${esc(r)}</div>`).join("") : '<div class="brief-item">Sem riscos identificados</div>'}
-      </div>
-      <div class="brief-section">
-        <div class="brief-title">Progressos da Semana</div>
-        ${progressItems.map((p) => `<div class="brief-item bi-progress">${esc(p)}</div>`).join("")}
-      </div>
-      <div class="brief-section">
-        <div class="brief-title">Decisoes Necessarias</div>
-        ${decisions.map((d) => `<div class="brief-item bi-decision">${esc(d)}</div>`).join("")}
-      </div>
+    $("#briefing-content").innerHTML = `
+      <div class="brief-section"><div class="brief-title">Briefing Semanal — ${dateStr}</div></div>
+      <div class="brief-section"><div class="brief-title">Estado Actual</div>
+        ${statusLines.map((s) => `<div class="brief-item">${esc(s)}</div>`).join("")}</div>
+      <div class="brief-section"><div class="brief-title">Riscos (${risks.length})</div>
+        ${risks.map((r) => `<div class="brief-item bi-risk">${esc(r)}</div>`).join("")}</div>
+      <div class="brief-section"><div class="brief-title">Progressos</div>
+        ${progressItems.map((p) => `<div class="brief-item bi-progress">${esc(p)}</div>`).join("")}</div>
+      <div class="brief-section"><div class="brief-title">Decisoes Necessarias</div>
+        ${decisions.map((d) => `<div class="brief-item bi-decision">${esc(d)}</div>`).join("")}</div>
     `;
-
     $("#briefing-modal").style.display = "flex";
   }
 
@@ -287,6 +398,27 @@
   document.addEventListener("DOMContentLoaded", () => {
     load();
     setInterval(load, 5 * 60 * 1000);
+
+    // Filter events
+    cfProvince.addEventListener("change", () => {
+      // Cascade district options
+      if (pvdData) {
+        let dists = pvdData.by_district.map((d) => d.district);
+        if (cfProvince.value) dists = pvdData.by_district.filter((d) => d.province === cfProvince.value).map((d) => d.district);
+        fillSelect(cfDistrict, [...new Set(dists)].sort(), "Todos Distritos");
+      }
+      reloadPvD();
+    });
+    cfDistrict.addEventListener("change", reloadPvD);
+    cfProduct.addEventListener("change", reloadPvD);
+    $("#cf-clear").addEventListener("click", () => {
+      cfProvince.value = "";
+      cfDistrict.value = "";
+      cfProduct.value = "";
+      reloadPvD();
+    });
+
+    // Briefing
     $("#btn-briefing").addEventListener("click", generateBriefing);
     $("#briefing-close").addEventListener("click", () => { $("#briefing-modal").style.display = "none"; });
     $("#briefing-modal").addEventListener("click", (e) => {

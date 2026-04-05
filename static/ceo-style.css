@@ -27,6 +27,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 h2{font-size:.9rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;
   margin-bottom:.75rem;font-weight:700}
 
+/* ── Filters ─────────────────────────────────────────────── */
+.ceo-filters{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;
+  background:#1e293b;padding:.65rem 1rem;border-radius:10px;margin-bottom:1.25rem;
+  border:1px solid #334155}
+.ceo-filters select{padding:.4rem .6rem;border:1px solid #334155;border-radius:6px;
+  font-size:.82rem;color:#cbd5e1;background:#0f172a;min-width:160px;cursor:pointer}
+.ceo-filters select:focus{outline:none;border-color:#38bdf8;box-shadow:0 0 0 2px rgba(56,189,248,.2)}
+.ceo-filters select option{background:#1e293b;color:#e2e8f0}
+
 /* ── KPI Strip ───────────────────────────────────────────── */
 .kpi-strip{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;
   margin-bottom:1.5rem;align-items:center}
