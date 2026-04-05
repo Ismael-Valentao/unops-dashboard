@@ -6,10 +6,6 @@
   const $$ = (s) => document.querySelectorAll(s);
   let data = null;
   let pvdData = null;
-  let chartProgress = null;
-  let chartProvince = null;
-  let chartPvdDistrict = null;
-  let chartPvdProduct = null;
 
   function fmt(n) { return Number(n).toLocaleString("pt-PT"); }
   function fmtDec(n) { return Number(n).toLocaleString("pt-PT", { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
@@ -96,14 +92,10 @@
     renderPvD();
     renderAlerts();
     renderGaps();
-    renderProgress();
-    renderProvinceChart();
     renderSupervisors();
   }
 
   function renderPvD() {
-    renderPvdDistrictChart();
-    renderPvdProductChart();
     renderDistrictTable();
   }
 
@@ -163,62 +155,6 @@
   }
 
   // ── PvD District Chart ──────────────────────────────────────
-  function renderPvdDistrictChart() {
-    if (!pvdData) return;
-    const items = pvdData.by_district.filter((d) => d.planned_kg > 0).slice(0, 20);
-    const labels = items.map((d) => d.district);
-    const darkOpts = { color: "#94a3b8", font: { size: 9 } };
-
-    if (chartPvdDistrict) chartPvdDistrict.destroy();
-    chartPvdDistrict = new Chart($("#ceo-pvd-district"), {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [
-          { label: "Planeado (t)", data: items.map((d) => +(d.planned_kg / 1000).toFixed(1)), backgroundColor: "rgba(148,163,184,.35)", borderRadius: 4 },
-          { label: "Entregue (t)", data: items.map((d) => +(d.delivered_kg / 1000).toFixed(1)), backgroundColor: "#4ade80", borderRadius: 4 },
-        ],
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: "top", labels: { color: "#94a3b8", boxWidth: 12, font: { size: 10 } } } },
-        scales: {
-          x: { grid: { color: "#1e293b" }, ticks: { ...darkOpts, maxRotation: 45 } },
-          y: { grid: { color: "#1e293b" }, ticks: darkOpts },
-        },
-      },
-    });
-  }
-
-  // ── PvD Product Chart ───────────────────────────────────────
-  function renderPvdProductChart() {
-    if (!pvdData) return;
-    const items = pvdData.by_product.filter((p) => p.planned_kg > 0);
-    const labels = items.map((p) => p.product);
-    const darkOpts = { color: "#94a3b8", font: { size: 10 } };
-
-    if (chartPvdProduct) chartPvdProduct.destroy();
-    chartPvdProduct = new Chart($("#ceo-pvd-product"), {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [
-          { label: "Planeado (t)", data: items.map((p) => +(p.planned_kg / 1000).toFixed(1)), backgroundColor: "rgba(148,163,184,.35)", borderRadius: 4 },
-          { label: "Entregue (t)", data: items.map((p) => +(p.delivered_kg / 1000).toFixed(1)), backgroundColor: "#4ade80", borderRadius: 4 },
-        ],
-      },
-      options: {
-        indexAxis: "y",
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: "top", labels: { color: "#94a3b8", boxWidth: 12, font: { size: 10 } } } },
-        scales: {
-          x: { grid: { color: "#1e293b" }, ticks: darkOpts },
-          y: { grid: { display: false }, ticks: darkOpts },
-        },
-      },
-    });
-  }
-
   // ── District Summary Table ──────────────────────────────────
   function renderDistrictTable() {
     if (!pvdData) return;
@@ -286,54 +222,6 @@
         <div class="ceo-gap-val">-${fmt(gapT)}t</div>
       </div>`;
     }).join("");
-  }
-
-  // ── Progress Chart ──────────────────────────────────────────
-  function renderProgress() {
-    const prog = data.progress;
-    if (prog.length === 0) return;
-    const labels = prog.map((p) => { const s = p.date.split("-"); return s[2] + "/" + s[1]; });
-    if (chartProgress) chartProgress.destroy();
-    chartProgress = new Chart($("#ceo-progress"), {
-      type: "line",
-      data: { labels, datasets: [{
-        label: "Entregue (t)", data: prog.map((p) => +(p.total_qty / 1000).toFixed(1)),
-        borderColor: "#4ade80", backgroundColor: "rgba(74,222,128,.1)",
-        fill: true, tension: .3, pointRadius: 5, pointBackgroundColor: "#4ade80",
-      }] },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { color: "#1e293b" }, ticks: { color: "#64748b", font: { size: 10 } } },
-          y: { grid: { color: "#1e293b" }, ticks: { color: "#64748b", font: { size: 10 } },
-            title: { display: true, text: "Toneladas", color: "#64748b", font: { size: 10 } } },
-        },
-      },
-    });
-  }
-
-  // ── Province Chart ──────────────────────────────────────────
-  function renderProvinceChart() {
-    const provs = data.provinces.filter((p) => p.planned_kg > 0);
-    const labels = provs.map((p) => p.province);
-    if (chartProvince) chartProvince.destroy();
-    chartProvince = new Chart($("#ceo-province-chart"), {
-      type: "bar",
-      data: { labels, datasets: [
-        { label: "Planeado (t)", data: provs.map((p) => +(p.planned_kg / 1000).toFixed(1)), backgroundColor: "rgba(148,163,184,.4)", borderRadius: 6 },
-        { label: "Entregue (t)", data: provs.map((p) => +(p.delivered_kg / 1000).toFixed(1)), backgroundColor: "#4ade80", borderRadius: 6 },
-      ] },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: "top", labels: { color: "#94a3b8", boxWidth: 12, font: { size: 10 } } } },
-        scales: {
-          x: { grid: { color: "#1e293b" }, ticks: { color: "#94a3b8", font: { size: 10 } } },
-          y: { grid: { color: "#1e293b" }, ticks: { color: "#94a3b8", font: { size: 9 } },
-            title: { display: true, text: "Toneladas", color: "#64748b", font: { size: 10 } } },
-        },
-      },
-    });
   }
 
   // ── Supervisors ─────────────────────────────────────────────

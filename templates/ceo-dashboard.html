@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AQI Director Dashboard 2026</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <!-- No Chart.js needed -->
   <link rel="stylesheet" href="/static/ceo-style.css">
 </head>
 <body>
@@ -82,18 +82,6 @@
       <div class="score-grid" id="score-grid"></div>
     </section>
 
-    <!-- PVD COMPARISON CHARTS -->
-    <div class="two-col">
-      <section class="box-section">
-        <h2>Planeado vs Entregue por Distrito</h2>
-        <canvas id="ceo-pvd-district"></canvas>
-      </section>
-      <section class="box-section">
-        <h2>Planeado vs Entregue por Produto</h2>
-        <canvas id="ceo-pvd-product"></canvas>
-      </section>
-    </div>
-
     <!-- DISTRICT SUMMARY TABLE -->
     <section class="box-section">
       <h2>Resumo por Distrito</h2>
@@ -119,20 +107,6 @@
       <section class="box-section">
         <h2>Gap por Produto</h2>
         <div id="ceo-gaps"></div>
-      </section>
-
-      <!-- PROGRESS CHART -->
-      <section class="box-section">
-        <h2>Evolucao (Snapshots)</h2>
-        <canvas id="ceo-progress"></canvas>
-      </section>
-    </div>
-
-    <div class="two-col">
-      <!-- DELIVERIES BY PROVINCE CHART -->
-      <section class="box-section">
-        <h2>Entregas por Provincia</h2>
-        <canvas id="ceo-province-chart"></canvas>
       </section>
 
       <!-- SUPERVISOR TABLE -->
