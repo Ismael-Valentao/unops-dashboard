@@ -121,9 +121,9 @@ app.post("/api/refresh", async (_req, res) => {
 // ── Verification endpoint ────────────────────────────────────
 app.get("/api/verify", (_req, res) => {
   const rows = cache.data;
-  const UNIT_WEIGHT = 12.5;
+  const UNIT_WEIGHTS = [1, 5, 10, 12.5, 15, 50];
 
-  // 1. Duplicate GTUs (Delivery Note Number)
+  // 1. Duplicate Delivery Notes
   const gtuMap = {};
   rows.forEach((r, i) => {
     const gtu = (r.delivery_note_number || "").trim();
@@ -147,55 +147,58 @@ app.get("/api/verify", (_req, res) => {
     }
   }
 
-  // 2. Weight mismatches: Packages * 12.5 != Delivered Qty
+  // 2. Weight mismatches: try all known unit weights, flag if NONE match
   const weightMismatches = [];
   rows.forEach((r, i) => {
     const pkgs = r.packages;
     const qty = r.delivered_qty;
-    const expected = pkgs * UNIT_WEIGHT;
-    if (pkgs > 0 && Math.abs(qty - expected) > 0.01) {
+    if (pkgs <= 0) return;
+    const matchedUnit = UNIT_WEIGHTS.find((u) => Math.abs(qty - pkgs * u) < 0.01);
+    if (!matchedUnit) {
+      const closest = UNIT_WEIGHTS.reduce((best, u) => {
+        const diff = Math.abs(qty - pkgs * u);
+        return diff < best.diff ? { unit: u, expected: pkgs * u, diff } : best;
+      }, { unit: 0, expected: 0, diff: Infinity });
       weightMismatches.push({
         row: i + 2,
         delivery_id: r.delivery_id,
         gtu: r.delivery_note_number,
         beneficiary_name: r.beneficiary_name,
         district: r.district,
+        product: r.product,
         packages: pkgs,
         delivered_qty: qty,
-        expected_qty: expected,
-        difference: +(qty - expected).toFixed(2),
+        closest_unit: closest.unit,
+        expected_qty: closest.expected,
+        difference: +(qty - closest.expected).toFixed(2),
       });
     }
   });
 
-  // 3. GTU pattern validation: GTU98/XXXXXXXXX (GTU98/ + 9 digits)
-  const GTU_PATTERN = /^GTU98\/\d{9}$/;
+  // 3. Delivery Note pattern: GTU98/XXXXXXXXX or GTS98/XXXXXXXXX (case-insensitive prefix)
+  const DN_PATTERN = /^gt[us]98\/\d{9}$/i;
   const malformedGTUs = [];
   rows.forEach((r, i) => {
     const gtu = (r.delivery_note_number || "").trim();
     if (!gtu) {
       malformedGTUs.push({
-        row: i + 2,
-        delivery_id: r.delivery_id,
-        gtu: "(vazio)",
-        beneficiary_name: r.beneficiary_name,
-        district: r.district,
-        reason: "GTU em branco",
+        row: i + 2, delivery_id: r.delivery_id, gtu: "(vazio)",
+        beneficiary_name: r.beneficiary_name, district: r.district,
+        reason: "Delivery Note em branco",
       });
       return;
     }
-    if (!GTU_PATTERN.test(gtu)) {
+    if (!DN_PATTERN.test(gtu)) {
       let reason = "";
-      if (!gtu.startsWith("GTU98/")) reason = "Prefixo incorrecto (esperado GTU98/)";
-      else if (gtu.replace("GTU98/", "").length !== 9) reason = "Comprimento incorrecto (" + gtu.length + " chars, esperado 15)";
-      else reason = "Caracteres invalidos apos GTU98/";
+      if (!/^gt[us]98\//i.test(gtu)) reason = "Prefixo incorrecto (esperado GTU98/ ou GTS98/)";
+      else {
+        const digits = gtu.replace(/^gt[us]98\//i, "");
+        if (digits.length !== 9) reason = "Comprimento incorrecto (" + gtu.length + " chars, esperado 15)";
+        else reason = "Caracteres invalidos apos prefixo";
+      }
       malformedGTUs.push({
-        row: i + 2,
-        delivery_id: r.delivery_id,
-        gtu,
-        beneficiary_name: r.beneficiary_name,
-        district: r.district,
-        reason,
+        row: i + 2, delivery_id: r.delivery_id, gtu,
+        beneficiary_name: r.beneficiary_name, district: r.district, reason,
       });
     }
   });
@@ -209,8 +212,8 @@ app.get("/api/verify", (_req, res) => {
     weight_mismatch_count: weightMismatches.length,
     malformed_gtus: malformedGTUs,
     malformed_gtu_count: malformedGTUs.length,
-    gtu_pattern: "GTU98/XXXXXXXXX",
-    unit_weight: UNIT_WEIGHT,
+    gtu_pattern: "GTU98/XXXXXXXXX ou GTS98/XXXXXXXXX",
+    unit_weights: UNIT_WEIGHTS,
   });
 });
 

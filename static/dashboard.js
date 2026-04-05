@@ -625,8 +625,8 @@
 
   // ── Client-side verification (for history mode) ─────────────
   function verifyClientSide(rows) {
-    const UNIT = 12.5;
-    const GTU_PATTERN = /^GTU98\/\d{9}$/;
+    const UNITS = [1, 5, 10, 12.5, 15, 50];
+    const DN_PATTERN = /^gt[us]98\/\d{9}$/i;
     const gtuMap = {};
     rows.forEach((r, i) => {
       const gtu = (r.delivery_note_number || "").trim();
@@ -640,17 +640,19 @@
     }
     const weight_mismatches = [];
     rows.forEach((r, i) => {
-      const exp = r.packages * UNIT;
-      if (r.packages > 0 && Math.abs(r.delivered_qty - exp) > 0.01) {
-        weight_mismatches.push({ row: i + 2, delivery_id: r.delivery_id, gtu: r.delivery_note_number, beneficiary_name: r.beneficiary_name, district: r.district, packages: r.packages, delivered_qty: r.delivered_qty, expected_qty: exp, difference: +(r.delivered_qty - exp).toFixed(2) });
+      if (r.packages <= 0) return;
+      const match = UNITS.find((u) => Math.abs(r.delivered_qty - r.packages * u) < 0.01);
+      if (!match) {
+        const closest = UNITS.reduce((b, u) => { const d = Math.abs(r.delivered_qty - r.packages * u); return d < b.diff ? { unit: u, expected: r.packages * u, diff: d } : b; }, { unit: 0, expected: 0, diff: Infinity });
+        weight_mismatches.push({ row: i + 2, delivery_id: r.delivery_id, gtu: r.delivery_note_number, beneficiary_name: r.beneficiary_name, district: r.district, product: r.product, packages: r.packages, delivered_qty: r.delivered_qty, closest_unit: closest.unit, expected_qty: closest.expected, difference: +(r.delivered_qty - closest.expected).toFixed(2) });
       }
     });
     const malformed_gtus = [];
     rows.forEach((r, i) => {
       const gtu = (r.delivery_note_number || "").trim();
-      if (!gtu) { malformed_gtus.push({ row: i + 2, delivery_id: r.delivery_id, gtu: "(vazio)", beneficiary_name: r.beneficiary_name, district: r.district, reason: "GTU em branco" }); return; }
-      if (!GTU_PATTERN.test(gtu)) {
-        let reason = !gtu.startsWith("GTU98/") ? "Prefixo incorrecto (esperado GTU98/)" : "Comprimento incorrecto (" + gtu.length + " chars, esperado 15)";
+      if (!gtu) { malformed_gtus.push({ row: i + 2, delivery_id: r.delivery_id, gtu: "(vazio)", beneficiary_name: r.beneficiary_name, district: r.district, reason: "Delivery Note em branco" }); return; }
+      if (!DN_PATTERN.test(gtu)) {
+        let reason = !/^gt[us]98\//i.test(gtu) ? "Prefixo incorrecto (esperado GTU98/ ou GTS98/)" : "Comprimento incorrecto (" + gtu.length + " chars, esperado 15)";
         malformed_gtus.push({ row: i + 2, delivery_id: r.delivery_id, gtu, beneficiary_name: r.beneficiary_name, district: r.district, reason });
       }
     });
@@ -723,7 +725,7 @@
         dupWrap.style.display = "none";
       }
 
-      // Weight mismatches table
+      // Weight mismatches table (collapsible)
       if (v.weight_mismatch_count > 0) {
         weightWrap.style.display = "block";
         weightBody.innerHTML = v.weight_mismatches
@@ -735,8 +737,10 @@
                 <td>${esc(m.delivery_id)}</td>
                 <td>${esc(m.beneficiary_name)}</td>
                 <td>${esc(m.district)}</td>
+                <td>${esc(m.product || "")}</td>
                 <td style="text-align:right">${fmt(m.packages)}</td>
                 <td style="text-align:right">${fmtDec(m.delivered_qty)}</td>
+                <td style="text-align:center;font-weight:600">${m.closest_unit || 12.5} kg</td>
                 <td style="text-align:right">${fmtDec(m.expected_qty)}</td>
                 <td class="${m.difference > 0 ? "diff-positive" : "diff-negative"}" style="text-align:right">
                   ${m.difference > 0 ? "+" : ""}${fmtDec(m.difference)}
@@ -1306,6 +1310,16 @@
 
     // Verification
     $("#btn-run-verify").addEventListener("click", runVerification);
+
+    // Weight section collapsible toggle
+    $("#weight-toggle").addEventListener("click", (e) => {
+      if (e.target.closest(".btn-export-xs")) return; // don't toggle on export click
+      const body = $("#weight-body-wrap");
+      const arrow = $("#weight-arrow");
+      const open = body.style.display === "none";
+      body.style.display = open ? "block" : "none";
+      arrow.classList.toggle("open", open);
+    });
 
     // Show verify section and auto-run on first load
     fetchData(false).then(() => {

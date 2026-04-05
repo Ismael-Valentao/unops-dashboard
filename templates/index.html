@@ -174,35 +174,42 @@
         </div>
       </div>
 
-      <!-- Weight mismatches -->
+      <!-- Weight mismatches (collapsible) -->
       <div id="verify-weight-wrap" style="display:none">
-        <div class="verify-sub-header">
-          <h4 class="verify-subtitle alert-orange">Discrepancias Peso (Pacotes x 12,5 &ne; Qtd. Entregue)</h4>
+        <div class="verify-sub-header collapsible-header" id="weight-toggle">
+          <h4 class="verify-subtitle alert-orange">
+            <span class="collapse-arrow" id="weight-arrow">&#9654;</span>
+            Discrepancias Peso (nenhum multiplo de 1, 5, 10, 12.5, 15, 50 kg)
+          </h4>
           <button class="btn-export-xs" data-export="peso" title="Exportar para Excel">Excel</button>
         </div>
-        <div class="table-wrap">
-          <table class="verify-table" id="weight-table">
-            <thead>
-              <tr>
-                <th>GTU</th>
-                <th>Delivery ID</th>
-                <th>Beneficiario</th>
-                <th>Distrito</th>
-                <th>Pacotes</th>
-                <th>Qtd. Entregue</th>
-                <th>Esperado (x12,5)</th>
-                <th>Diferenca</th>
-              </tr>
-            </thead>
-            <tbody id="weight-table-body"></tbody>
-          </table>
+        <div class="collapsible-body" id="weight-body-wrap" style="display:none">
+          <div class="table-wrap">
+            <table class="verify-table" id="weight-table">
+              <thead>
+                <tr>
+                  <th>Delivery Note</th>
+                  <th>Delivery ID</th>
+                  <th>Beneficiario</th>
+                  <th>Distrito</th>
+                  <th>Produto</th>
+                  <th>Pacotes</th>
+                  <th>Qtd. Entregue</th>
+                  <th>Unit. Prox.</th>
+                  <th>Esperado</th>
+                  <th>Diferenca</th>
+                </tr>
+              </thead>
+              <tbody id="weight-table-body"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       <!-- Malformed GTUs -->
       <div id="verify-pattern-wrap" style="display:none">
         <div class="verify-sub-header">
-          <h4 class="verify-subtitle alert-purple">GTUs Fora do Padrao (esperado: GTU98/XXXXXXXXX)</h4>
+          <h4 class="verify-subtitle alert-purple">Delivery Notes Fora do Padrao (esperado: GTU98/ ou GTS98/ + 9 digitos)</h4>
           <button class="btn-export-xs" data-export="padrao" title="Exportar para Excel">Excel</button>
         </div>
         <div class="table-wrap">

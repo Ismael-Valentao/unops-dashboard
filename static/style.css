@@ -360,6 +360,10 @@ mark.search-hl{background:#fef08a;color:#1e293b;border-radius:2px;padding:0 1px}
 .verify-table tbody tr.dup-highlight{background:#fef9c3}
 td.diff-negative{color:#dc2626;font-weight:600}
 td.diff-positive{color:#d97706;font-weight:600}
+.collapsible-header{cursor:pointer}
+.collapsible-header:hover{opacity:.85}
+.collapse-arrow{display:inline-block;transition:transform .2s;font-size:.7rem;margin-right:.3rem}
+.collapse-arrow.open{transform:rotate(90deg)}
 
 /* Export buttons */
 .btn-export-sm{background:#16653a;color:#fff;border:none;border-radius:8px;
