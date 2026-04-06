@@ -11,7 +11,10 @@
   <main class="admin-main">
     <header class="admin-header">
       <h1>Camioes</h1>
-      <button class="btn btn-primary" id="btn-new">+ Registar Camiao</button>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-success" id="btn-quick">⚡ Recepcao Rapida</button>
+        <button class="btn btn-primary" id="btn-new">+ Registar Camiao</button>
+      </div>
     </header>
 
     <section class="admin-filters">
@@ -39,7 +42,7 @@
     </section>
   </main>
 
-  <!-- Modal -->
+  <!-- Modal: Registar Camiao -->
   <div class="modal-overlay" id="modal" style="display:none">
     <div class="modal-card">
       <div class="modal-head">
@@ -62,6 +65,43 @@
         </label>
         <label>Notas<textarea name="notes" rows="3"></textarea></label>
         <button type="submit" class="btn btn-primary">Criar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Recepcao Rapida -->
+  <div class="modal-overlay" id="quick-modal" style="display:none">
+    <div class="modal-card" style="max-width:680px">
+      <div class="modal-head">
+        <h2>⚡ Recepcao Rapida</h2>
+        <button class="modal-x" onclick="document.getElementById('quick-modal').style.display='none'">&times;</button>
+      </div>
+      <form id="quick-form" class="modal-form">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+          <label>Matricula *<input type="text" name="plate" required></label>
+          <label>Motorista<input type="text" name="driver_name"></label>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+          <label>Telefone<input type="text" name="driver_phone"></label>
+          <label>Fornecedor
+            <select name="supplier_id" id="q-supplier"><option value="">—</option></select>
+          </label>
+        </div>
+        <label>Armazem destino *
+          <select name="warehouse_id" id="q-warehouse" required>
+            <option value="">— Seleccionar armazem —</option>
+          </select>
+        </label>
+        <label>Notas<textarea name="notes" rows="2"></textarea></label>
+
+        <div style="border-top:1px solid #e2e8f0;padding-top:.75rem;margin-top:.5rem">
+          <strong style="font-size:.78rem;color:#475569">Carga (multiplos produtos)</strong>
+          <div id="q-items" style="margin-top:.5rem"></div>
+          <button type="button" class="btn btn-sm" id="q-add">+ Adicionar produto</button>
+        </div>
+
+        <button type="submit" class="btn btn-success">Receber e Descarregar</button>
+        <div id="q-err" class="auth-error"></div>
       </form>
     </div>
   </div>
@@ -109,6 +149,82 @@
       document.getElementById("modal").style.display = "none";
       e.target.reset();
       loadTrucks();
+    });
+
+    // ── Quick Receive ──────────────────────────────────────
+    let qProducts = [], qWarehouses = [];
+    function qItemRow() {
+      return `<div class="q-item-row" style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:.4rem;margin-bottom:.4rem">
+        <select name="product_id" required>
+          <option value="">— Produto —</option>
+          ${qProducts.map((p) => `<option value="${p.id}" data-unit="${p.default_unit}">${AdminUI.esc(p.name)}</option>`).join("")}
+        </select>
+        <input type="number" name="qty" step="0.01" placeholder="Qtd" required>
+        <input type="text" name="unit" placeholder="kg" value="kg">
+        <button type="button" class="btn btn-sm btn-danger" onclick="this.closest('.q-item-row').remove()">x</button>
+      </div>`;
+    }
+
+    document.getElementById("btn-quick").addEventListener("click", async () => {
+      AdminUI.clearCache();
+      const [suppliers, products, warehouses] = await Promise.all([
+        AdminUI.fetchJSON("/admin/api/suppliers"),
+        AdminUI.loadProducts(),
+        AdminUI.loadWarehouses(),
+      ]);
+      qProducts = products; qWarehouses = warehouses;
+      document.getElementById("q-supplier").innerHTML = '<option value="">— Sem fornecedor —</option>' +
+        suppliers.map((s) => `<option value="${s.id}">${AdminUI.esc(s.name)}</option>`).join("");
+      document.getElementById("q-warehouse").innerHTML = '<option value="">— Seleccionar armazem —</option>' +
+        warehouses.map((w) => `<option value="${w.id}">${AdminUI.esc(w.name)}</option>`).join("");
+      document.getElementById("q-items").innerHTML = qItemRow();
+      document.getElementById("q-err").textContent = "";
+      document.getElementById("quick-modal").style.display = "flex";
+    });
+
+    document.getElementById("q-add").addEventListener("click", () => {
+      document.getElementById("q-items").insertAdjacentHTML("beforeend", qItemRow());
+    });
+
+    document.getElementById("q-items").addEventListener("change", (e) => {
+      if (e.target.name === "product_id") {
+        const opt = e.target.selectedOptions[0];
+        const unit = opt && opt.dataset.unit;
+        if (unit) e.target.closest(".q-item-row").querySelector("[name='unit']").value = unit;
+      }
+    });
+
+    document.getElementById("quick-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const items = [];
+      document.querySelectorAll(".q-item-row").forEach((row) => {
+        const product_id = row.querySelector("[name='product_id']").value;
+        const qty = row.querySelector("[name='qty']").value;
+        const unit = row.querySelector("[name='unit']").value;
+        if (product_id && qty) items.push({ product_id: Number(product_id), qty: Number(qty), unit });
+      });
+      if (items.length === 0) {
+        document.getElementById("q-err").textContent = "Adicionar pelo menos um produto";
+        return;
+      }
+      const data = {
+        plate: fd.get("plate"),
+        driver_name: fd.get("driver_name"),
+        driver_phone: fd.get("driver_phone"),
+        supplier_id: fd.get("supplier_id") || null,
+        warehouse_id: Number(fd.get("warehouse_id")),
+        notes: fd.get("notes"),
+        items,
+      };
+      try {
+        await AdminUI.fetchJSON("/admin/api/trucks/quick-receive", { method: "POST", body: data });
+        document.getElementById("quick-modal").style.display = "none";
+        e.target.reset();
+        loadTrucks();
+      } catch (err) {
+        document.getElementById("q-err").textContent = err.message;
+      }
     });
 
     loadTrucks();

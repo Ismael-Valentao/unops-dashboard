@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Detalhe Plano</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <a href="/admin/plans" class="link">&larr; Planos</a>
+    <header class="admin-header" id="header"></header>
+
+    <section class="admin-section">
+      <h2>Itens do Plano</h2>
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Produto</th><th>Qtd</th><th>Unidade</th><th>Armazem origem</th><th>Beneficiario</th><th>Estado</th></tr></thead>
+          <tbody id="items-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <h2>Detalhes</h2>
+      <div id="details"></div>
+      <div class="action-row" id="actions" style="margin-top:1rem"></div>
+    </section>
+  </main>
+  <script src="/static/admin.js"></script>
+  <script>
+    AdminUI.renderLayout("plans");
+    const planId = location.pathname.split("/").pop();
+
+    async function load() {
+      const p = await AdminUI.fetchJSON("/admin/api/plans/" + planId);
+      document.getElementById("header").innerHTML = `
+        <div>
+          <h1>${AdminUI.esc(p.name)}</h1>
+          <span class="admin-sub">${AdminUI.esc(p.ref_number || "")} ${p.target_district ? "&bull; " + AdminUI.esc(p.target_district) : ""}</span>
+        </div>
+        <span class="badge">${p.status}</span>
+      `;
+      document.getElementById("items-body").innerHTML = (p.items || []).map((i) =>
+        `<tr><td><strong>${AdminUI.esc(i.product_name)}</strong></td>
+         <td>${AdminUI.fmt(i.qty)}</td>
+         <td>${AdminUI.esc(i.unit)}</td>
+         <td>${AdminUI.esc(i.warehouse_name || "—")}</td>
+         <td>${AdminUI.esc(i.beneficiary || "—")}</td>
+         <td><span class="badge">${i.status}</span></td></tr>`
+      ).join("") || `<tr><td colspan="6" class="empty">Sem itens</td></tr>`;
+
+      document.getElementById("details").innerHTML = `
+        <p><strong>Provincia:</strong> ${AdminUI.esc(p.target_province || "—")}</p>
+        <p><strong>Distrito:</strong> ${AdminUI.esc(p.target_district || "—")}</p>
+        <p><strong>Data alvo:</strong> ${p.target_date || "—"}</p>
+        <p><strong>Notas:</strong> ${AdminUI.esc(p.notes || "—")}</p>
+      `;
+
+      const actions = [];
+      if (p.status === "draft") actions.push(`<button class="btn btn-primary" onclick="reservePlan()">Reservar Stock</button>`);
+      if (p.status !== "cancelled" && p.status !== "completed") actions.push(`<button class="btn btn-danger" onclick="cancelPlan()">Cancelar</button>`);
+      document.getElementById("actions").innerHTML = actions.join(" ");
+    }
+
+    async function reservePlan() {
+      if (!confirm("Reservar stock para este plano?")) return;
+      await AdminUI.fetchJSON("/admin/api/plans/" + planId + "/reserve", { method: "POST" });
+      load();
+    }
+    async function cancelPlan() {
+      if (!confirm("Cancelar plano?")) return;
+      await AdminUI.fetchJSON("/admin/api/plans/" + planId + "/cancel", { method: "POST" });
+      load();
+    }
+    window.reservePlan = reservePlan; window.cancelPlan = cancelPlan;
+    load();
+  </script>
+</body>
+</html>

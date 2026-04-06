@@ -41,6 +41,61 @@ async function execute(sql, params) {
   return result;
 }
 
+async function columnExists(table, column) {
+  const dbName = process.env.DB_NAME || "aqi_operations";
+  const row = await queryOne(
+    `SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`,
+    [dbName, table, column]
+  );
+  return !!row;
+}
+
+async function migrate() {
+  // truck_cargo: add product_id and unloaded_to_warehouse_id
+  if (!(await columnExists("truck_cargo", "product_id"))) {
+    await getPool().query("ALTER TABLE truck_cargo ADD COLUMN product_id INT NULL AFTER truck_id");
+    try { await getPool().query("ALTER TABLE truck_cargo ADD CONSTRAINT fk_tc_product FOREIGN KEY (product_id) REFERENCES products(id)"); } catch (e) {}
+    console.log("[DB] migrated truck_cargo.product_id");
+  }
+  if (!(await columnExists("truck_cargo", "unloaded_to_warehouse_id"))) {
+    await getPool().query("ALTER TABLE truck_cargo ADD COLUMN unloaded_to_warehouse_id INT NULL AFTER unit");
+    try { await getPool().query("ALTER TABLE truck_cargo ADD CONSTRAINT fk_tc_warehouse FOREIGN KEY (unloaded_to_warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL"); } catch (e) {}
+    console.log("[DB] migrated truck_cargo.unloaded_to_warehouse_id");
+  }
+
+  // stock_movements: add product_id, warehouse_id, departure_id + extend type enum
+  if (!(await columnExists("stock_movements", "product_id"))) {
+    await getPool().query("ALTER TABLE stock_movements ADD COLUMN product_id INT NULL");
+    try { await getPool().query("ALTER TABLE stock_movements ADD CONSTRAINT fk_sm_product FOREIGN KEY (product_id) REFERENCES products(id)"); } catch (e) {}
+    console.log("[DB] migrated stock_movements.product_id");
+  }
+  if (!(await columnExists("stock_movements", "warehouse_id"))) {
+    await getPool().query("ALTER TABLE stock_movements ADD COLUMN warehouse_id INT NULL");
+    try { await getPool().query("ALTER TABLE stock_movements ADD CONSTRAINT fk_sm_warehouse FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL"); } catch (e) {}
+    console.log("[DB] migrated stock_movements.warehouse_id");
+  }
+  if (!(await columnExists("stock_movements", "departure_id"))) {
+    await getPool().query("ALTER TABLE stock_movements ADD COLUMN departure_id INT NULL");
+    try { await getPool().query("ALTER TABLE stock_movements ADD CONSTRAINT fk_sm_departure FOREIGN KEY (departure_id) REFERENCES truck_departures(id) ON DELETE SET NULL"); } catch (e) {}
+    console.log("[DB] migrated stock_movements.departure_id");
+  }
+  // Extend ENUM (always safe to re-run)
+  await getPool().query(
+    `ALTER TABLE stock_movements MODIFY COLUMN type ENUM(
+      'truck_in','truck_unload','transfer_out','transfer_in','adjustment',
+      'warehouse_in','warehouse_out','departure'
+    ) NOT NULL`
+  );
+
+  // requisitions: add product_id
+  if (!(await columnExists("requisitions", "product_id"))) {
+    await getPool().query("ALTER TABLE requisitions ADD COLUMN product_id INT NULL");
+    try { await getPool().query("ALTER TABLE requisitions ADD CONSTRAINT fk_req_product FOREIGN KEY (product_id) REFERENCES products(id)"); } catch (e) {}
+    console.log("[DB] migrated requisitions.product_id");
+  }
+}
+
 async function init() {
   // Test connection
   const conn = await getPool().getConnection();
@@ -64,7 +119,11 @@ async function init() {
       throw e;
     }
   }
-  console.log("[DB] MySQL connected and schema ready");
+
+  // Run incremental migrations
+  await migrate();
+
+  console.log("[DB] MySQL connected, schema ready, migrations applied");
 }
 
 async function hasAnyUser() {

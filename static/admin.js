@@ -1,13 +1,17 @@
 /* ── AQI Admin UI helpers ─────────────────────────────────── */
 window.AdminUI = (function () {
   const NAV = [
-    { key: "dashboard", label: "Dashboard", icon: "▣", href: "/admin" },
-    { key: "trucks",    label: "Camioes",   icon: "🚛", href: "/admin/trucks" },
-    { key: "stock",     label: "Stock",     icon: "📦", href: "/admin/stock" },
-    { key: "suppliers", label: "Fornecedores", icon: "🏭", href: "/admin/suppliers" },
-    { key: "requisitions", label: "Requisicoes", icon: "📋", href: "/admin/requisitions" },
-    { key: "audit",     label: "Auditoria", icon: "🔍", href: "/admin/audit", roles: ["superadmin", "admin"] },
-    { key: "users",     label: "Utilizadores", icon: "👥", href: "/admin/users", roles: ["superadmin"] },
+    { key: "dashboard",    label: "Dashboard",    icon: "▣",  href: "/admin" },
+    { key: "trucks",       label: "Camioes",      icon: "🚛", href: "/admin/trucks" },
+    { key: "departures",   label: "Saidas",       icon: "📤", href: "/admin/departures" },
+    { key: "stock",        label: "Stock",        icon: "📦", href: "/admin/stock" },
+    { key: "warehouses",   label: "Armazens",     icon: "🏬", href: "/admin/warehouses" },
+    { key: "products",     label: "Produtos",     icon: "🏷",  href: "/admin/products" },
+    { key: "plans",        label: "Planos",       icon: "🗺",  href: "/admin/plans" },
+    { key: "suppliers",    label: "Fornecedores", icon: "🏭", href: "/admin/suppliers" },
+    { key: "requisitions", label: "Requisicoes",  icon: "📋", href: "/admin/requisitions" },
+    { key: "audit",        label: "Auditoria",    icon: "🔍", href: "/admin/audit", roles: ["superadmin", "admin"] },
+    { key: "users",        label: "Utilizadores", icon: "👥", href: "/admin/users", roles: ["superadmin"] },
   ];
 
   function esc(s) {
@@ -35,8 +39,27 @@ window.AdminUI = (function () {
       expected: "Esperado", arrived: "Chegou", unloading: "A descarregar",
       unloaded: "Descarregado", transferred: "Transferido", cancelled: "Cancelado",
       pending: "Pendente", partial: "Parcial", received: "Recebida",
+      planned: "Planeada", in_transit: "Em transito", delivered: "Entregue",
+      draft: "Rascunho", reserved: "Reservado", executing: "Em execucao", completed: "Completo",
     };
     return `<span class="badge badge-${status}">${labels[status] || status}</span>`;
+  }
+
+  // ── Product/Warehouse loaders cached ────────────────────────
+  let _productsCache = null;
+  let _warehousesCache = null;
+  async function loadProducts() {
+    if (!_productsCache) _productsCache = await fetchJSON("/admin/api/products");
+    return _productsCache;
+  }
+  async function loadWarehouses() {
+    if (!_warehousesCache) _warehousesCache = await fetchJSON("/admin/api/warehouses");
+    return _warehousesCache;
+  }
+  function clearCache() { _productsCache = null; _warehousesCache = null; }
+  function productSelectOptions(products, selectedId) {
+    return '<option value="">— Seleccionar produto —</option>' +
+      products.map((p) => `<option value="${p.id}" data-unit="${p.default_unit}" ${p.id == selectedId ? "selected" : ""}>${esc(p.name)}</option>`).join("");
   }
 
   async function fetchJSON(url, opts) {
@@ -89,5 +112,8 @@ window.AdminUI = (function () {
     `;
   }
 
-  return { esc, fmt, fmtDate, statusBadge, fetchJSON, renderLayout, loadMe };
+  return {
+    esc, fmt, fmtDate, statusBadge, fetchJSON, renderLayout, loadMe,
+    loadProducts, loadWarehouses, productSelectOptions, clearCache,
+  };
 })();

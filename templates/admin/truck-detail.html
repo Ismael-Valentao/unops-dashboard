@@ -55,18 +55,34 @@
       <div class="action-row">
         <button class="btn" data-status="arrived">Marcar como Chegou</button>
         <button class="btn" data-status="unloading">Marcar a Descarregar</button>
-        <button class="btn btn-success" data-status="unloaded">Marcar Descarregado</button>
+        <button class="btn btn-success" id="btn-unload-wh">Descarregar para Armazem</button>
         <button class="btn btn-danger" data-status="cancelled">Cancelar</button>
       </div>
     </section>
   </main>
+
+  <!-- Unload to warehouse modal -->
+  <div class="modal-overlay" id="unload-modal" style="display:none">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Descarregar para Armazem</h2><button class="modal-x" data-close>&times;</button></div>
+      <form id="unload-form" class="modal-form">
+        <p style="font-size:.78rem;color:#64748b">Toda a carga pendente sera descarregada no armazem seleccionado e ficara registada como stock disponivel.</p>
+        <label>Armazem destino *
+          <select name="warehouse_id" id="unload-warehouse" required></select>
+        </label>
+        <button type="submit" class="btn btn-success">Confirmar Descarregamento</button>
+      </form>
+    </div>
+  </div>
 
   <!-- Cargo modal -->
   <div class="modal-overlay" id="cargo-modal" style="display:none">
     <div class="modal-card">
       <div class="modal-head"><h2>Adicionar Carga</h2><button class="modal-x" data-close>&times;</button></div>
       <form id="cargo-form" class="modal-form">
-        <label>Produto *<input type="text" name="product" required></label>
+        <label>Produto *
+          <select name="product_id" id="cargo-product" required></select>
+        </label>
         <label>Quantidade *<input type="number" name="qty" step="0.01" required></label>
         <label>Unidade *
           <select name="unit" required>
@@ -167,15 +183,55 @@
     window.removeCargo = removeCargo;
     window.removeAttachment = removeAttachment;
 
-    document.getElementById("btn-add-cargo").addEventListener("click", () => {
+    document.getElementById("btn-add-cargo").addEventListener("click", async () => {
+      const products = await AdminUI.loadProducts();
+      document.getElementById("cargo-product").innerHTML = AdminUI.productSelectOptions(products);
       document.getElementById("cargo-modal").style.display = "flex";
     });
     document.getElementById("cargo-form").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const data = Object.fromEntries(new FormData(e.target));
+      const fd = new FormData(e.target);
+      const productId = Number(fd.get("product_id"));
+      const products = await AdminUI.loadProducts();
+      const product = products.find((p) => p.id === productId);
+      if (!product) { alert("Seleccione um produto"); return; }
+      const data = {
+        product: product.name,
+        product_id: product.id,
+        qty: Number(fd.get("qty")),
+        unit: fd.get("unit") || product.default_unit,
+        notes: fd.get("notes"),
+      };
       await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/cargo", { method: "POST", body: data });
       document.getElementById("cargo-modal").style.display = "none";
       e.target.reset();
+      loadTruck();
+    });
+
+    // Auto-fill unit when product changes
+    document.getElementById("cargo-product").addEventListener("change", (e) => {
+      const opt = e.target.selectedOptions[0];
+      const unit = opt && opt.dataset.unit;
+      if (unit) {
+        const unitField = document.querySelector("#cargo-form [name='unit']");
+        if (unitField) unitField.value = unit;
+      }
+    });
+
+    // Unload to warehouse
+    document.getElementById("btn-unload-wh").addEventListener("click", async () => {
+      const warehouses = await AdminUI.loadWarehouses();
+      document.getElementById("unload-warehouse").innerHTML =
+        '<option value="">— Seleccionar armazem —</option>' +
+        warehouses.map((w) => `<option value="${w.id}">${AdminUI.esc(w.name)}</option>`).join("");
+      document.getElementById("unload-modal").style.display = "flex";
+    });
+    document.getElementById("unload-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/unload-to-warehouse",
+        { method: "POST", body: { warehouse_id: Number(fd.get("warehouse_id")) } });
+      document.getElementById("unload-modal").style.display = "none";
       loadTruck();
     });
 

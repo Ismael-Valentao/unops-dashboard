@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Armazens</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Armazens</h1>
+      <button class="btn btn-primary" id="btn-new">+ Novo Armazem</button>
+    </header>
+    <section class="admin-section">
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Codigo</th><th>Nome</th><th>Provincia</th><th>Distrito</th><th>Gerente</th><th>Activo</th><th></th></tr></thead>
+          <tbody id="wh-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="modal" style="display:none">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Armazem</h2><button class="modal-x" data-close>&times;</button></div>
+      <form id="form" class="modal-form">
+        <input type="hidden" name="id">
+        <label>Codigo (opcional)<input type="text" name="code" placeholder="ex: ARM-MAP-01"></label>
+        <label>Nome *<input type="text" name="name" required></label>
+        <label>Provincia<input type="text" name="province"></label>
+        <label>Distrito<input type="text" name="district"></label>
+        <label>Endereco<input type="text" name="address"></label>
+        <label>Gerente<input type="text" name="manager_name"></label>
+        <label>Telefone gerente<input type="text" name="manager_phone"></label>
+        <label>Notas<textarea name="notes" rows="2"></textarea></label>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    AdminUI.renderLayout("warehouses");
+    let me; AdminUI.loadMe().then((u) => { me = u; load(); });
+
+    async function load() {
+      const list = await AdminUI.fetchJSON("/admin/api/warehouses?all=1");
+      document.getElementById("wh-body").innerHTML = list.map((w) =>
+        `<tr style="${w.active ? '' : 'opacity:.5'}">
+          <td>${AdminUI.esc(w.code || "—")}</td>
+          <td><a href="/admin/warehouses/${w.id}" class="link">${AdminUI.esc(w.name)}</a></td>
+          <td>${AdminUI.esc(w.province || "—")}</td>
+          <td>${AdminUI.esc(w.district || "—")}</td>
+          <td>${AdminUI.esc(w.manager_name || "—")}</td>
+          <td>${w.active ? '<span style="color:#16a34a">Sim</span>' : '<span style="color:#dc2626">Nao</span>'}</td>
+          <td>${me && (me.role === "superadmin" || me.role === "admin") ? `
+            <button class="btn btn-sm" onclick='editWh(${JSON.stringify(w)})'>Editar</button>
+          ` : ""}</td>
+        </tr>`
+      ).join("") || `<tr><td colspan="7" class="empty">Sem armazens</td></tr>`;
+    }
+    function editWh(w) {
+      const f = document.getElementById("form");
+      f.id.value = w.id; f.code.value = w.code || ""; f.name.value = w.name;
+      f.province.value = w.province || ""; f.district.value = w.district || "";
+      f.address.value = w.address || ""; f.manager_name.value = w.manager_name || "";
+      f.manager_phone.value = w.manager_phone || ""; f.notes.value = w.notes || "";
+      document.getElementById("modal").style.display = "flex";
+    }
+    window.editWh = editWh;
+
+    document.getElementById("btn-new").addEventListener("click", () => {
+      document.getElementById("form").reset();
+      document.getElementById("modal").style.display = "flex";
+    });
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      const id = data.id; delete data.id;
+      if (id) await AdminUI.fetchJSON("/admin/api/warehouses/" + id, { method: "PUT", body: data });
+      else await AdminUI.fetchJSON("/admin/api/warehouses", { method: "POST", body: data });
+      document.getElementById("modal").style.display = "none";
+      load();
+    });
+    document.querySelectorAll("[data-close]").forEach((b) =>
+      b.addEventListener("click", () => b.closest(".modal-overlay").style.display = "none"));
+  </script>
+</body>
+</html>

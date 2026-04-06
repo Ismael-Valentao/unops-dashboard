@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Saidas</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Saidas de Camiao</h1>
+      <button class="btn btn-primary" id="btn-new">+ Registar Saida</button>
+    </header>
+
+    <section class="admin-filters">
+      <select id="f-status">
+        <option value="">Todos os estados</option>
+        <option value="planned">Planeada</option>
+        <option value="in_transit">Em transito</option>
+        <option value="delivered">Entregue</option>
+        <option value="cancelled">Cancelada</option>
+      </select>
+    </section>
+
+    <section class="admin-section">
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr>
+            <th>Camiao</th><th>Origem</th><th>Destino</th><th>Itens</th>
+            <th>Estado</th><th>Saiu em</th><th></th>
+          </tr></thead>
+          <tbody id="dep-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="modal" style="display:none">
+    <div class="modal-card" style="max-width:640px">
+      <div class="modal-head"><h2>Registar Saida</h2><button class="modal-x" data-close>&times;</button></div>
+      <form id="form" class="modal-form">
+        <label>Camiao *
+          <select name="truck_id" id="sel-truck" required></select>
+        </label>
+        <label>Origem da carga *
+          <select name="source_type" id="sel-source" required>
+            <option value="warehouse">A partir de armazem</option>
+            <option value="truck">Directo do camiao (sem passar por armazem)</option>
+          </select>
+        </label>
+        <label id="lbl-warehouse">Armazem origem
+          <select name="source_warehouse_id" id="sel-warehouse"></select>
+        </label>
+        <label>Provincia destino<input type="text" name="destination_province"></label>
+        <label>Distrito destino<input type="text" name="destination_district"></label>
+        <label>Beneficiario / Posto<input type="text" name="destination_name"></label>
+        <label>Contacto<input type="text" name="destination_contact"></label>
+        <label>Notas<textarea name="notes" rows="2"></textarea></label>
+
+        <div style="border-top:1px solid #e2e8f0;padding-top:.75rem;margin-top:.5rem">
+          <strong style="font-size:.78rem;color:#475569">Itens da carga</strong>
+          <div id="items-list" style="margin-top:.5rem"></div>
+          <button type="button" class="btn btn-sm" id="add-item">+ Adicionar item</button>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Registar Saida</button>
+        <div id="err" class="auth-error"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    AdminUI.renderLayout("departures");
+    let products = [];
+    let warehouses = [];
+    let trucks = [];
+
+    async function load() {
+      const status = document.getElementById("f-status").value;
+      const qs = status ? "?status=" + encodeURIComponent(status) : "";
+      const list = await AdminUI.fetchJSON("/admin/api/departures" + qs);
+      document.getElementById("dep-body").innerHTML = list.map((d) => {
+        const dest = [d.destination_district, d.destination_name].filter(Boolean).join(" / ") || "—";
+        const origem = d.source_type === "warehouse" ? (d.warehouse_name || "Armazem") : "Directo do camiao";
+        return `<tr>
+          <td><strong>${AdminUI.esc(d.plate)}</strong></td>
+          <td>${AdminUI.esc(origem)}</td>
+          <td>${AdminUI.esc(dest)}</td>
+          <td style="text-align:center">${d.items_count}</td>
+          <td>${AdminUI.statusBadge(d.status)}</td>
+          <td>${AdminUI.fmtDate(d.departed_at)}</td>
+          <td>
+            ${d.status === "in_transit" ? `<button class="btn btn-sm btn-success" onclick="markDelivered(${d.id})">Entregue</button>` : ""}
+            ${d.status !== "cancelled" && d.status !== "delivered" ? `<button class="btn btn-sm btn-danger" onclick="cancelDep(${d.id})">x</button>` : ""}
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="7" class="empty">Sem saidas registadas</td></tr>`;
+    }
+
+    async function markDelivered(id) {
+      if (!confirm("Marcar como entregue?")) return;
+      await AdminUI.fetchJSON("/admin/api/departures/" + id + "/delivered", { method: "POST" });
+      load();
+    }
+    async function cancelDep(id) {
+      if (!confirm("Cancelar saida?")) return;
+      await AdminUI.fetchJSON("/admin/api/departures/" + id + "/cancel", { method: "POST" });
+      load();
+    }
+    window.markDelivered = markDelivered; window.cancelDep = cancelDep;
+
+    function renderItem(idx) {
+      return `<div class="item-row" data-idx="${idx}" style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:.4rem;margin-bottom:.4rem">
+        <select name="product_id" required>
+          <option value="">— Produto —</option>
+          ${products.map((p) => `<option value="${p.id}" data-unit="${p.default_unit}">${AdminUI.esc(p.name)}</option>`).join("")}
+        </select>
+        <input type="number" name="qty" step="0.01" placeholder="Qtd" required>
+        <input type="text" name="unit" placeholder="kg" value="kg">
+        <button type="button" class="btn btn-sm btn-danger" onclick="this.closest('.item-row').remove()">x</button>
+      </div>`;
+    }
+
+    document.getElementById("btn-new").addEventListener("click", async () => {
+      [products, warehouses, trucks] = await Promise.all([
+        AdminUI.fetchJSON("/admin/api/products"),
+        AdminUI.fetchJSON("/admin/api/warehouses"),
+        AdminUI.fetchJSON("/admin/api/trucks"),
+      ]);
+      document.getElementById("sel-truck").innerHTML = '<option value="">— Camiao —</option>' +
+        trucks.map((t) => `<option value="${t.id}">${AdminUI.esc(t.plate)} (${AdminUI.esc(t.supplier_name || "—")})</option>`).join("");
+      document.getElementById("sel-warehouse").innerHTML = '<option value="">— Armazem —</option>' +
+        warehouses.map((w) => `<option value="${w.id}">${AdminUI.esc(w.name)}</option>`).join("");
+      document.getElementById("items-list").innerHTML = renderItem(0);
+      document.getElementById("err").textContent = "";
+      document.getElementById("modal").style.display = "flex";
+    });
+
+    document.getElementById("sel-source").addEventListener("change", (e) => {
+      document.getElementById("lbl-warehouse").style.display = e.target.value === "warehouse" ? "flex" : "none";
+    });
+
+    document.getElementById("add-item").addEventListener("click", () => {
+      const list = document.getElementById("items-list");
+      list.insertAdjacentHTML("beforeend", renderItem(list.children.length));
+    });
+
+    // Auto-fill unit when product changes
+    document.getElementById("items-list").addEventListener("change", (e) => {
+      if (e.target.name === "product_id") {
+        const opt = e.target.selectedOptions[0];
+        const unit = opt && opt.dataset.unit;
+        if (unit) {
+          const row = e.target.closest(".item-row");
+          row.querySelector("[name='unit']").value = unit;
+        }
+      }
+    });
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const items = [];
+      document.querySelectorAll(".item-row").forEach((row) => {
+        const product_id = row.querySelector("[name='product_id']").value;
+        const qty = row.querySelector("[name='qty']").value;
+        const unit = row.querySelector("[name='unit']").value;
+        if (product_id && qty) items.push({ product_id: Number(product_id), qty: Number(qty), unit });
+      });
+      if (items.length === 0) { document.getElementById("err").textContent = "Adicionar pelo menos um item"; return; }
+      const data = {
+        truck_id: Number(fd.get("truck_id")),
+        source_type: fd.get("source_type"),
+        source_warehouse_id: fd.get("source_type") === "warehouse" ? Number(fd.get("source_warehouse_id")) : null,
+        destination_province: fd.get("destination_province"),
+        destination_district: fd.get("destination_district"),
+        destination_name: fd.get("destination_name"),
+        destination_contact: fd.get("destination_contact"),
+        notes: fd.get("notes"),
+        items,
+      };
+      try {
+        await AdminUI.fetchJSON("/admin/api/departures", { method: "POST", body: data });
+        document.getElementById("modal").style.display = "none";
+        load();
+      } catch (err) {
+        document.getElementById("err").textContent = err.message;
+      }
+    });
+
+    document.getElementById("f-status").addEventListener("change", load);
+    document.querySelectorAll("[data-close]").forEach((b) =>
+      b.addEventListener("click", () => b.closest(".modal-overlay").style.display = "none"));
+    load();
+  </script>
+</body>
+</html>

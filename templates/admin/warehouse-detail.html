@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Detalhe Armazem</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <a href="/admin/warehouses" class="link">&larr; Armazens</a>
+    <header class="admin-header" id="header"></header>
+
+    <section class="admin-section">
+      <h2>Stock Actual</h2>
+      <div class="admin-cards" id="stock-cards"></div>
+    </section>
+
+    <section class="admin-section">
+      <h2>Detalhes</h2>
+      <div id="details"></div>
+    </section>
+  </main>
+  <script src="/static/admin.js"></script>
+  <script>
+    AdminUI.renderLayout("warehouses");
+    const wId = location.pathname.split("/").pop();
+
+    AdminUI.fetchJSON("/admin/api/warehouses/" + wId).then((w) => {
+      document.getElementById("header").innerHTML = `
+        <div>
+          <h1>${AdminUI.esc(w.name)}</h1>
+          <span class="admin-sub">${AdminUI.esc(w.code || "")} ${w.province ? "&bull; " + AdminUI.esc(w.province) : ""} ${w.district ? "/ " + AdminUI.esc(w.district) : ""}</span>
+        </div>`;
+
+      document.getElementById("stock-cards").innerHTML = (w.stock || []).map((s) =>
+        `<div class="adm-card adm-card-blue">
+          <div class="adm-card-lbl">${AdminUI.esc(s.product)}</div>
+          <div class="adm-card-val">${AdminUI.fmt(s.qty)}</div>
+          <div class="adm-card-sub">${AdminUI.esc(s.unit)}</div>
+        </div>`
+      ).join("") || `<div class="empty">Sem stock neste armazem</div>`;
+
+      document.getElementById("details").innerHTML = `
+        <p><strong>Endereco:</strong> ${AdminUI.esc(w.address || "—")}</p>
+        <p><strong>Gerente:</strong> ${AdminUI.esc(w.manager_name || "—")} ${w.manager_phone ? "(" + AdminUI.esc(w.manager_phone) + ")" : ""}</p>
+        <p><strong>Notas:</strong> ${AdminUI.esc(w.notes || "—")}</p>
+      `;
+    });
+  </script>
+</body>
+</html>

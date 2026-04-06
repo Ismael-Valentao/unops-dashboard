@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Produtos</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Catalogo de Produtos</h1>
+      <button class="btn btn-primary" id="btn-new">+ Novo Produto</button>
+    </header>
+    <section class="admin-section">
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Codigo</th><th>Nome</th><th>Categoria</th><th>Unidade</th><th>Activo</th><th></th></tr></thead>
+          <tbody id="prod-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="modal" style="display:none">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Produto</h2><button class="modal-x" data-close>&times;</button></div>
+      <form id="form" class="modal-form">
+        <input type="hidden" name="id">
+        <label>Codigo (opcional)<input type="text" name="code" placeholder="ex: MILHO-12.5"></label>
+        <label>Nome *<input type="text" name="name" required></label>
+        <label>Categoria<input type="text" name="category" placeholder="ex: Sementes, Fertilizante"></label>
+        <label>Unidade Padrao *
+          <select name="default_unit" required>
+            <option value="kg">kg</option>
+            <option value="ton">ton</option>
+            <option value="sacos">sacos</option>
+            <option value="caixas">caixas</option>
+            <option value="unid">unid</option>
+            <option value="L">L</option>
+          </select>
+        </label>
+        <label>Notas<textarea name="notes" rows="2"></textarea></label>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+        <div id="err" class="auth-error"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    AdminUI.renderLayout("products");
+    let me;
+    AdminUI.loadMe().then((u) => { me = u; load(); });
+
+    async function load() {
+      const list = await AdminUI.fetchJSON("/admin/api/products?all=1");
+      document.getElementById("prod-body").innerHTML = list.map((p) =>
+        `<tr style="${p.active ? '' : 'opacity:.5'}">
+          <td>${AdminUI.esc(p.code || "—")}</td>
+          <td><strong>${AdminUI.esc(p.name)}</strong></td>
+          <td>${AdminUI.esc(p.category || "—")}</td>
+          <td>${AdminUI.esc(p.default_unit)}</td>
+          <td>${p.active ? '<span style="color:#16a34a">Sim</span>' : '<span style="color:#dc2626">Nao</span>'}</td>
+          <td>${me && me.role === "superadmin" ? `
+            <button class="btn btn-sm" onclick='editProd(${JSON.stringify(p)})'>Editar</button>
+            <button class="btn btn-sm" onclick="toggleActive(${p.id}, ${p.active ? 0 : 1})">${p.active ? "Desactivar" : "Activar"}</button>
+          ` : ""}</td>
+        </tr>`
+      ).join("") || `<tr><td colspan="6" class="empty">Sem produtos cadastrados</td></tr>`;
+    }
+
+    function editProd(p) {
+      const f = document.getElementById("form");
+      f.id.value = p.id; f.code.value = p.code || ""; f.name.value = p.name;
+      f.category.value = p.category || ""; f.default_unit.value = p.default_unit;
+      f.notes.value = p.notes || "";
+      document.getElementById("modal").style.display = "flex";
+    }
+    async function toggleActive(id, active) {
+      await AdminUI.fetchJSON("/admin/api/products/" + id + "/active", { method: "POST", body: { active } });
+      load();
+    }
+    window.editProd = editProd; window.toggleActive = toggleActive;
+
+    document.getElementById("btn-new").addEventListener("click", () => {
+      if (!me || me.role !== "superadmin") {
+        alert("Apenas superadmin pode criar produtos");
+        return;
+      }
+      document.getElementById("form").reset();
+      document.getElementById("err").textContent = "";
+      document.getElementById("modal").style.display = "flex";
+    });
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      const id = data.id; delete data.id;
+      try {
+        if (id) await AdminUI.fetchJSON("/admin/api/products/" + id, { method: "PUT", body: data });
+        else await AdminUI.fetchJSON("/admin/api/products", { method: "POST", body: data });
+        document.getElementById("modal").style.display = "none";
+        load();
+      } catch (err) {
+        document.getElementById("err").textContent = err.message;
+      }
+    });
+    document.querySelectorAll("[data-close]").forEach((b) =>
+      b.addEventListener("click", () => b.closest(".modal-overlay").style.display = "none"));
+  </script>
+</body>
+</html>

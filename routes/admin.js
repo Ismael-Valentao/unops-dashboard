@@ -9,9 +9,11 @@ const multer = require("multer");
 const router = express.Router();
 
 const auth = require("../auth");
+const { execute } = require("../db/mysql");
 const {
   Users, Suppliers, Requisitions, Trucks, Cargo,
   Attachments, Transfers, Stock, Audit,
+  Products, Warehouses, Departures, Plans,
 } = require("../db/ops-repo");
 
 // Async error wrapper - never crashes the server
@@ -313,6 +315,246 @@ router.post("/api/users/:id/active", auth.requireRole("superadmin"), express.jso
 router.get("/audit", auth.requireRole("superadmin", "admin"), (_req, res) => send(res, "audit.html"));
 router.get("/api/audit", auth.requireRole("superadmin", "admin"), async (_req, res) => {
   res.json(await Audit.list(200));
+});
+
+// ── Products (catalog) ─────────────────────────────────────
+router.get("/products", (_req, res) => send(res, "products.html"));
+
+router.get("/api/products", async (req, res) => {
+  res.json(await Products.list(req.query.all === "1"));
+});
+router.post("/api/products", auth.requireRole("superadmin"), express.json(), async (req, res) => {
+  const id = await Products.create(req.body, req.user.id);
+  await auth.logAction(req, "create", "product", id, req.body.name);
+  res.json({ id });
+});
+router.put("/api/products/:id", auth.requireRole("superadmin"), express.json(), async (req, res) => {
+  await Products.update(req.params.id, req.body);
+  await auth.logAction(req, "update", "product", req.params.id);
+  res.json({ ok: true });
+});
+router.post("/api/products/:id/active", auth.requireRole("superadmin"), express.json(), async (req, res) => {
+  await Products.setActive(req.params.id, req.body.active);
+  await auth.logAction(req, "set_active", "product", req.params.id, String(req.body.active));
+  res.json({ ok: true });
+});
+
+// ── Warehouses ─────────────────────────────────────────────
+router.get("/warehouses", (_req, res) => send(res, "warehouses.html"));
+router.get("/warehouses/:id", (_req, res) => send(res, "warehouse-detail.html"));
+
+router.get("/api/warehouses", async (req, res) => {
+  res.json(await Warehouses.list(req.query.all === "1"));
+});
+router.get("/api/warehouses/:id", async (req, res) => {
+  const w = await Warehouses.findById(req.params.id);
+  if (!w) return jsonError(res, 404, "not found");
+  w.stock = await Stock.warehouseStock(req.params.id);
+  res.json(w);
+});
+router.get("/api/warehouses/:id/stock", async (req, res) => {
+  res.json(await Stock.warehouseStock(req.params.id));
+});
+router.post("/api/warehouses", auth.requireRole("superadmin", "admin"), express.json(), async (req, res) => {
+  const id = await Warehouses.create(req.body, req.user.id);
+  await auth.logAction(req, "create", "warehouse", id, req.body.name);
+  res.json({ id });
+});
+router.put("/api/warehouses/:id", auth.requireRole("superadmin", "admin"), express.json(), async (req, res) => {
+  await Warehouses.update(req.params.id, req.body);
+  await auth.logAction(req, "update", "warehouse", req.params.id);
+  res.json({ ok: true });
+});
+router.post("/api/warehouses/:id/active", auth.requireRole("superadmin", "admin"), express.json(), async (req, res) => {
+  await Warehouses.setActive(req.params.id, req.body.active);
+  res.json({ ok: true });
+});
+
+// ── Trucks: Quick Receive + Unload to Warehouse ────────────
+router.post("/api/trucks/quick-receive", express.json(), async (req, res) => {
+  // body: { plate, driver_name?, driver_phone?, supplier_id?, warehouse_id, items: [{product_id, qty, unit?}] }
+  const { plate, driver_name, driver_phone, supplier_id, warehouse_id, items, notes } = req.body;
+  if (!plate || !warehouse_id || !Array.isArray(items) || items.length === 0) {
+    return jsonError(res, 400, "plate, warehouse_id e items obrigatorios");
+  }
+
+  // 1. Create truck
+  const truckId = await Trucks.create(
+    { plate, driver_name, driver_phone, supplier_id, status: "unloaded", arrived_at: new Date().toISOString().slice(0,19).replace("T"," "), notes },
+    req.user.id
+  );
+  // 2. Add cargo + create movements warehouse_in
+  for (const it of items) {
+    const product = await Products.findById(it.product_id);
+    if (!product) continue;
+    const unit = it.unit || product.default_unit;
+    const cargoId = await Cargo.add(truckId, { product: product.name, qty: it.qty, unit, notes: it.notes });
+    // Mark cargo as already unloaded
+    await execute(
+      "UPDATE truck_cargo SET unloaded_to_warehouse_id = ?, product_id = ?, qty_current = 0 WHERE id = ?",
+      [warehouse_id, product.id, cargoId]
+    );
+    await Stock.addMovement({
+      type: "warehouse_in",
+      product: product.name, product_id: product.id,
+      qty: it.qty, truck_id: truckId, warehouse_id,
+      notes: "Quick receive",
+    }, req.user.id);
+  }
+  // 3. Mark truck unloaded
+  await Trucks.setStatus(truckId, "unloaded");
+  await auth.logAction(req, "quick_receive", "truck", truckId, plate);
+  res.json({ id: truckId });
+});
+
+router.post("/api/trucks/:id/unload-to-warehouse", express.json(), async (req, res) => {
+  const truckId = req.params.id;
+  const { warehouse_id } = req.body;
+  if (!warehouse_id) return jsonError(res, 400, "warehouse_id obrigatorio");
+  const cargo = await Cargo.listByTruck(truckId);
+  for (const c of cargo) {
+    if (c.qty_current <= 0) continue;
+    await execute(
+      "UPDATE truck_cargo SET unloaded_to_warehouse_id = ?, qty_current = 0 WHERE id = ?",
+      [warehouse_id, c.id]
+    );
+    await Stock.addMovement({
+      type: "warehouse_in",
+      product: c.product, product_id: c.product_id,
+      qty: c.qty_current, truck_id: truckId, warehouse_id,
+      notes: "Unload to warehouse",
+    }, req.user.id);
+  }
+  await Trucks.setStatus(truckId, "unloaded");
+  await auth.logAction(req, "unload_to_warehouse", "truck", truckId, "warehouse=" + warehouse_id);
+  res.json({ ok: true });
+});
+
+// ── Departures ─────────────────────────────────────────────
+router.get("/departures", (_req, res) => send(res, "departures.html"));
+
+router.get("/api/departures", async (req, res) => {
+  res.json(await Departures.list(req.query));
+});
+router.get("/api/departures/:id", async (req, res) => {
+  const d = await Departures.findById(req.params.id);
+  if (!d) return jsonError(res, 404, "not found");
+  res.json(d);
+});
+router.post("/api/departures", express.json(), async (req, res) => {
+  // body: { truck_id, source_type, source_warehouse_id?, destination_*, items: [{product_id, qty, unit}], plan_id? }
+  const { truck_id, source_type, source_warehouse_id, items } = req.body;
+  if (!truck_id || !source_type || !Array.isArray(items) || items.length === 0) {
+    return jsonError(res, 400, "campos obrigatorios em falta");
+  }
+  if (source_type === "warehouse" && !source_warehouse_id) {
+    return jsonError(res, 400, "source_warehouse_id obrigatorio quando source=warehouse");
+  }
+  const depId = await Departures.create(req.body, req.user.id);
+  for (const it of items) {
+    const product = await Products.findById(it.product_id);
+    if (!product) continue;
+    const unit = it.unit || product.default_unit;
+    await Departures.addItem(depId, {
+      product_id: product.id, product_name: product.name,
+      qty: it.qty, unit, notes: it.notes,
+    });
+    if (source_type === "warehouse") {
+      // Decrease warehouse stock
+      await Stock.addMovement({
+        type: "departure",
+        product: product.name, product_id: product.id,
+        qty: it.qty, truck_id,
+        warehouse_id: source_warehouse_id,
+        departure_id: depId,
+        notes: "Departure to " + (req.body.destination_district || ""),
+      }, req.user.id);
+    } else {
+      // Decrease truck cargo
+      const truckCargo = await Cargo.listByTruck(truck_id);
+      const match = truckCargo.find((c) => (c.product_id === product.id) || c.product === product.name);
+      if (match && match.qty_current >= it.qty) {
+        await Cargo.updateCurrent(match.id, Number(match.qty_current) - Number(it.qty));
+      }
+      await Stock.addMovement({
+        type: "departure",
+        product: product.name, product_id: product.id,
+        qty: it.qty, truck_id,
+        departure_id: depId,
+        notes: "Direct departure from truck",
+      }, req.user.id);
+    }
+  }
+  // Update truck status
+  if (source_type === "warehouse") {
+    // Truck is being loaded for delivery; mark as in_transit via departure
+  } else {
+    await Trucks.setStatus(truck_id, "transferred");
+  }
+  await auth.logAction(req, "create_departure", "departure", depId, "truck=" + truck_id);
+  res.json({ id: depId });
+});
+router.post("/api/departures/:id/delivered", express.json(), async (req, res) => {
+  await Departures.setStatus(req.params.id, "delivered");
+  await auth.logAction(req, "deliver", "departure", req.params.id);
+  res.json({ ok: true });
+});
+router.post("/api/departures/:id/cancel", express.json(), async (req, res) => {
+  await Departures.setStatus(req.params.id, "cancelled");
+  await auth.logAction(req, "cancel", "departure", req.params.id);
+  res.json({ ok: true });
+});
+
+// ── Plans ──────────────────────────────────────────────────
+router.get("/plans", (_req, res) => send(res, "plans.html"));
+router.get("/plans/:id", (_req, res) => send(res, "plan-detail.html"));
+
+router.get("/api/plans", async (_req, res) => {
+  res.json(await Plans.list());
+});
+router.get("/api/plans/:id", async (req, res) => {
+  const p = await Plans.findById(req.params.id);
+  if (!p) return jsonError(res, 404, "not found");
+  res.json(p);
+});
+router.post("/api/plans", auth.requireRole("superadmin", "admin"), express.json(), async (req, res) => {
+  const planId = await Plans.create(req.body, req.user.id);
+  if (Array.isArray(req.body.items)) {
+    for (const item of req.body.items) {
+      const product = await Products.findById(item.product_id);
+      if (!product) continue;
+      await Plans.addItem(planId, {
+        product_id: product.id, product_name: product.name,
+        qty: item.qty, unit: item.unit || product.default_unit,
+        source_warehouse_id: item.source_warehouse_id,
+        beneficiary: item.beneficiary, notes: item.notes,
+      });
+    }
+  }
+  await auth.logAction(req, "create", "plan", planId, req.body.name);
+  res.json({ id: planId });
+});
+router.post("/api/plans/:id/reserve", auth.requireRole("superadmin", "admin"), async (req, res) => {
+  await Plans.setStatus(req.params.id, "reserved");
+  await Plans.setItemsStatus(req.params.id, "reserved");
+  await auth.logAction(req, "reserve", "plan", req.params.id);
+  res.json({ ok: true });
+});
+router.post("/api/plans/:id/cancel", auth.requireRole("superadmin", "admin"), async (req, res) => {
+  await Plans.setStatus(req.params.id, "cancelled");
+  await Plans.setItemsStatus(req.params.id, "cancelled");
+  await auth.logAction(req, "cancel", "plan", req.params.id);
+  res.json({ ok: true });
+});
+
+// Update existing /api/stock to return new structure
+router.get("/api/stock-v2", async (_req, res) => {
+  res.json({
+    by_warehouse: await Stock.byWarehouse(),
+    by_truck: await Stock.byTruck(),
+    totals: await Stock.virtualStock(),
+    movements: await Stock.movements(50),
+  });
 });
 
 module.exports = router;

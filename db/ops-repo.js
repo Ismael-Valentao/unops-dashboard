@@ -241,31 +241,272 @@ const Transfers = {
 const Stock = {
   async addMovement(data, userId) {
     return execute(
-      `INSERT INTO stock_movements (type, product, qty, truck_id, transfer_id, created_at, created_by, notes)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      [data.type, data.product, data.qty, data.truck_id || null, data.transfer_id || null, now(), userId || null, data.notes || null]
+      `INSERT INTO stock_movements (type, product, product_id, qty, truck_id, warehouse_id, transfer_id, departure_id, created_at, created_by, notes)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [data.type, data.product, data.product_id || null, data.qty,
+       data.truck_id || null, data.warehouse_id || null,
+       data.transfer_id || null, data.departure_id || null,
+       now(), userId || null, data.notes || null]
     );
   },
-  async virtualStock() {
-    // Stock virtual = soma de todos os truck_cargo de camiões com status='unloaded' menos transferências out
+  async byWarehouse() {
     return query(`
-      SELECT product, unit, SUM(qty_current) AS qty
+      SELECT m.warehouse_id, w.name AS warehouse_name, w.code AS warehouse_code,
+             m.product, m.product_id,
+             COALESCE(p.default_unit, 'kg') AS unit,
+             SUM(CASE WHEN m.type IN ('warehouse_in') THEN m.qty
+                      WHEN m.type IN ('warehouse_out','departure') THEN -m.qty
+                      ELSE 0 END) AS qty
+      FROM stock_movements m
+      LEFT JOIN warehouses w ON m.warehouse_id = w.id
+      LEFT JOIN products p ON m.product_id = p.id
+      WHERE m.warehouse_id IS NOT NULL
+      GROUP BY m.warehouse_id, m.product, m.product_id
+      HAVING qty > 0.001
+      ORDER BY w.name, m.product
+    `);
+  },
+  async byTruck() {
+    // cargo currently in trucks that haven't been unloaded yet
+    return query(`
+      SELECT c.truck_id, t.plate, c.product, c.product_id, c.qty_current AS qty, c.unit
       FROM truck_cargo c
       JOIN trucks t ON c.truck_id = t.id
-      WHERE t.status IN ('unloaded','arrived','unloading')
+      WHERE c.qty_current > 0.001
+        AND t.status IN ('expected','arrived','unloading')
+        AND c.unloaded_to_warehouse_id IS NULL
+      ORDER BY t.plate, c.product
+    `);
+  },
+  async warehouseStock(warehouseId) {
+    return query(`
+      SELECT m.product, m.product_id, COALESCE(p.default_unit,'kg') AS unit,
+             SUM(CASE WHEN m.type IN ('warehouse_in') THEN m.qty
+                      WHEN m.type IN ('warehouse_out','departure') THEN -m.qty
+                      ELSE 0 END) AS qty
+      FROM stock_movements m
+      LEFT JOIN products p ON m.product_id = p.id
+      WHERE m.warehouse_id = ?
+      GROUP BY m.product, m.product_id
+      HAVING qty > 0.001
+      ORDER BY m.product
+    `, [warehouseId]);
+  },
+  async virtualStock() {
+    // Total per product across all warehouses + trucks pending
+    return query(`
+      SELECT product, unit, SUM(qty) AS qty FROM (
+        SELECT m.product, COALESCE(p.default_unit,'kg') AS unit,
+               SUM(CASE WHEN m.type='warehouse_in' THEN m.qty
+                        WHEN m.type IN ('warehouse_out','departure') THEN -m.qty
+                        ELSE 0 END) AS qty
+        FROM stock_movements m
+        LEFT JOIN products p ON m.product_id = p.id
+        WHERE m.warehouse_id IS NOT NULL
+        GROUP BY m.product, p.default_unit
+        UNION ALL
+        SELECT c.product, c.unit, SUM(c.qty_current) AS qty
+        FROM truck_cargo c
+        JOIN trucks t ON c.truck_id = t.id
+        WHERE c.qty_current > 0
+          AND t.status IN ('expected','arrived','unloading')
+          AND c.unloaded_to_warehouse_id IS NULL
+        GROUP BY c.product, c.unit
+      ) AS s
       GROUP BY product, unit
+      HAVING qty > 0.001
       ORDER BY product
     `);
   },
   async movements(limit) {
     return query(
-      `SELECT m.*, t.plate, u.name AS user_name
+      `SELECT m.*, t.plate, w.name AS warehouse_name, u.name AS user_name
        FROM stock_movements m
        LEFT JOIN trucks t ON m.truck_id = t.id
+       LEFT JOIN warehouses w ON m.warehouse_id = w.id
        LEFT JOIN users u ON m.created_by = u.id
        ORDER BY m.created_at DESC LIMIT ?`,
       [limit || 100]
     );
+  },
+};
+
+// ── Products ────────────────────────────────────────────────
+const Products = {
+  async list(includeInactive) {
+    return query(
+      includeInactive
+        ? "SELECT * FROM products ORDER BY name"
+        : "SELECT * FROM products WHERE active = 1 ORDER BY name"
+    );
+  },
+  async findById(id) {
+    return queryOne("SELECT * FROM products WHERE id = ?", [id]);
+  },
+  async findByCode(code) {
+    return queryOne("SELECT * FROM products WHERE code = ?", [code]);
+  },
+  async create(data, userId) {
+    const r = await execute(
+      `INSERT INTO products (code, name, category, default_unit, active, notes, created_at, created_by)
+       VALUES (?,?,?,?,1,?,?,?)`,
+      [data.code || null, data.name, data.category || null, data.default_unit, data.notes || null, now(), userId || null]
+    );
+    return r.insertId;
+  },
+  async update(id, data) {
+    return execute(
+      "UPDATE products SET code=?, name=?, category=?, default_unit=?, notes=? WHERE id=?",
+      [data.code || null, data.name, data.category || null, data.default_unit, data.notes || null, id]
+    );
+  },
+  async setActive(id, active) {
+    return execute("UPDATE products SET active = ? WHERE id = ?", [active ? 1 : 0, id]);
+  },
+};
+
+// ── Warehouses ──────────────────────────────────────────────
+const Warehouses = {
+  async list(includeInactive) {
+    return query(
+      includeInactive
+        ? "SELECT * FROM warehouses ORDER BY name"
+        : "SELECT * FROM warehouses WHERE active = 1 ORDER BY name"
+    );
+  },
+  async findById(id) {
+    return queryOne("SELECT * FROM warehouses WHERE id = ?", [id]);
+  },
+  async create(data, userId) {
+    const r = await execute(
+      `INSERT INTO warehouses (code, name, province, district, address, manager_name, manager_phone, active, notes, created_at, created_by)
+       VALUES (?,?,?,?,?,?,?,1,?,?,?)`,
+      [data.code || null, data.name, data.province || null, data.district || null,
+       data.address || null, data.manager_name || null, data.manager_phone || null,
+       data.notes || null, now(), userId || null]
+    );
+    return r.insertId;
+  },
+  async update(id, data) {
+    return execute(
+      `UPDATE warehouses SET code=?, name=?, province=?, district=?, address=?,
+       manager_name=?, manager_phone=?, notes=? WHERE id=?`,
+      [data.code || null, data.name, data.province || null, data.district || null,
+       data.address || null, data.manager_name || null, data.manager_phone || null,
+       data.notes || null, id]
+    );
+  },
+  async setActive(id, active) {
+    return execute("UPDATE warehouses SET active = ? WHERE id = ?", [active ? 1 : 0, id]);
+  },
+};
+
+// ── Departures ──────────────────────────────────────────────
+const Departures = {
+  async list(filters) {
+    const where = [];
+    const params = [];
+    if (filters && filters.status) { where.push("d.status = ?"); params.push(filters.status); }
+    if (filters && filters.truck_id) { where.push("d.truck_id = ?"); params.push(filters.truck_id); }
+    return query(
+      `SELECT d.*, t.plate, w.name AS warehouse_name,
+              (SELECT COUNT(*) FROM departure_cargo dc WHERE dc.departure_id = d.id) AS items_count
+       FROM truck_departures d
+       JOIN trucks t ON d.truck_id = t.id
+       LEFT JOIN warehouses w ON d.source_warehouse_id = w.id
+       ${where.length ? "WHERE " + where.join(" AND ") : ""}
+       ORDER BY d.departed_at DESC`,
+      params
+    );
+  },
+  async findById(id) {
+    const dep = await queryOne(
+      `SELECT d.*, t.plate, w.name AS warehouse_name, p.name AS plan_name
+       FROM truck_departures d
+       JOIN trucks t ON d.truck_id = t.id
+       LEFT JOIN warehouses w ON d.source_warehouse_id = w.id
+       LEFT JOIN delivery_plans p ON d.plan_id = p.id
+       WHERE d.id = ?`,
+      [id]
+    );
+    if (dep) {
+      dep.items = await query("SELECT * FROM departure_cargo WHERE departure_id = ?", [id]);
+    }
+    return dep;
+  },
+  async create(data, userId) {
+    const r = await execute(
+      `INSERT INTO truck_departures (truck_id, source_type, source_warehouse_id,
+        destination_province, destination_district, destination_name, destination_contact,
+        plan_id, status, departed_at, notes, created_at, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [data.truck_id, data.source_type, data.source_warehouse_id || null,
+       data.destination_province || null, data.destination_district || null,
+       data.destination_name || null, data.destination_contact || null,
+       data.plan_id || null, data.status || "in_transit",
+       data.departed_at || now(), data.notes || null, now(), userId || null]
+    );
+    return r.insertId;
+  },
+  async addItem(departureId, item) {
+    return execute(
+      `INSERT INTO departure_cargo (departure_id, product_id, product_name, qty, unit, notes)
+       VALUES (?,?,?,?,?,?)`,
+      [departureId, item.product_id, item.product_name, item.qty, item.unit, item.notes || null]
+    );
+  },
+  async setStatus(id, status, deliveredAt) {
+    if (status === "delivered") {
+      return execute("UPDATE truck_departures SET status=?, delivered_at=? WHERE id=?", [status, deliveredAt || now(), id]);
+    }
+    return execute("UPDATE truck_departures SET status=? WHERE id=?", [status, id]);
+  },
+};
+
+// ── Plans ───────────────────────────────────────────────────
+const Plans = {
+  async list() {
+    return query(
+      `SELECT p.*, (SELECT COUNT(*) FROM plan_items i WHERE i.plan_id = p.id) AS items_count
+       FROM delivery_plans p ORDER BY p.created_at DESC`
+    );
+  },
+  async findById(id) {
+    const p = await queryOne("SELECT * FROM delivery_plans WHERE id = ?", [id]);
+    if (p) {
+      p.items = await query(
+        `SELECT i.*, w.name AS warehouse_name FROM plan_items i
+         LEFT JOIN warehouses w ON i.source_warehouse_id = w.id
+         WHERE i.plan_id = ?`,
+        [id]
+      );
+    }
+    return p;
+  },
+  async create(data, userId) {
+    const r = await execute(
+      `INSERT INTO delivery_plans (ref_number, name, target_province, target_district, target_date, status, notes, created_at, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [data.ref_number || null, data.name, data.target_province || null,
+       data.target_district || null, data.target_date || null,
+       data.status || "draft", data.notes || null, now(), userId || null]
+    );
+    return r.insertId;
+  },
+  async addItem(planId, item) {
+    return execute(
+      `INSERT INTO plan_items (plan_id, product_id, product_name, qty, unit, source_warehouse_id, beneficiary, status, notes)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [planId, item.product_id, item.product_name, item.qty, item.unit,
+       item.source_warehouse_id || null, item.beneficiary || null,
+       item.status || "draft", item.notes || null]
+    );
+  },
+  async setStatus(id, status) {
+    return execute("UPDATE delivery_plans SET status = ? WHERE id = ?", [status, id]);
+  },
+  async setItemsStatus(planId, status) {
+    return execute("UPDATE plan_items SET status = ? WHERE plan_id = ?", [status, planId]);
   },
 };
 
@@ -287,4 +528,8 @@ const Audit = {
   },
 };
 
-module.exports = { Users, Sessions, Suppliers, Requisitions, Trucks, Cargo, Attachments, Transfers, Stock, Audit };
+module.exports = {
+  Users, Sessions, Suppliers, Requisitions, Trucks, Cargo,
+  Attachments, Transfers, Stock, Audit,
+  Products, Warehouses, Departures, Plans,
+};
