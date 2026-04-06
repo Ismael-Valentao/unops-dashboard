@@ -56,6 +56,8 @@
         <button class="btn" data-status="arrived">Marcar como Chegou</button>
         <button class="btn" data-status="unloading">Marcar a Descarregar</button>
         <button class="btn btn-success" id="btn-unload-wh">Descarregar para Armazem</button>
+        <a class="btn btn-primary" id="btn-departure">Registar Saida</a>
+        <button class="btn" id="btn-edit-truck">Editar Camiao</button>
         <button class="btn btn-danger" data-status="cancelled">Cancelar</button>
       </div>
     </section>
@@ -63,14 +65,38 @@
 
   <!-- Unload to warehouse modal -->
   <div class="modal-overlay" id="unload-modal" style="display:none">
-    <div class="modal-card">
+    <div class="modal-card" style="max-width:560px">
       <div class="modal-head"><h2>Descarregar para Armazem</h2><button class="modal-x" data-close>&times;</button></div>
       <form id="unload-form" class="modal-form">
-        <p style="font-size:.78rem;color:#64748b">Toda a carga pendente sera descarregada no armazem seleccionado e ficara registada como stock disponivel.</p>
         <label>Armazem destino *
           <select name="warehouse_id" id="unload-warehouse" required></select>
         </label>
+        <label>
+          <input type="radio" name="mode" value="all" checked> Descarregar tudo
+        </label>
+        <label>
+          <input type="radio" name="mode" value="partial"> Descarregar parcialmente (escolher quantidades)
+        </label>
+        <div id="unload-items" style="display:none;border-top:1px solid #e2e8f0;padding-top:.5rem;margin-top:.25rem"></div>
         <button type="submit" class="btn btn-success">Confirmar Descarregamento</button>
+        <div id="unload-err" class="auth-error"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit truck modal -->
+  <div class="modal-overlay" id="edit-modal" style="display:none">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Editar Camiao</h2><button class="modal-x" data-close>&times;</button></div>
+      <form id="edit-form" class="modal-form">
+        <label>Matricula *<input type="text" name="plate" required></label>
+        <label>Motorista<input type="text" name="driver_name"></label>
+        <label>Telefone<input type="text" name="driver_phone"></label>
+        <label>Fornecedor
+          <select name="supplier_id" id="edit-supplier"><option value="">— Sem fornecedor —</option></select>
+        </label>
+        <label>Notas<textarea name="notes" rows="3"></textarea></label>
+        <button type="submit" class="btn btn-primary">Guardar</button>
       </form>
     </div>
   </div>
@@ -122,9 +148,12 @@
   <script>
     AdminUI.renderLayout("trucks");
     const truckId = location.pathname.split("/").pop();
+    document.getElementById("btn-departure").href = "/admin/departures?truck=" + truckId;
 
+    let currentTruck = null;
     async function loadTruck() {
       const t = await AdminUI.fetchJSON("/admin/api/trucks/" + truckId);
+      currentTruck = t;
       document.getElementById("header").innerHTML = `
         <div>
           <h1>${AdminUI.esc(t.plate)}</h1>
@@ -218,14 +247,87 @@
       document.getElementById("unload-warehouse").innerHTML =
         '<option value="">— Seleccionar armazem —</option>' +
         warehouses.map((w) => `<option value="${w.id}">${AdminUI.esc(w.name)}</option>`).join("");
+      // Build partial item rows from current cargo (only non-unloaded)
+      const pendingCargo = (currentTruck && currentTruck.cargo || []).filter((c) => c.qty_current > 0 && !c.unloaded_to_warehouse_id);
+      document.getElementById("unload-items").innerHTML = pendingCargo.map((c) =>
+        `<div style="display:grid;grid-template-columns:2fr 1fr auto;gap:.4rem;margin-bottom:.4rem;align-items:center">
+          <span style="font-size:.8rem">${AdminUI.esc(c.product)} <small style="color:#64748b">(disp: ${AdminUI.fmt(c.qty_current)} ${AdminUI.esc(c.unit)})</small></span>
+          <input type="number" data-cargo-id="${c.id}" data-max="${c.qty_current}" step="0.01" min="0" value="${c.qty_current}" placeholder="Qtd">
+          <span style="font-size:.7rem;color:#64748b">${AdminUI.esc(c.unit)}</span>
+        </div>`
+      ).join("") || '<p style="color:#94a3b8;font-style:italic">Sem carga pendente</p>';
+      document.getElementById("unload-err").textContent = "";
+      // Reset radio
+      document.querySelector("[name='mode'][value='all']").checked = true;
+      document.getElementById("unload-items").style.display = "none";
       document.getElementById("unload-modal").style.display = "flex";
     });
+    document.querySelectorAll("[name='mode']").forEach((r) => r.addEventListener("change", (e) => {
+      document.getElementById("unload-items").style.display = e.target.value === "partial" ? "block" : "none";
+    }));
     document.getElementById("unload-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
-      await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/unload-to-warehouse",
-        { method: "POST", body: { warehouse_id: Number(fd.get("warehouse_id")) } });
-      document.getElementById("unload-modal").style.display = "none";
+      const mode = fd.get("mode");
+      const body = { warehouse_id: Number(fd.get("warehouse_id")) };
+      if (mode === "partial") {
+        const items = [];
+        document.querySelectorAll("#unload-items input[type='number']").forEach((inp) => {
+          const qty = Number(inp.value);
+          const max = Number(inp.dataset.max);
+          if (qty > 0) {
+            if (qty > max) {
+              document.getElementById("unload-err").textContent = "Quantidade excede disponivel";
+              return;
+            }
+            items.push({ cargo_id: Number(inp.dataset.cargoId), qty });
+          }
+        });
+        if (document.getElementById("unload-err").textContent) return;
+        if (items.length === 0) {
+          document.getElementById("unload-err").textContent = "Indique pelo menos uma quantidade";
+          return;
+        }
+        body.items = items;
+      }
+      try {
+        await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/unload-to-warehouse",
+          { method: "POST", body });
+        document.getElementById("unload-modal").style.display = "none";
+        loadTruck();
+      } catch (err) {
+        document.getElementById("unload-err").textContent = err.message;
+      }
+    });
+
+    // Edit truck
+    document.getElementById("btn-edit-truck").addEventListener("click", async () => {
+      const suppliers = await AdminUI.fetchJSON("/admin/api/suppliers");
+      const f = document.getElementById("edit-form");
+      f.plate.value = currentTruck.plate || "";
+      f.driver_name.value = currentTruck.driver_name || "";
+      f.driver_phone.value = currentTruck.driver_phone || "";
+      f.notes.value = currentTruck.notes || "";
+      document.getElementById("edit-supplier").innerHTML = '<option value="">— Sem fornecedor —</option>' +
+        suppliers.map((s) => `<option value="${s.id}" ${s.id === currentTruck.supplier_id ? "selected" : ""}>${AdminUI.esc(s.name)}</option>`).join("");
+      document.getElementById("edit-modal").style.display = "flex";
+    });
+    document.getElementById("edit-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const data = {
+        plate: fd.get("plate"),
+        driver_name: fd.get("driver_name"),
+        driver_phone: fd.get("driver_phone"),
+        supplier_id: fd.get("supplier_id") || null,
+        notes: fd.get("notes"),
+        status: currentTruck.status,
+        arrived_at: currentTruck.arrived_at,
+        unloaded_at: currentTruck.unloaded_at,
+        requisition_id: currentTruck.requisition_id,
+      };
+      await AdminUI.fetchJSON("/admin/api/trucks/" + truckId, { method: "PUT", body: data });
+      document.getElementById("edit-modal").style.display = "none";
       loadTruck();
     });
 

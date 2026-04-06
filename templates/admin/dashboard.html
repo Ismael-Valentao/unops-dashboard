@@ -28,9 +28,22 @@
         <div class="adm-card-val" id="c-unloaded">—</div>
       </div>
       <div class="adm-card adm-card-blue">
+        <div class="adm-card-lbl">Saidas em Transito</div>
+        <div class="adm-card-val" id="c-departures">—</div>
+      </div>
+      <div class="adm-card adm-card-blue">
+        <div class="adm-card-lbl">Entregues Hoje</div>
+        <div class="adm-card-val" id="c-delivered-today">—</div>
+      </div>
+      <div class="adm-card">
         <div class="adm-card-lbl">Requisicoes Pendentes</div>
         <div class="adm-card-val" id="c-req-pending">—</div>
       </div>
+    </section>
+
+    <section class="admin-section" id="alerts-section" style="display:none">
+      <h2>Alertas</h2>
+      <div id="alerts-body"></div>
     </section>
 
     <section class="admin-section">
@@ -60,7 +73,24 @@
       document.getElementById("c-expected").textContent = d.trucks.expected;
       document.getElementById("c-arrived").textContent = d.trucks.arrived;
       document.getElementById("c-unloaded").textContent = d.trucks.unloaded;
+      document.getElementById("c-departures").textContent = (d.departures || {}).in_transit || 0;
+      document.getElementById("c-delivered-today").textContent = (d.departures || {}).delivered_today || 0;
       document.getElementById("c-req-pending").textContent = d.requisitions.pending;
+
+      // Alerts
+      const alerts = d.alerts || [];
+      if (alerts.length > 0) {
+        document.getElementById("alerts-section").style.display = "block";
+        document.getElementById("alerts-body").innerHTML = alerts.map((a) => {
+          const colors = { warning: "#d97706", info: "#0284c7", critical: "#dc2626" };
+          const bg = { warning: "#fef3c7", info: "#dbeafe", critical: "#fee2e2" };
+          return `<div style="display:flex;align-items:center;gap:.6rem;padding:.65rem .85rem;background:${bg[a.severity] || "#f1f5f9"};border-left:4px solid ${colors[a.severity] || "#64748b"};border-radius:6px;margin-bottom:.4rem">
+            <span style="flex:1;font-size:.82rem;color:#334155">${AdminUI.esc(a.msg)}</span>
+            ${a.link ? `<a href="${a.link}" class="btn btn-sm">Ver</a>` : ""}
+          </div>`;
+        }).join("");
+      }
+
       document.getElementById("stock-body").innerHTML = (d.stock || []).map((s) =>
         `<tr><td>${AdminUI.esc(s.product)}</td><td>${AdminUI.esc(s.unit)}</td><td style="text-align:right">${AdminUI.fmt(s.qty)}</td></tr>`
       ).join("") || `<tr><td colspan="3" class="empty">Sem stock virtual</td></tr>`;

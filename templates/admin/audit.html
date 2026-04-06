@@ -13,6 +13,11 @@
       <h1>Log de Auditoria</h1>
       <span class="admin-sub">Ultimas 200 accoes</span>
     </header>
+    <section class="admin-filters">
+      <input type="text" id="f-user" placeholder="Filtrar utilizador" style="min-width:180px">
+      <input type="text" id="f-action" placeholder="Filtrar accao (create, update...)" style="min-width:200px">
+      <input type="text" id="f-entity" placeholder="Tipo de entidade" style="min-width:160px">
+    </section>
     <section class="admin-section">
       <div class="tbl-wrap">
         <table class="adm-table">
@@ -25,8 +30,19 @@
   <script src="/static/admin.js"></script>
   <script>
     AdminUI.renderLayout("audit");
-    AdminUI.fetchJSON("/admin/api/audit").then((list) => {
-      document.getElementById("audit-body").innerHTML = list.map((a) =>
+    let auditList = [];
+    function render() {
+      const fu = (document.getElementById("f-user").value || "").toLowerCase();
+      const fa = (document.getElementById("f-action").value || "").toLowerCase();
+      const fe = (document.getElementById("f-entity").value || "").toLowerCase();
+      const filtered = auditList.filter((a) => {
+        const u = ((a.user_name || "") + " " + (a.user_email || "")).toLowerCase();
+        if (fu && !u.includes(fu)) return false;
+        if (fa && !(a.action || "").toLowerCase().includes(fa)) return false;
+        if (fe && !(a.entity_type || "").toLowerCase().includes(fe)) return false;
+        return true;
+      });
+      document.getElementById("audit-body").innerHTML = filtered.map((a) =>
         `<tr><td>${AdminUI.fmtDate(a.created_at)}</td>
          <td>${AdminUI.esc(a.user_name || a.user_email || "—")}</td>
          <td><span class="badge">${AdminUI.esc(a.action)}</span></td>
@@ -35,7 +51,13 @@
          <td>${AdminUI.esc(a.details || "")}</td>
          <td>${AdminUI.esc(a.ip || "")}</td></tr>`
       ).join("") || `<tr><td colspan="7" class="empty">Sem eventos</td></tr>`;
+    }
+    AdminUI.fetchJSON("/admin/api/audit").then((list) => {
+      auditList = list;
+      render();
     });
+    ["f-user", "f-action", "f-entity"].forEach((id) =>
+      document.getElementById(id).addEventListener("input", render));
   </script>
 </body>
 </html>

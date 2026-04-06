@@ -18,6 +18,16 @@
     </section>
 
     <section class="admin-section">
+      <h2>Movimentos Recentes</h2>
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Qtd</th><th>Camiao</th><th>Por</th></tr></thead>
+          <tbody id="mov-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="admin-section">
       <h2>Detalhes</h2>
       <div id="details"></div>
     </section>
@@ -27,7 +37,10 @@
     AdminUI.renderLayout("warehouses");
     const wId = location.pathname.split("/").pop();
 
-    AdminUI.fetchJSON("/admin/api/warehouses/" + wId).then((w) => {
+    Promise.all([
+      AdminUI.fetchJSON("/admin/api/warehouses/" + wId),
+      AdminUI.fetchJSON("/admin/api/warehouses/" + wId + "/movements"),
+    ]).then(([w, movements]) => {
       document.getElementById("header").innerHTML = `
         <div>
           <h1>${AdminUI.esc(w.name)}</h1>
@@ -41,6 +54,15 @@
           <div class="adm-card-sub">${AdminUI.esc(s.unit)}</div>
         </div>`
       ).join("") || `<div class="empty">Sem stock neste armazem</div>`;
+
+      document.getElementById("mov-body").innerHTML = (movements || []).map((m) =>
+        `<tr><td>${AdminUI.fmtDate(m.created_at)}</td>
+         <td><span class="badge">${m.type}</span></td>
+         <td>${AdminUI.esc(m.product)}</td>
+         <td>${AdminUI.fmt(m.qty)}</td>
+         <td>${AdminUI.esc(m.plate || "—")}</td>
+         <td>${AdminUI.esc(m.user_name || "")}</td></tr>`
+      ).join("") || `<tr><td colspan="6" class="empty">Sem movimentos</td></tr>`;
 
       document.getElementById("details").innerHTML = `
         <p><strong>Endereco:</strong> ${AdminUI.esc(w.address || "—")}</p>

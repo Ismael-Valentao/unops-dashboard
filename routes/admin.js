@@ -124,12 +124,57 @@ router.get("/api/dashboard", async (_req, res) => {
   const stock = await Stock.virtualStock();
   const reqs = await Requisitions.list();
   const recent = await Stock.movements(20);
+  const departures = await Departures.list();
+
+  // Build actionable alerts
+  const alerts = [];
+  const now = Date.now();
+  const dayMs = 24 * 3600 * 1000;
+  // Trucks expected for >24h
+  trucks.forEach((t) => {
+    if (t.status === "expected" && t.created_at) {
+      const ageDays = (now - new Date(t.created_at.replace(" ", "T")).getTime()) / dayMs;
+      if (ageDays > 1) alerts.push({
+        severity: "warning",
+        msg: `Camiao ${t.plate} esperado ha ${Math.round(ageDays)} dia(s)`,
+        link: "/admin/trucks/" + t.id,
+      });
+    }
+  });
+  // Trucks arrived but with no cargo
+  trucks.forEach((t) => {
+    if (t.status === "arrived" && t.cargo_count === 0) alerts.push({
+      severity: "info",
+      msg: `Camiao ${t.plate} chegou mas nao tem carga registada`,
+      link: "/admin/trucks/" + t.id,
+    });
+  });
+  // Departures in transit for >7d
+  departures.forEach((d) => {
+    if (d.status === "in_transit" && d.departed_at) {
+      const ageDays = (now - new Date(d.departed_at.replace(" ", "T")).getTime()) / dayMs;
+      if (ageDays > 7) alerts.push({
+        severity: "warning",
+        msg: `Saida do camiao ${d.plate} em transito ha ${Math.round(ageDays)} dia(s) sem confirmacao`,
+        link: "/admin/departures",
+      });
+    }
+  });
+
   res.json({
     trucks: {
       total: trucks.length,
       expected: trucks.filter((t) => t.status === "expected").length,
       arrived: trucks.filter((t) => t.status === "arrived" || t.status === "unloading").length,
       unloaded: trucks.filter((t) => t.status === "unloaded").length,
+      with_cargo: trucks.filter((t) => t.cargo_count > 0).length,
+    },
+    departures: {
+      in_transit: departures.filter((d) => d.status === "in_transit").length,
+      delivered_today: departures.filter((d) =>
+        d.status === "delivered" && d.delivered_at &&
+        d.delivered_at.slice(0, 10) === new Date().toISOString().slice(0, 10)
+      ).length,
     },
     stock,
     requisitions: {
@@ -137,8 +182,14 @@ router.get("/api/dashboard", async (_req, res) => {
       pending: reqs.filter((r) => r.status === "pending").length,
       partial: reqs.filter((r) => r.status === "partial").length,
     },
+    alerts,
     recent_movements: recent,
   });
+});
+
+// ── Truck cargo (for departure UI to show available items) ─
+router.get("/api/trucks/:id/cargo", async (req, res) => {
+  res.json(await Stock.truckCargo(req.params.id));
 });
 
 // ── Suppliers ───────────────────────────────────────────────
@@ -355,6 +406,9 @@ router.get("/api/warehouses/:id", async (req, res) => {
 router.get("/api/warehouses/:id/stock", async (req, res) => {
   res.json(await Stock.warehouseStock(req.params.id));
 });
+router.get("/api/warehouses/:id/movements", async (req, res) => {
+  res.json(await Stock.warehouseMovements(req.params.id, 50));
+});
 router.post("/api/warehouses", auth.requireRole("superadmin", "admin"), express.json(), async (req, res) => {
   const id = await Warehouses.create(req.body, req.user.id);
   await auth.logAction(req, "create", "warehouse", id, req.body.name);
@@ -427,23 +481,71 @@ router.post("/api/trucks/quick-receive", express.json(), async (req, res) => {
 
 router.post("/api/trucks/:id/unload-to-warehouse", express.json(), async (req, res) => {
   const truckId = req.params.id;
-  const { warehouse_id } = req.body;
+  const { warehouse_id, items } = req.body;
+  // items: optional [{cargo_id, qty}] for partial unload. If absent, unload everything.
   if (!warehouse_id) return jsonError(res, 400, "warehouse_id obrigatorio");
   const cargo = await Cargo.listByTruck(truckId);
-  for (const c of cargo) {
-    if (c.qty_current <= 0) continue;
-    await execute(
-      "UPDATE truck_cargo SET unloaded_to_warehouse_id = ?, qty_current = 0 WHERE id = ?",
-      [warehouse_id, c.id]
-    );
-    await Stock.addMovement({
-      type: "warehouse_in",
-      product: c.product, product_id: c.product_id,
-      qty: c.qty_current, truck_id: truckId, warehouse_id,
-      notes: "Unload to warehouse",
-    }, req.user.id);
+
+  if (Array.isArray(items) && items.length > 0) {
+    // Partial unload — validate first
+    for (const it of items) {
+      const c = cargo.find((x) => x.id === Number(it.cargo_id));
+      if (!c) return jsonError(res, 400, "Carga invalida (id=" + it.cargo_id + ")");
+      if (Number(it.qty) <= 0) return jsonError(res, 400, "Quantidade deve ser > 0");
+      if (Number(it.qty) > Number(c.qty_current)) {
+        return jsonError(res, 400, `Qtd ${it.qty} excede disponivel ${c.qty_current} para ${c.product}`);
+      }
+    }
+    for (const it of items) {
+      const c = cargo.find((x) => x.id === Number(it.cargo_id));
+      const qty = Number(it.qty);
+      const remaining = Number(c.qty_current) - qty;
+      if (remaining <= 0.001) {
+        // Fully unloaded — mark this cargo line as unloaded
+        await execute(
+          "UPDATE truck_cargo SET unloaded_to_warehouse_id = ?, qty_current = 0 WHERE id = ?",
+          [warehouse_id, c.id]
+        );
+      } else {
+        // Partial — keep the cargo on the truck with reduced qty, create a NEW cargo line for the unloaded portion
+        await Cargo.updateCurrent(c.id, remaining);
+        const newCargoId = await Cargo.add(truckId, {
+          product: c.product, qty, unit: c.unit, notes: "Descarga parcial para armazem"
+        });
+        await execute(
+          "UPDATE truck_cargo SET unloaded_to_warehouse_id = ?, product_id = ?, qty_current = 0 WHERE id = ?",
+          [warehouse_id, c.product_id, newCargoId]
+        );
+      }
+      await Stock.addMovement({
+        type: "warehouse_in",
+        product: c.product, product_id: c.product_id,
+        qty, truck_id: truckId, warehouse_id,
+        notes: "Descarga parcial",
+      }, req.user.id);
+    }
+    // If everything was unloaded, mark truck as unloaded
+    const remaining = await Cargo.listByTruck(truckId);
+    const stillHas = remaining.some((c) => Number(c.qty_current) > 0 && !c.unloaded_to_warehouse_id);
+    if (!stillHas) await Trucks.setStatus(truckId, "unloaded");
+  } else {
+    // Unload everything
+    for (const c of cargo) {
+      if (c.qty_current <= 0) continue;
+      const qty = Number(c.qty_current);
+      await execute(
+        "UPDATE truck_cargo SET unloaded_to_warehouse_id = ?, qty_current = 0 WHERE id = ?",
+        [warehouse_id, c.id]
+      );
+      await Stock.addMovement({
+        type: "warehouse_in",
+        product: c.product, product_id: c.product_id,
+        qty, truck_id: truckId, warehouse_id,
+        notes: "Descarga total",
+      }, req.user.id);
+    }
+    await Trucks.setStatus(truckId, "unloaded");
   }
-  await Trucks.setStatus(truckId, "unloaded");
   await auth.logAction(req, "unload_to_warehouse", "truck", truckId, "warehouse=" + warehouse_id);
   res.json({ ok: true });
 });
@@ -468,6 +570,32 @@ router.post("/api/departures", express.json(), async (req, res) => {
   if (source_type === "warehouse" && !source_warehouse_id) {
     return jsonError(res, 400, "source_warehouse_id obrigatorio quando source=warehouse");
   }
+
+  // ── STOCK VALIDATION ─────────────────────────────────────────
+  if (source_type === "warehouse") {
+    const available = await Stock.warehouseStock(source_warehouse_id);
+    for (const it of items) {
+      const product = await Products.findById(it.product_id);
+      if (!product) return jsonError(res, 400, "Produto invalido (id=" + it.product_id + ")");
+      const stockItem = available.find((s) => s.product_id === product.id || s.product === product.name);
+      const have = stockItem ? Number(stockItem.qty) : 0;
+      if (have < Number(it.qty)) {
+        return jsonError(res, 400, `Stock insuficiente de ${product.name} no armazem (disponivel: ${have}, pedido: ${it.qty})`);
+      }
+    }
+  } else {
+    const truckCargo = await Cargo.listByTruck(truck_id);
+    for (const it of items) {
+      const product = await Products.findById(it.product_id);
+      if (!product) return jsonError(res, 400, "Produto invalido (id=" + it.product_id + ")");
+      const match = truckCargo.find((c) => (c.product_id === product.id) || c.product === product.name);
+      const have = match ? Number(match.qty_current) : 0;
+      if (have < Number(it.qty)) {
+        return jsonError(res, 400, `Stock insuficiente de ${product.name} no camiao (disponivel: ${have}, pedido: ${it.qty})`);
+      }
+    }
+  }
+
   const depId = await Departures.create(req.body, req.user.id);
   for (const it of items) {
     const product = await Products.findById(it.product_id);

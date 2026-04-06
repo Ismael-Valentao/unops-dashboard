@@ -18,6 +18,7 @@
     </header>
 
     <section class="admin-filters">
+      <input type="text" id="f-search" placeholder="Pesquisar matricula, motorista, fornecedor..." style="min-width:280px">
       <select id="f-status">
         <option value="">Todos os estados</option>
         <option value="expected">Esperado</option>
@@ -113,10 +114,20 @@
   <script>
     AdminUI.renderLayout("trucks");
 
+    let allTrucks = [];
     async function loadTrucks() {
       const status = document.getElementById("f-status").value;
       const qs = status ? "?status=" + encodeURIComponent(status) : "";
-      const trucks = await AdminUI.fetchJSON("/admin/api/trucks" + qs);
+      allTrucks = await AdminUI.fetchJSON("/admin/api/trucks" + qs);
+      renderTrucks();
+    }
+    function renderTrucks() {
+      const search = (document.getElementById("f-search").value || "").trim().toLowerCase();
+      const trucks = allTrucks.filter((t) => {
+        if (!search) return true;
+        const hay = (t.plate + " " + (t.driver_name || "") + " " + (t.supplier_name || "")).toLowerCase();
+        return hay.includes(search);
+      });
       document.getElementById("trucks-body").innerHTML = trucks.map((t) =>
         `<tr>
           <td><a href="/admin/trucks/${t.id}" class="link">${AdminUI.esc(t.plate)}</a></td>
@@ -128,8 +139,9 @@
           <td>${AdminUI.fmtDate(t.arrived_at)}</td>
           <td><a href="/admin/trucks/${t.id}" class="btn btn-sm">Ver</a></td>
         </tr>`
-      ).join("") || `<tr><td colspan="8" class="empty">Sem camioes registados</td></tr>`;
+      ).join("") || `<tr><td colspan="8" class="empty">Sem camioes</td></tr>`;
     }
+    document.getElementById("f-search").addEventListener("input", renderTrucks);
 
     async function loadSuppliers() {
       const suppliers = await AdminUI.fetchJSON("/admin/api/suppliers");
@@ -222,14 +234,30 @@
         items,
       };
       try {
-        await AdminUI.fetchJSON("/admin/api/trucks/quick-receive", { method: "POST", body: data });
+        const result = await AdminUI.fetchJSON("/admin/api/trucks/quick-receive", { method: "POST", body: data });
         document.getElementById("quick-modal").style.display = "none";
         e.target.reset();
+        showToast(`Camiao ${data.plate} registado com sucesso${result.unloaded ? " e descarregado" : " (carga retida)"}`, "success", result.id);
         loadTrucks();
       } catch (err) {
         document.getElementById("q-err").textContent = err.message;
       }
     });
+
+    function showToast(msg, type, truckId) {
+      let toast = document.getElementById("toast");
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "toast";
+        toast.style.cssText = "position:fixed;bottom:1rem;right:1rem;background:#0f4c75;color:#fff;padding:.85rem 1.25rem;border-radius:10px;box-shadow:0 8px 20px rgba(0,0,0,.25);z-index:300;max-width:380px;font-size:.85rem";
+        document.body.appendChild(toast);
+      }
+      toast.style.background = type === "success" ? "#16a34a" : "#0f4c75";
+      toast.innerHTML = AdminUI.esc(msg) + (truckId ? ` <a href="/admin/trucks/${truckId}" style="color:#fff;text-decoration:underline;font-weight:700">Ver detalhe &rarr;</a>` : "");
+      toast.style.display = "block";
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => { toast.style.display = "none"; }, 5000);
+    }
 
     loadTrucks();
   </script>

@@ -331,6 +331,27 @@ const Stock = {
       [limit || 100]
     );
   },
+  async warehouseMovements(warehouseId, limit) {
+    return query(
+      `SELECT m.*, t.plate, u.name AS user_name
+       FROM stock_movements m
+       LEFT JOIN trucks t ON m.truck_id = t.id
+       LEFT JOIN users u ON m.created_by = u.id
+       WHERE m.warehouse_id = ?
+       ORDER BY m.created_at DESC LIMIT ?`,
+      [warehouseId, limit || 50]
+    );
+  },
+  async truckCargo(truckId) {
+    // Available cargo currently in the truck (not yet unloaded)
+    return query(
+      `SELECT c.*, p.name AS product_name_catalog, p.default_unit
+       FROM truck_cargo c
+       LEFT JOIN products p ON c.product_id = p.id
+       WHERE c.truck_id = ? AND c.qty_current > 0 AND c.unloaded_to_warehouse_id IS NULL`,
+      [truckId]
+    );
+  },
 };
 
 // ── Products ────────────────────────────────────────────────

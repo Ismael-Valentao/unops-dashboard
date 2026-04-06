@@ -11,7 +11,9 @@
   <main class="admin-main">
     <header class="admin-header">
       <h1>Stock Total</h1>
-      <span class="admin-sub">Stock por armazem + carga em transito nos camioes</span>
+      <div>
+        <input type="text" id="f-product" placeholder="Filtrar por produto..." style="padding:.45rem .7rem;border:1.5px solid #e2e8f0;border-radius:8px;font-size:.82rem;min-width:240px">
+      </div>
     </header>
 
     <section class="admin-section">
@@ -47,9 +49,18 @@
   <script src="/static/admin.js"></script>
   <script>
     AdminUI.renderLayout("stock");
-    AdminUI.fetchJSON("/admin/api/stock-v2").then((d) => {
+    let stockData = null;
+    function matches(product) {
+      const q = (document.getElementById("f-product").value || "").trim().toLowerCase();
+      if (!q) return true;
+      return (product || "").toLowerCase().includes(q);
+    }
+    function render() {
+      if (!stockData) return;
+      const d = stockData;
       // Totals
-      document.getElementById("total-cards").innerHTML = (d.totals || []).map((s) =>
+      const totals = (d.totals || []).filter((s) => matches(s.product));
+      document.getElementById("total-cards").innerHTML = totals.map((s) =>
         `<div class="adm-card adm-card-blue">
           <div class="adm-card-lbl">${AdminUI.esc(s.product)}</div>
           <div class="adm-card-val">${AdminUI.fmt(s.qty)}</div>
@@ -59,7 +70,7 @@
 
       // By warehouse — group
       const byWh = {};
-      (d.by_warehouse || []).forEach((s) => {
+      (d.by_warehouse || []).filter((s) => matches(s.product)).forEach((s) => {
         const key = s.warehouse_id + "|" + (s.warehouse_name || "—");
         if (!byWh[key]) byWh[key] = { id: s.warehouse_id, name: s.warehouse_name, items: [] };
         byWh[key].items.push(s);
@@ -82,7 +93,8 @@
       ).join("") || `<div class="empty">Sem stock em armazens</div>`;
 
       // By truck
-      document.getElementById("trucks-body").innerHTML = (d.by_truck || []).map((t) =>
+      const byTruck = (d.by_truck || []).filter((t) => matches(t.product));
+      document.getElementById("trucks-body").innerHTML = byTruck.map((t) =>
         `<tr><td><a href="/admin/trucks/${t.truck_id}" class="link">${AdminUI.esc(t.plate)}</a></td>
          <td>${AdminUI.esc(t.product)}</td>
          <td>${AdminUI.fmt(t.qty)}</td>
@@ -90,7 +102,8 @@
       ).join("") || `<tr><td colspan="4" class="empty">Sem carga em transito</td></tr>`;
 
       // Movements
-      document.getElementById("mov-body").innerHTML = (d.movements || []).map((m) =>
+      const movs = (d.movements || []).filter((m) => matches(m.product));
+      document.getElementById("mov-body").innerHTML = movs.map((m) =>
         `<tr><td>${AdminUI.fmtDate(m.created_at)}</td>
          <td><span class="badge">${m.type}</span></td>
          <td>${AdminUI.esc(m.product)}</td>
@@ -99,7 +112,13 @@
          <td>${AdminUI.esc(m.warehouse_name || "—")}</td>
          <td>${AdminUI.esc(m.user_name || "")}</td></tr>`
       ).join("") || `<tr><td colspan="7" class="empty">Sem movimentos</td></tr>`;
+    }
+
+    AdminUI.fetchJSON("/admin/api/stock-v2").then((d) => {
+      stockData = d;
+      render();
     });
+    document.getElementById("f-product").addEventListener("input", render);
   </script>
 </body>
 </html>

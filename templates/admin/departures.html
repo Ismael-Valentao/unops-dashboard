@@ -53,6 +53,10 @@
         <label id="lbl-warehouse">Armazem origem
           <select name="source_warehouse_id" id="sel-warehouse"></select>
         </label>
+        <div id="stock-panel" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.55rem .75rem;font-size:.75rem;color:#0c4a6e;display:none">
+          <strong>Stock disponivel:</strong>
+          <div id="stock-panel-list" style="margin-top:.25rem"></div>
+        </div>
         <label>Provincia destino<input type="text" name="destination_province"></label>
         <label>Distrito destino<input type="text" name="destination_district"></label>
         <label>Beneficiario / Posto<input type="text" name="destination_name"></label>
@@ -124,7 +128,7 @@
       </div>`;
     }
 
-    document.getElementById("btn-new").addEventListener("click", async () => {
+    async function openModal(presetTruckId) {
       [products, warehouses, trucks] = await Promise.all([
         AdminUI.fetchJSON("/admin/api/products"),
         AdminUI.fetchJSON("/admin/api/warehouses"),
@@ -136,12 +140,51 @@
         warehouses.map((w) => `<option value="${w.id}">${AdminUI.esc(w.name)}</option>`).join("");
       document.getElementById("items-list").innerHTML = renderItem(0);
       document.getElementById("err").textContent = "";
+      if (presetTruckId) {
+        document.getElementById("sel-truck").value = presetTruckId;
+        document.getElementById("sel-source").value = "truck";
+        document.getElementById("lbl-warehouse").style.display = "none";
+        await refreshStockPanel();
+      }
       document.getElementById("modal").style.display = "flex";
-    });
+    }
+    document.getElementById("btn-new").addEventListener("click", () => openModal());
+
+    // Auto-open if URL has ?truck=
+    const urlTruck = new URLSearchParams(location.search).get("truck");
+    if (urlTruck) openModal(urlTruck);
+
+    async function refreshStockPanel() {
+      const sourceType = document.getElementById("sel-source").value;
+      const truckId = document.getElementById("sel-truck").value;
+      const wId = document.getElementById("sel-warehouse").value;
+      const panel = document.getElementById("stock-panel");
+      const list = document.getElementById("stock-panel-list");
+      let items = [];
+      try {
+        if (sourceType === "warehouse" && wId) {
+          items = await AdminUI.fetchJSON("/admin/api/warehouses/" + wId + "/stock");
+        } else if (sourceType === "truck" && truckId) {
+          const cargo = await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/cargo");
+          items = cargo.map((c) => ({ product: c.product, qty: c.qty_current, unit: c.unit }));
+        }
+      } catch (e) { items = []; }
+      if (items.length === 0) {
+        panel.style.display = "none";
+        return;
+      }
+      list.innerHTML = items.map((i) =>
+        `<div>&bull; <strong>${AdminUI.esc(i.product)}</strong>: ${AdminUI.fmt(i.qty)} ${AdminUI.esc(i.unit)}</div>`
+      ).join("");
+      panel.style.display = "block";
+    }
 
     document.getElementById("sel-source").addEventListener("change", (e) => {
       document.getElementById("lbl-warehouse").style.display = e.target.value === "warehouse" ? "flex" : "none";
+      refreshStockPanel();
     });
+    document.getElementById("sel-truck").addEventListener("change", refreshStockPanel);
+    document.getElementById("sel-warehouse").addEventListener("change", refreshStockPanel);
 
     document.getElementById("add-item").addEventListener("click", () => {
       const list = document.getElementById("items-list");
