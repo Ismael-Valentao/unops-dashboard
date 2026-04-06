@@ -27,13 +27,8 @@
     </section>
 
     <section class="admin-section">
-      <h2>Carga em Camioes (nao descarregada)</h2>
-      <div class="tbl-wrap">
-        <table class="adm-table">
-          <thead><tr><th>Camiao</th><th>Produto</th><th>Quantidade</th><th>Unidade</th></tr></thead>
-          <tbody id="trucks-body"></tbody>
-        </table>
-      </div>
+      <h2>Stock por Camiao (carga a bordo)</h2>
+      <div id="trucks-list"></div>
     </section>
 
     <section class="admin-section">
@@ -92,14 +87,29 @@
         </div>`
       ).join("") || `<div class="empty">Sem stock em armazens</div>`;
 
-      // By truck
-      const byTruck = (d.by_truck || []).filter((t) => matches(t.product));
-      document.getElementById("trucks-body").innerHTML = byTruck.map((t) =>
-        `<tr><td><a href="/admin/trucks/${t.truck_id}" class="link">${AdminUI.esc(t.plate)}</a></td>
-         <td>${AdminUI.esc(t.product)}</td>
-         <td>${AdminUI.fmt(t.qty)}</td>
-         <td>${AdminUI.esc(t.unit)}</td></tr>`
-      ).join("") || `<tr><td colspan="4" class="empty">Sem carga em transito</td></tr>`;
+      // By truck — group by truck (cards)
+      const byTruckGrouped = {};
+      (d.by_truck || []).filter((t) => matches(t.product)).forEach((t) => {
+        const key = t.truck_id;
+        if (!byTruckGrouped[key]) byTruckGrouped[key] = { id: t.truck_id, plate: t.plate, items: [] };
+        byTruckGrouped[key].items.push(t);
+      });
+      document.getElementById("trucks-list").innerHTML = Object.values(byTruckGrouped).map((tk) => `
+        <div style="margin-bottom:1rem">
+          <h3 style="font-size:.85rem;color:#0f4c75;margin-bottom:.4rem">
+            <a href="/admin/trucks/${tk.id}" class="link">&#128666; ${AdminUI.esc(tk.plate)}</a>
+          </h3>
+          <div class="admin-cards">
+            ${tk.items.map((s) =>
+              `<div class="adm-card adm-card-amber">
+                <div class="adm-card-lbl">${AdminUI.esc(s.product)}</div>
+                <div class="adm-card-val">${AdminUI.fmt(s.qty)}</div>
+                <div class="adm-card-sub">${AdminUI.esc(s.unit)}</div>
+              </div>`
+            ).join("")}
+          </div>
+        </div>`
+      ).join("") || `<div class="empty">Sem carga em camioes</div>`;
 
       // Movements
       const movs = (d.movements || []).filter((m) => matches(m.product));

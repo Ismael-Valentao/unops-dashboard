@@ -14,13 +14,25 @@
 
     <section class="admin-section">
       <div class="section-head">
-        <h2>Carga</h2>
+        <h2>Carga a Bordo</h2>
         <button class="btn btn-sm btn-primary" id="btn-add-cargo">+ Adicionar</button>
       </div>
       <div class="tbl-wrap">
         <table class="adm-table">
-          <thead><tr><th>Produto</th><th>Qtd Inicial</th><th>Qtd Actual</th><th>Unidade</th><th>Notas</th><th></th></tr></thead>
+          <thead><tr><th>Produto</th><th>Quantidade</th><th>Unidade</th><th>Notas</th><th></th></tr></thead>
           <tbody id="cargo-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="admin-section" id="unloaded-section" style="display:none">
+      <div class="section-head">
+        <h2>Historico de Descarga (ja saiu do camiao)</h2>
+      </div>
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Produto</th><th>Quantidade Descarregada</th><th>Unidade</th><th>Destino</th></tr></thead>
+          <tbody id="unloaded-body"></tbody>
         </table>
       </div>
     </section>
@@ -166,15 +178,35 @@
         <div>${AdminUI.statusBadge(t.status)}</div>
       `;
 
-      document.getElementById("cargo-body").innerHTML = (t.cargo || []).map((c) =>
-        `<tr><td>${AdminUI.esc(c.product)}</td>
-          <td>${AdminUI.fmt(c.qty_initial)}</td>
+      // Split cargo into "on board" (still in truck) and "unloaded" (gone to warehouse)
+      const allCargo = t.cargo || [];
+      const onBoard = allCargo.filter((c) => Number(c.qty_current) > 0 && !c.unloaded_to_warehouse_id);
+      const unloaded = allCargo.filter((c) => c.unloaded_to_warehouse_id);
+
+      document.getElementById("cargo-body").innerHTML = onBoard.map((c) =>
+        `<tr><td><strong>${AdminUI.esc(c.product)}</strong></td>
           <td>${AdminUI.fmt(c.qty_current)}</td>
           <td>${AdminUI.esc(c.unit)}</td>
           <td>${AdminUI.esc(c.notes || "")}</td>
           <td><button class="btn btn-sm btn-danger" onclick="removeCargo(${c.id})">x</button></td>
         </tr>`
-      ).join("") || `<tr><td colspan="6" class="empty">Sem carga registada</td></tr>`;
+      ).join("") || `<tr><td colspan="5" class="empty">Sem carga a bordo</td></tr>`;
+
+      // Unloaded history
+      const warehouses = await AdminUI.loadWarehouses();
+      const wMap = {};
+      warehouses.forEach((w) => { wMap[w.id] = w.name; });
+      if (unloaded.length > 0) {
+        document.getElementById("unloaded-section").style.display = "block";
+        document.getElementById("unloaded-body").innerHTML = unloaded.map((c) =>
+          `<tr><td>${AdminUI.esc(c.product)}</td>
+           <td>${AdminUI.fmt(c.qty_initial)}</td>
+           <td>${AdminUI.esc(c.unit)}</td>
+           <td>&rarr; ${AdminUI.esc(wMap[c.unloaded_to_warehouse_id] || ("Armazem #" + c.unloaded_to_warehouse_id))}</td></tr>`
+        ).join("");
+      } else {
+        document.getElementById("unloaded-section").style.display = "none";
+      }
 
       document.getElementById("att-grid").innerHTML = (t.attachments || []).map((a) => {
         const isImg = (a.mime_type || "").startsWith("image/");

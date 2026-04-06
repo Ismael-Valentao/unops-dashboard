@@ -35,7 +35,7 @@
         <table class="adm-table">
           <thead><tr>
             <th>Matricula</th><th>Fornecedor</th><th>Motorista</th>
-            <th>Estado</th><th>Carga</th><th>Anexos</th><th>Chegada</th><th></th>
+            <th>Estado</th><th>A bordo</th><th>Anexos</th><th>Chegada</th><th></th>
           </tr></thead>
           <tbody id="trucks-body"></tbody>
         </table>
@@ -128,18 +128,22 @@
         const hay = (t.plate + " " + (t.driver_name || "") + " " + (t.supplier_name || "")).toLowerCase();
         return hay.includes(search);
       });
-      document.getElementById("trucks-body").innerHTML = trucks.map((t) =>
-        `<tr>
+      document.getElementById("trucks-body").innerHTML = trucks.map((t) => {
+        const onBoard = Number(t.qty_on_board || 0);
+        const cargoLabel = onBoard > 0
+          ? `<strong>${AdminUI.fmt(onBoard)}</strong> <small style="color:#64748b">(${t.cargo_count})</small>`
+          : `<span style="color:#94a3b8">—</span>`;
+        return `<tr>
           <td><a href="/admin/trucks/${t.id}" class="link">${AdminUI.esc(t.plate)}</a></td>
           <td>${AdminUI.esc(t.supplier_name || "—")}</td>
           <td>${AdminUI.esc(t.driver_name || "—")}</td>
           <td>${AdminUI.statusBadge(t.status)}</td>
-          <td style="text-align:center">${t.cargo_count}</td>
+          <td style="text-align:right">${cargoLabel}</td>
           <td style="text-align:center">${t.attachment_count}</td>
           <td>${AdminUI.fmtDate(t.arrived_at)}</td>
           <td><a href="/admin/trucks/${t.id}" class="btn btn-sm">Ver</a></td>
-        </tr>`
-      ).join("") || `<tr><td colspan="8" class="empty">Sem camioes</td></tr>`;
+        </tr>`;
+      }).join("") || `<tr><td colspan="8" class="empty">Sem camioes</td></tr>`;
     }
     document.getElementById("f-search").addEventListener("input", renderTrucks);
 

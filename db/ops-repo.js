@@ -130,8 +130,13 @@ const Trucks = {
     if (filters && filters.status) { where.push("t.status = ?"); params.push(filters.status); }
     if (filters && filters.supplier_id) { where.push("t.supplier_id = ?"); params.push(filters.supplier_id); }
     const sql = `SELECT t.*, s.name AS supplier_name,
-                        (SELECT COUNT(*) FROM truck_cargo c WHERE c.truck_id = t.id) AS cargo_count,
-                        (SELECT COUNT(*) FROM truck_attachments a WHERE a.truck_id = t.id) AS attachment_count
+                        (SELECT COUNT(*) FROM truck_cargo c
+                         WHERE c.truck_id = t.id AND c.qty_current > 0
+                           AND c.unloaded_to_warehouse_id IS NULL) AS cargo_count,
+                        (SELECT COUNT(*) FROM truck_attachments a WHERE a.truck_id = t.id) AS attachment_count,
+                        (SELECT COALESCE(SUM(c.qty_current), 0) FROM truck_cargo c
+                         WHERE c.truck_id = t.id AND c.qty_current > 0
+                           AND c.unloaded_to_warehouse_id IS NULL) AS qty_on_board
                  FROM trucks t LEFT JOIN suppliers s ON t.supplier_id = s.id
                  ${where.length ? "WHERE " + where.join(" AND ") : ""}
                  ORDER BY t.created_at DESC`;
