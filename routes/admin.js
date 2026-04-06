@@ -314,11 +314,67 @@ router.delete("/api/attachments/:id", async (req, res) => {
 
 // Transfers
 router.post("/api/trucks/:id/transfer", express.json(), async (req, res) => {
-  const data = { ...req.body, from_truck_id: Number(req.params.id) };
-  const tid = await Transfers.create(data, req.user.id);
-  await Stock.addMovement({ type: "transfer_out", product: data.product, qty: data.qty, truck_id: data.from_truck_id, transfer_id: tid }, req.user.id);
-  await Stock.addMovement({ type: "transfer_in", product: data.product, qty: data.qty, truck_id: data.to_truck_id, transfer_id: tid }, req.user.id);
-  await auth.logAction(req, "transfer", "truck", req.params.id, `${data.qty} ${data.unit} -> truck ${data.to_truck_id}`);
+  const fromId = Number(req.params.id);
+  const data = { ...req.body, from_truck_id: fromId };
+  const qty = Number(data.qty);
+  if (!data.to_truck_id) return jsonError(res, 400, "to_truck_id obrigatorio");
+  if (Number(data.to_truck_id) === fromId) return jsonError(res, 400, "Camiao destino deve ser diferente da origem");
+  if (!qty || qty <= 0) return jsonError(res, 400, "Quantidade invalida");
+
+  // Resolve product
+  let product = null;
+  if (data.product_id) product = await Products.findById(data.product_id);
+  if (!product && data.product) {
+    // Fallback: try by name (legacy)
+    const all = await Products.list();
+    product = all.find((p) => p.name === data.product);
+  }
+  if (!product) return jsonError(res, 400, "Produto invalido");
+
+  // 1. Find matching cargo line on the source truck
+  const fromCargo = await Cargo.listByTruck(fromId);
+  const sourceLines = fromCargo.filter((c) =>
+    Number(c.qty_current) > 0 &&
+    !c.unloaded_to_warehouse_id &&
+    ((c.product_id === product.id) || c.product === product.name)
+  );
+  const totalAvailable = sourceLines.reduce((s, c) => s + Number(c.qty_current), 0);
+  if (totalAvailable < qty) {
+    return jsonError(res, 400, `Stock insuficiente de ${product.name} no camiao origem (disponivel: ${totalAvailable}, pedido: ${qty})`);
+  }
+
+  // 2. Decrement from source lines (FIFO)
+  let remaining = qty;
+  for (const line of sourceLines) {
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, Number(line.qty_current));
+    await Cargo.updateCurrent(line.id, Number(line.qty_current) - take);
+    remaining -= take;
+  }
+
+  // 3. Add new cargo line on destination truck
+  const unit = data.unit || product.default_unit;
+  const newCargoId = await Cargo.add(data.to_truck_id, {
+    product: product.name, qty, unit, notes: data.notes || ("Transferido do camiao #" + fromId),
+  });
+  await execute("UPDATE truck_cargo SET product_id = ? WHERE id = ?", [product.id, newCargoId]);
+
+  // 4. Record the transfer + movements
+  const tid = await Transfers.create({
+    ...data, product: product.name, qty, unit,
+  }, req.user.id);
+  await Stock.addMovement({
+    type: "transfer_out", product: product.name, product_id: product.id,
+    qty, truck_id: fromId, transfer_id: tid,
+    notes: "Transfer to truck #" + data.to_truck_id,
+  }, req.user.id);
+  await Stock.addMovement({
+    type: "transfer_in", product: product.name, product_id: product.id,
+    qty, truck_id: Number(data.to_truck_id), transfer_id: tid,
+    notes: "Transfer from truck #" + fromId,
+  }, req.user.id);
+
+  await auth.logAction(req, "transfer", "truck", fromId, `${qty} ${unit} ${product.name} -> truck ${data.to_truck_id}`);
   res.json({ id: tid });
 });
 
