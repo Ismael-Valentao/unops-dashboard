@@ -102,17 +102,19 @@ const Requisitions = {
   },
   async create(data, userId) {
     const r = await execute(
-      `INSERT INTO requisitions (ref_number, supplier_id, product, qty_requested, unit, status, requested_at, expected_at, notes, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [data.ref_number || null, data.supplier_id, data.product, data.qty_requested, data.unit, data.status || "pending",
+      `INSERT INTO requisitions (ref_number, supplier_id, product, product_id, qty_requested, unit, status, requested_at, expected_at, notes, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [data.ref_number || null, data.supplier_id, data.product, data.product_id || null,
+       data.qty_requested, data.unit, data.status || "pending",
        data.requested_at || now(), data.expected_at || null, data.notes || null, userId || null]
     );
     return r.insertId;
   },
   async update(id, data) {
     return execute(
-      `UPDATE requisitions SET ref_number=?, supplier_id=?, product=?, qty_requested=?, unit=?, status=?, expected_at=?, notes=? WHERE id=?`,
-      [data.ref_number || null, data.supplier_id, data.product, data.qty_requested, data.unit, data.status, data.expected_at || null, data.notes || null, id]
+      `UPDATE requisitions SET ref_number=?, supplier_id=?, product=?, product_id=?, qty_requested=?, unit=?, status=?, expected_at=?, notes=? WHERE id=?`,
+      [data.ref_number || null, data.supplier_id, data.product, data.product_id || null,
+       data.qty_requested, data.unit, data.status, data.expected_at || null, data.notes || null, id]
     );
   },
   async remove(id) {

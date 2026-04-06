@@ -33,7 +33,9 @@
         <input type="hidden" name="id">
         <label>Referencia<input type="text" name="ref_number"></label>
         <label>Fornecedor *<select name="supplier_id" id="sel-supplier" required></select></label>
-        <label>Produto *<input type="text" name="product" required></label>
+        <label>Produto *
+          <select name="product_id" id="req-product" required></select>
+        </label>
         <label>Quantidade *<input type="number" step="0.01" name="qty_requested" required></label>
         <label>Unidade *
           <select name="unit" required>
@@ -76,10 +78,15 @@
       document.getElementById("sel-supplier").innerHTML = '<option value="">— Seleccionar —</option>' +
         sup.map((s) => `<option value="${s.id}">${AdminUI.esc(s.name)}</option>`).join("");
     }
+    async function loadProducts() {
+      const products = await AdminUI.loadProducts();
+      document.getElementById("req-product").innerHTML = AdminUI.productSelectOptions(products);
+    }
     function editReq(r) {
       const f = document.getElementById("form");
       f.id.value = r.id; f.ref_number.value = r.ref_number || "";
-      f.supplier_id.value = r.supplier_id; f.product.value = r.product;
+      f.supplier_id.value = r.supplier_id;
+      if (r.product_id) f.product_id.value = r.product_id;
       f.qty_requested.value = r.qty_requested; f.unit.value = r.unit;
       f.status.value = r.status; f.expected_at.value = (r.expected_at || "").slice(0,10);
       f.notes.value = r.notes || "";
@@ -92,14 +99,26 @@
     }
     window.editReq = editReq; window.removeReq = removeReq;
     document.getElementById("btn-new").addEventListener("click", async () => {
-      await loadSuppliers();
+      await Promise.all([loadSuppliers(), loadProducts()]);
       document.getElementById("form").reset();
       document.getElementById("modal").style.display = "flex";
     });
+    document.getElementById("req-product").addEventListener("change", async (e) => {
+      const opt = e.target.selectedOptions[0];
+      const unit = opt && opt.dataset.unit;
+      if (unit) document.getElementById("form").unit.value = unit;
+    });
     document.getElementById("form").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const data = Object.fromEntries(new FormData(e.target));
+      const fd = new FormData(e.target);
+      const productId = Number(fd.get("product_id"));
+      const products = await AdminUI.loadProducts();
+      const product = products.find((p) => p.id === productId);
+      if (!product) { alert("Seleccione um produto"); return; }
+      const data = Object.fromEntries(fd);
       const id = data.id; delete data.id;
+      data.product = product.name;  // backwards compat
+      data.product_id = product.id;
       if (!data.expected_at) delete data.expected_at;
       if (id) await AdminUI.fetchJSON("/admin/api/requisitions/" + id, { method: "PUT", body: data });
       else await AdminUI.fetchJSON("/admin/api/requisitions", { method: "POST", body: data });

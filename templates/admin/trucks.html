@@ -87,10 +87,13 @@
             <select name="supplier_id" id="q-supplier"><option value="">—</option></select>
           </label>
         </div>
-        <label>Armazem destino *
-          <select name="warehouse_id" id="q-warehouse" required>
-            <option value="">— Seleccionar armazem —</option>
+        <label>Armazem destino (opcional)
+          <select name="warehouse_id" id="q-warehouse">
+            <option value="">— Manter carga no camiao —</option>
           </select>
+          <small style="color:#64748b;font-size:.7rem;display:block;margin-top:.2rem">
+            Se nao seleccionar armazem, a carga fica retida no camiao para futura saida ou descarga.
+          </small>
         </label>
         <label>Notas<textarea name="notes" rows="2"></textarea></label>
 
@@ -100,7 +103,7 @@
           <button type="button" class="btn btn-sm" id="q-add">+ Adicionar produto</button>
         </div>
 
-        <button type="submit" class="btn btn-success">Receber e Descarregar</button>
+        <button type="submit" class="btn btn-success">Registar Recepcao</button>
         <div id="q-err" class="auth-error"></div>
       </form>
     </div>
@@ -208,12 +211,13 @@
         document.getElementById("q-err").textContent = "Adicionar pelo menos um produto";
         return;
       }
+      const wh = fd.get("warehouse_id");
       const data = {
         plate: fd.get("plate"),
         driver_name: fd.get("driver_name"),
         driver_phone: fd.get("driver_phone"),
         supplier_id: fd.get("supplier_id") || null,
-        warehouse_id: Number(fd.get("warehouse_id")),
+        warehouse_id: wh ? Number(wh) : null,
         notes: fd.get("notes"),
         items,
       };

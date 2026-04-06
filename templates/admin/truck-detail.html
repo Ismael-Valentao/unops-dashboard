@@ -107,17 +107,11 @@
         <label>Camiao destino *
           <select name="to_truck_id" id="to-truck" required></select>
         </label>
-        <label>Produto *<input type="text" name="product" required></label>
-        <label>Quantidade *<input type="number" name="qty" step="0.01" required></label>
-        <label>Unidade *
-          <select name="unit" required>
-            <option value="kg">kg</option>
-            <option value="ton">ton</option>
-            <option value="sacos">sacos</option>
-            <option value="caixas">caixas</option>
-            <option value="unid">unid</option>
-          </select>
+        <label>Produto *
+          <select name="product_id" id="trans-product" required></select>
         </label>
+        <label>Quantidade *<input type="number" name="qty" step="0.01" required></label>
+        <label>Unidade *<input type="text" name="unit" id="trans-unit" required></label>
         <label>Notas<textarea name="notes" rows="2"></textarea></label>
         <button type="submit" class="btn btn-primary">Transferir</button>
       </form>
@@ -247,16 +241,40 @@
     });
 
     document.getElementById("btn-transfer").addEventListener("click", async () => {
-      const trucks = await AdminUI.fetchJSON("/admin/api/trucks");
+      const [trucks, products] = await Promise.all([
+        AdminUI.fetchJSON("/admin/api/trucks"),
+        AdminUI.loadProducts(),
+      ]);
       const sel = document.getElementById("to-truck");
       sel.innerHTML = trucks.filter((t) => t.id != truckId).map((t) =>
         `<option value="${t.id}">${AdminUI.esc(t.plate)} (${AdminUI.esc(t.supplier_name || "—")})</option>`
       ).join("");
+      document.getElementById("trans-product").innerHTML = AdminUI.productSelectOptions(products);
+      document.getElementById("trans-unit").value = "kg";
       document.getElementById("trans-modal").style.display = "flex";
     });
+
+    document.getElementById("trans-product").addEventListener("change", (e) => {
+      const opt = e.target.selectedOptions[0];
+      const unit = opt && opt.dataset.unit;
+      if (unit) document.getElementById("trans-unit").value = unit;
+    });
+
     document.getElementById("trans-form").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const data = Object.fromEntries(new FormData(e.target));
+      const fd = new FormData(e.target);
+      const productId = Number(fd.get("product_id"));
+      const products = await AdminUI.loadProducts();
+      const product = products.find((p) => p.id === productId);
+      if (!product) { alert("Seleccione um produto"); return; }
+      const data = {
+        to_truck_id: Number(fd.get("to_truck_id")),
+        product: product.name,
+        product_id: product.id,
+        qty: Number(fd.get("qty")),
+        unit: fd.get("unit") || product.default_unit,
+        notes: fd.get("notes"),
+      };
       await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/transfer", { method: "POST", body: data });
       document.getElementById("trans-modal").style.display = "none";
       e.target.reset();

@@ -372,39 +372,57 @@ router.post("/api/warehouses/:id/active", auth.requireRole("superadmin", "admin"
 
 // ── Trucks: Quick Receive + Unload to Warehouse ────────────
 router.post("/api/trucks/quick-receive", express.json(), async (req, res) => {
-  // body: { plate, driver_name?, driver_phone?, supplier_id?, warehouse_id, items: [{product_id, qty, unit?}] }
+  // body: { plate, driver_name?, driver_phone?, supplier_id?, warehouse_id?, items: [{product_id, qty, unit?}] }
+  // warehouse_id is OPTIONAL: if provided, cargo is unloaded immediately to that warehouse;
+  // if not, cargo stays on the truck (status='arrived') ready to be re-routed.
   const { plate, driver_name, driver_phone, supplier_id, warehouse_id, items, notes } = req.body;
-  if (!plate || !warehouse_id || !Array.isArray(items) || items.length === 0) {
-    return jsonError(res, 400, "plate, warehouse_id e items obrigatorios");
+  if (!plate || !Array.isArray(items) || items.length === 0) {
+    return jsonError(res, 400, "plate e items obrigatorios");
   }
+
+  const unloadNow = !!warehouse_id;
+  const truckStatus = unloadNow ? "unloaded" : "arrived";
 
   // 1. Create truck
   const truckId = await Trucks.create(
-    { plate, driver_name, driver_phone, supplier_id, status: "unloaded", arrived_at: new Date().toISOString().slice(0,19).replace("T"," "), notes },
+    { plate, driver_name, driver_phone, supplier_id, status: truckStatus,
+      arrived_at: new Date().toISOString().slice(0,19).replace("T"," "), notes },
     req.user.id
   );
-  // 2. Add cargo + create movements warehouse_in
+  // 2. Add cargo + (optionally) create movements warehouse_in
   for (const it of items) {
     const product = await Products.findById(it.product_id);
     if (!product) continue;
     const unit = it.unit || product.default_unit;
     const cargoId = await Cargo.add(truckId, { product: product.name, qty: it.qty, unit, notes: it.notes });
-    // Mark cargo as already unloaded
-    await execute(
-      "UPDATE truck_cargo SET unloaded_to_warehouse_id = ?, product_id = ?, qty_current = 0 WHERE id = ?",
-      [warehouse_id, product.id, cargoId]
-    );
-    await Stock.addMovement({
-      type: "warehouse_in",
-      product: product.name, product_id: product.id,
-      qty: it.qty, truck_id: truckId, warehouse_id,
-      notes: "Quick receive",
-    }, req.user.id);
+    // Always link to product
+    await execute("UPDATE truck_cargo SET product_id = ? WHERE id = ?", [product.id, cargoId]);
+
+    if (unloadNow) {
+      // Mark cargo as already unloaded
+      await execute(
+        "UPDATE truck_cargo SET unloaded_to_warehouse_id = ?, qty_current = 0 WHERE id = ?",
+        [warehouse_id, cargoId]
+      );
+      await Stock.addMovement({
+        type: "warehouse_in",
+        product: product.name, product_id: product.id,
+        qty: it.qty, truck_id: truckId, warehouse_id,
+        notes: "Quick receive",
+      }, req.user.id);
+    } else {
+      // Cargo stays on the truck — register the entry as truck_in
+      await Stock.addMovement({
+        type: "truck_in",
+        product: product.name, product_id: product.id,
+        qty: it.qty, truck_id: truckId,
+        notes: "Recebido (carga mantida no camiao)",
+      }, req.user.id);
+    }
   }
-  // 3. Mark truck unloaded
-  await Trucks.setStatus(truckId, "unloaded");
-  await auth.logAction(req, "quick_receive", "truck", truckId, plate);
-  res.json({ id: truckId });
+  await auth.logAction(req, "quick_receive", "truck", truckId,
+    plate + (unloadNow ? " (descarregado)" : " (carga retida)"));
+  res.json({ id: truckId, unloaded: unloadNow });
 });
 
 router.post("/api/trucks/:id/unload-to-warehouse", express.json(), async (req, res) => {
