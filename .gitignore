@@ -2,8 +2,11 @@ node_modules/
 data/snapshots.db
 data/snapshots.db-wal
 data/snapshots.db-shm
+data/uploads/
 *.output
 test_*.xlsx
 verify.js
 app.py
 requirements.txt
+.env
+.env.local

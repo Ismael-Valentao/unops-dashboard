@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Setup Inicial</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="auth-body">
+  <div class="auth-card auth-card-wide">
+    <div class="auth-logo">AQI Operacoes</div>
+    <div class="auth-sub">Setup inicial - criar superadmin</div>
+    <p class="auth-info">Bem-vindo. Esta e a primeira execucao do sistema. Cria a conta de superadministrador.</p>
+    <form id="setup-form" class="auth-form">
+      <label>Nome completo
+        <input type="text" name="name" required autofocus>
+      </label>
+      <label>Email
+        <input type="email" name="email" required>
+      </label>
+      <label>Password (minimo 8 caracteres)
+        <input type="password" name="password" required minlength="8">
+      </label>
+      <label>Confirmar password
+        <input type="password" name="password2" required minlength="8">
+      </label>
+      <button type="submit" class="btn btn-primary">Criar conta e entrar</button>
+      <div id="setup-error" class="auth-error"></div>
+    </form>
+  </div>
+  <script>
+    document.getElementById("setup-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const err = document.getElementById("setup-error");
+      err.textContent = "";
+      if (fd.get("password") !== fd.get("password2")) { err.textContent = "Passwords nao coincidem"; return; }
+      try {
+        const res = await fetch("/admin/setup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: fd.get("name"), email: fd.get("email"), password: fd.get("password") }),
+        });
+        const json = await res.json();
+        if (!res.ok) { err.textContent = json.error || "Erro"; return; }
+        location.href = json.redirect || "/admin";
+      } catch (e) { err.textContent = "Erro de conexao"; }
+    });
+  </script>
+</body>
+</html>

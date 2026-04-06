@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Login</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="auth-body">
+  <div class="auth-card">
+    <div class="auth-logo">AQI Operacoes</div>
+    <div class="auth-sub">Sistema interno de gestao</div>
+    <form id="login-form" class="auth-form">
+      <label>Email
+        <input type="email" name="email" required autofocus>
+      </label>
+      <label>Password
+        <input type="password" name="password" required>
+      </label>
+      <button type="submit" class="btn btn-primary">Entrar</button>
+      <div id="login-error" class="auth-error"></div>
+    </form>
+    <a href="/" class="auth-back">&larr; Voltar ao dashboard publico</a>
+  </div>
+  <script>
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const err = document.getElementById("login-error");
+      err.textContent = "";
+      try {
+        const res = await fetch("/admin/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: fd.get("email"), password: fd.get("password") }),
+        });
+        const json = await res.json();
+        if (!res.ok) { err.textContent = json.error || "Erro"; return; }
+        location.href = json.redirect || "/admin";
+      } catch (e) { err.textContent = "Erro de conexao"; }
+    });
+  </script>
+</body>
+</html>

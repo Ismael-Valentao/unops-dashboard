@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Auditoria</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Log de Auditoria</h1>
+      <span class="admin-sub">Ultimas 200 accoes</span>
+    </header>
+    <section class="admin-section">
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Data</th><th>Utilizador</th><th>Accao</th><th>Entidade</th><th>ID</th><th>Detalhes</th><th>IP</th></tr></thead>
+          <tbody id="audit-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="/static/admin.js"></script>
+  <script>
+    AdminUI.renderLayout("audit");
+    AdminUI.fetchJSON("/admin/api/audit").then((list) => {
+      document.getElementById("audit-body").innerHTML = list.map((a) =>
+        `<tr><td>${AdminUI.fmtDate(a.created_at)}</td>
+         <td>${AdminUI.esc(a.user_name || a.user_email || "—")}</td>
+         <td><span class="badge">${AdminUI.esc(a.action)}</span></td>
+         <td>${AdminUI.esc(a.entity_type || "—")}</td>
+         <td>${a.entity_id || "—"}</td>
+         <td>${AdminUI.esc(a.details || "")}</td>
+         <td>${AdminUI.esc(a.ip || "")}</td></tr>`
+      ).join("") || `<tr><td colspan="7" class="empty">Sem eventos</td></tr>`;
+    });
+  </script>
+</body>
+</html>

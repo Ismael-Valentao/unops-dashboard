@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Requisicoes</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Requisicoes</h1>
+      <button class="btn btn-primary" id="btn-new">+ Nova Requisicao</button>
+    </header>
+    <section class="admin-section">
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr>
+            <th>Ref</th><th>Fornecedor</th><th>Produto</th>
+            <th>Qtd</th><th>Estado</th><th>Pedido em</th><th>Esperado em</th><th></th>
+          </tr></thead>
+          <tbody id="req-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="modal" style="display:none">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Requisicao</h2><button class="modal-x" data-close>&times;</button></div>
+      <form id="form" class="modal-form">
+        <input type="hidden" name="id">
+        <label>Referencia<input type="text" name="ref_number"></label>
+        <label>Fornecedor *<select name="supplier_id" id="sel-supplier" required></select></label>
+        <label>Produto *<input type="text" name="product" required></label>
+        <label>Quantidade *<input type="number" step="0.01" name="qty_requested" required></label>
+        <label>Unidade *
+          <select name="unit" required>
+            <option value="kg">kg</option><option value="ton">ton</option>
+            <option value="sacos">sacos</option><option value="caixas">caixas</option><option value="unid">unid</option>
+          </select>
+        </label>
+        <label>Estado
+          <select name="status">
+            <option value="pending">Pendente</option><option value="partial">Parcial</option>
+            <option value="received">Recebida</option><option value="cancelled">Cancelada</option>
+          </select>
+        </label>
+        <label>Esperado em<input type="date" name="expected_at"></label>
+        <label>Notas<textarea name="notes" rows="2"></textarea></label>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    AdminUI.renderLayout("requisitions");
+    async function load() {
+      const list = await AdminUI.fetchJSON("/admin/api/requisitions");
+      document.getElementById("req-body").innerHTML = list.map((r) =>
+        `<tr><td>${AdminUI.esc(r.ref_number || "—")}</td>
+         <td>${AdminUI.esc(r.supplier_name || "—")}</td>
+         <td>${AdminUI.esc(r.product)}</td>
+         <td>${AdminUI.fmt(r.qty_requested)} ${AdminUI.esc(r.unit)}</td>
+         <td>${AdminUI.statusBadge(r.status)}</td>
+         <td>${AdminUI.fmtDate(r.requested_at)}</td>
+         <td>${AdminUI.fmtDate(r.expected_at)}</td>
+         <td><button class="btn btn-sm" onclick='editReq(${JSON.stringify(r)})'>Editar</button>
+             <button class="btn btn-sm btn-danger" onclick="removeReq(${r.id})">x</button></td></tr>`
+      ).join("") || `<tr><td colspan="8" class="empty">Sem requisicoes</td></tr>`;
+    }
+    async function loadSuppliers() {
+      const sup = await AdminUI.fetchJSON("/admin/api/suppliers");
+      document.getElementById("sel-supplier").innerHTML = '<option value="">— Seleccionar —</option>' +
+        sup.map((s) => `<option value="${s.id}">${AdminUI.esc(s.name)}</option>`).join("");
+    }
+    function editReq(r) {
+      const f = document.getElementById("form");
+      f.id.value = r.id; f.ref_number.value = r.ref_number || "";
+      f.supplier_id.value = r.supplier_id; f.product.value = r.product;
+      f.qty_requested.value = r.qty_requested; f.unit.value = r.unit;
+      f.status.value = r.status; f.expected_at.value = (r.expected_at || "").slice(0,10);
+      f.notes.value = r.notes || "";
+      document.getElementById("modal").style.display = "flex";
+    }
+    async function removeReq(id) {
+      if (!confirm("Eliminar requisicao?")) return;
+      await AdminUI.fetchJSON("/admin/api/requisitions/" + id, { method: "DELETE" });
+      load();
+    }
+    window.editReq = editReq; window.removeReq = removeReq;
+    document.getElementById("btn-new").addEventListener("click", async () => {
+      await loadSuppliers();
+      document.getElementById("form").reset();
+      document.getElementById("modal").style.display = "flex";
+    });
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      const id = data.id; delete data.id;
+      if (!data.expected_at) delete data.expected_at;
+      if (id) await AdminUI.fetchJSON("/admin/api/requisitions/" + id, { method: "PUT", body: data });
+      else await AdminUI.fetchJSON("/admin/api/requisitions", { method: "POST", body: data });
+      document.getElementById("modal").style.display = "none";
+      load();
+    });
+    document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest(".modal-overlay").style.display = "none"));
+    loadSuppliers().then(load);
+  </script>
+</body>
+</html>

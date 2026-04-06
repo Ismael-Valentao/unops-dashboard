@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Utilizadores</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Utilizadores</h1>
+      <button class="btn btn-primary" id="btn-new">+ Novo Utilizador</button>
+    </header>
+    <section class="admin-section">
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Nome</th><th>Email</th><th>Role</th><th>Activo</th><th>Criado</th><th>Ultimo Login</th><th></th></tr></thead>
+          <tbody id="users-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="new-modal" style="display:none">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Novo Utilizador</h2><button class="modal-x" data-close>&times;</button></div>
+      <form id="form-new" class="modal-form">
+        <label>Nome *<input type="text" name="name" required></label>
+        <label>Email *<input type="email" name="email" required></label>
+        <label>Password * (min 8 chars)<input type="password" name="password" required minlength="8"></label>
+        <label>Role *
+          <select name="role" required>
+            <option value="admin">Admin</option>
+            <option value="operator">Operador</option>
+            <option value="viewer">Visualizador</option>
+            <option value="superadmin">Superadmin</option>
+          </select>
+        </label>
+        <button type="submit" class="btn btn-primary">Criar</button>
+        <div id="new-err" class="auth-error"></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="pwd-modal" style="display:none">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Reset Password</h2><button class="modal-x" data-close>&times;</button></div>
+      <form id="form-pwd" class="modal-form">
+        <input type="hidden" name="id">
+        <label>Nova password (min 8 chars)<input type="password" name="password" required minlength="8"></label>
+        <button type="submit" class="btn btn-primary">Actualizar</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    AdminUI.renderLayout("users");
+    async function load() {
+      const list = await AdminUI.fetchJSON("/admin/api/users");
+      document.getElementById("users-body").innerHTML = list.map((u) =>
+        `<tr><td><strong>${AdminUI.esc(u.name)}</strong></td>
+         <td>${AdminUI.esc(u.email)}</td>
+         <td><span class="badge">${u.role}</span></td>
+         <td>${u.active ? '<span style="color:#16a34a">Sim</span>' : '<span style="color:#dc2626">Nao</span>'}</td>
+         <td>${AdminUI.fmtDate(u.created_at)}</td>
+         <td>${AdminUI.fmtDate(u.last_login)}</td>
+         <td>
+           <button class="btn btn-sm" onclick="resetPwd(${u.id})">Reset password</button>
+           <button class="btn btn-sm" onclick="toggleActive(${u.id}, ${u.active ? 0 : 1})">
+             ${u.active ? "Desactivar" : "Activar"}
+           </button>
+         </td></tr>`
+      ).join("");
+    }
+    function resetPwd(id) {
+      document.getElementById("form-pwd").id.value = id;
+      document.getElementById("pwd-modal").style.display = "flex";
+    }
+    async function toggleActive(id, active) {
+      await AdminUI.fetchJSON("/admin/api/users/" + id + "/active", { method: "POST", body: { active } });
+      load();
+    }
+    window.resetPwd = resetPwd; window.toggleActive = toggleActive;
+
+    document.getElementById("btn-new").addEventListener("click", () => {
+      document.getElementById("form-new").reset();
+      document.getElementById("new-err").textContent = "";
+      document.getElementById("new-modal").style.display = "flex";
+    });
+    document.getElementById("form-new").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      try {
+        await AdminUI.fetchJSON("/admin/api/users", { method: "POST", body: data });
+        document.getElementById("new-modal").style.display = "none";
+        load();
+      } catch (err) {
+        document.getElementById("new-err").textContent = err.message || "Erro";
+      }
+    });
+    document.getElementById("form-pwd").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      await AdminUI.fetchJSON("/admin/api/users/" + f.id.value + "/password", { method: "POST", body: { password: f.password.value } });
+      document.getElementById("pwd-modal").style.display = "none";
+      load();
+    });
+    document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest(".modal-overlay").style.display = "none"));
+    load();
+  </script>
+</body>
+</html>

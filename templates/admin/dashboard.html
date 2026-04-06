@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Dashboard</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Dashboard Operacional</h1>
+      <span class="admin-sub">Visao geral em tempo real</span>
+    </header>
+
+    <section class="admin-cards" id="cards">
+      <div class="adm-card">
+        <div class="adm-card-lbl">Camioes Esperados</div>
+        <div class="adm-card-val" id="c-expected">—</div>
+      </div>
+      <div class="adm-card adm-card-amber">
+        <div class="adm-card-lbl">Em Recepcao</div>
+        <div class="adm-card-val" id="c-arrived">—</div>
+      </div>
+      <div class="adm-card adm-card-green">
+        <div class="adm-card-lbl">Descarregados</div>
+        <div class="adm-card-val" id="c-unloaded">—</div>
+      </div>
+      <div class="adm-card adm-card-blue">
+        <div class="adm-card-lbl">Requisicoes Pendentes</div>
+        <div class="adm-card-val" id="c-req-pending">—</div>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <h2>Stock Virtual por Produto</h2>
+      <div class="tbl-wrap">
+        <table class="adm-table" id="stock-table">
+          <thead><tr><th>Produto</th><th>Unidade</th><th style="text-align:right">Quantidade</th></tr></thead>
+          <tbody id="stock-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <h2>Movimentos Recentes</h2>
+      <div class="tbl-wrap">
+        <table class="adm-table" id="mov-table">
+          <thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Qtd</th><th>Camiao</th><th>Por</th></tr></thead>
+          <tbody id="mov-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="/static/admin.js"></script>
+  <script>
+    AdminUI.renderLayout("dashboard");
+    AdminUI.fetchJSON("/admin/api/dashboard").then((d) => {
+      document.getElementById("c-expected").textContent = d.trucks.expected;
+      document.getElementById("c-arrived").textContent = d.trucks.arrived;
+      document.getElementById("c-unloaded").textContent = d.trucks.unloaded;
+      document.getElementById("c-req-pending").textContent = d.requisitions.pending;
+      document.getElementById("stock-body").innerHTML = (d.stock || []).map((s) =>
+        `<tr><td>${AdminUI.esc(s.product)}</td><td>${AdminUI.esc(s.unit)}</td><td style="text-align:right">${AdminUI.fmt(s.qty)}</td></tr>`
+      ).join("") || `<tr><td colspan="3" class="empty">Sem stock virtual</td></tr>`;
+      document.getElementById("mov-body").innerHTML = (d.recent_movements || []).map((m) =>
+        `<tr><td>${AdminUI.fmtDate(m.created_at)}</td><td><span class="badge">${m.type}</span></td>
+         <td>${AdminUI.esc(m.product)}</td><td>${AdminUI.fmt(m.qty)}</td>
+         <td>${AdminUI.esc(m.plate || "")}</td><td>${AdminUI.esc(m.user_name || "")}</td></tr>`
+      ).join("") || `<tr><td colspan="6" class="empty">Sem movimentos</td></tr>`;
+    });
+  </script>
+</body>
+</html>

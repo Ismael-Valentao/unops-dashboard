@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Detalhe Camiao</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <a href="/admin/trucks" class="link">&larr; Camioes</a>
+    <header class="admin-header" id="header"></header>
+
+    <section class="admin-section">
+      <div class="section-head">
+        <h2>Carga</h2>
+        <button class="btn btn-sm btn-primary" id="btn-add-cargo">+ Adicionar</button>
+      </div>
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Produto</th><th>Qtd Inicial</th><th>Qtd Actual</th><th>Unidade</th><th>Notas</th><th></th></tr></thead>
+          <tbody id="cargo-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="two-col">
+      <section class="admin-section">
+        <div class="section-head">
+          <h2>Anexos (Guias / Fotos)</h2>
+          <label class="btn btn-sm btn-primary" style="cursor:pointer">
+            + Upload<input type="file" id="file-input" hidden>
+          </label>
+        </div>
+        <div id="att-grid" class="att-grid"></div>
+      </section>
+
+      <section class="admin-section">
+        <div class="section-head">
+          <h2>Transferencias</h2>
+          <button class="btn btn-sm btn-primary" id="btn-transfer">+ Transferir</button>
+        </div>
+        <div class="tbl-wrap">
+          <table class="adm-table">
+            <thead><tr><th>De/Para</th><th>Produto</th><th>Qtd</th><th>Data</th></tr></thead>
+            <tbody id="trans-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="admin-section">
+      <h2>Acoes</h2>
+      <div class="action-row">
+        <button class="btn" data-status="arrived">Marcar como Chegou</button>
+        <button class="btn" data-status="unloading">Marcar a Descarregar</button>
+        <button class="btn btn-success" data-status="unloaded">Marcar Descarregado</button>
+        <button class="btn btn-danger" data-status="cancelled">Cancelar</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Cargo modal -->
+  <div class="modal-overlay" id="cargo-modal" style="display:none">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Adicionar Carga</h2><button class="modal-x" data-close>&times;</button></div>
+      <form id="cargo-form" class="modal-form">
+        <label>Produto *<input type="text" name="product" required></label>
+        <label>Quantidade *<input type="number" name="qty" step="0.01" required></label>
+        <label>Unidade *
+          <select name="unit" required>
+            <option value="kg">kg</option>
+            <option value="ton">ton</option>
+            <option value="sacos">sacos</option>
+            <option value="caixas">caixas</option>
+            <option value="unid">unid</option>
+          </select>
+        </label>
+        <label>Notas<textarea name="notes" rows="2"></textarea></label>
+        <button type="submit" class="btn btn-primary">Adicionar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Transfer modal -->
+  <div class="modal-overlay" id="trans-modal" style="display:none">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Transferir Carga</h2><button class="modal-x" data-close>&times;</button></div>
+      <form id="trans-form" class="modal-form">
+        <label>Camiao destino *
+          <select name="to_truck_id" id="to-truck" required></select>
+        </label>
+        <label>Produto *<input type="text" name="product" required></label>
+        <label>Quantidade *<input type="number" name="qty" step="0.01" required></label>
+        <label>Unidade *
+          <select name="unit" required>
+            <option value="kg">kg</option>
+            <option value="ton">ton</option>
+            <option value="sacos">sacos</option>
+            <option value="caixas">caixas</option>
+            <option value="unid">unid</option>
+          </select>
+        </label>
+        <label>Notas<textarea name="notes" rows="2"></textarea></label>
+        <button type="submit" class="btn btn-primary">Transferir</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    AdminUI.renderLayout("trucks");
+    const truckId = location.pathname.split("/").pop();
+
+    async function loadTruck() {
+      const t = await AdminUI.fetchJSON("/admin/api/trucks/" + truckId);
+      document.getElementById("header").innerHTML = `
+        <div>
+          <h1>${AdminUI.esc(t.plate)}</h1>
+          <span class="admin-sub">
+            ${AdminUI.esc(t.supplier_name || "—")} &bull;
+            ${AdminUI.esc(t.driver_name || "Sem motorista")}
+            ${t.driver_phone ? " &bull; " + AdminUI.esc(t.driver_phone) : ""}
+          </span>
+        </div>
+        <div>${AdminUI.statusBadge(t.status)}</div>
+      `;
+
+      document.getElementById("cargo-body").innerHTML = (t.cargo || []).map((c) =>
+        `<tr><td>${AdminUI.esc(c.product)}</td>
+          <td>${AdminUI.fmt(c.qty_initial)}</td>
+          <td>${AdminUI.fmt(c.qty_current)}</td>
+          <td>${AdminUI.esc(c.unit)}</td>
+          <td>${AdminUI.esc(c.notes || "")}</td>
+          <td><button class="btn btn-sm btn-danger" onclick="removeCargo(${c.id})">x</button></td>
+        </tr>`
+      ).join("") || `<tr><td colspan="6" class="empty">Sem carga registada</td></tr>`;
+
+      document.getElementById("att-grid").innerHTML = (t.attachments || []).map((a) => {
+        const isImg = (a.mime_type || "").startsWith("image/");
+        return `<div class="att-card">
+          ${isImg ? `<img src="/admin/files/${a.id}" alt="">` : `<div class="att-file">📄</div>`}
+          <a href="/admin/files/${a.id}" target="_blank">${AdminUI.esc(a.original_name)}</a>
+          <button class="btn btn-sm btn-danger" onclick="removeAttachment(${a.id})">x</button>
+        </div>`;
+      }).join("") || `<div class="empty">Sem anexos</div>`;
+
+      document.getElementById("trans-body").innerHTML = (t.transfers || []).map((tr) => {
+        const direction = tr.from_truck_id == truckId ? `&rarr; ${AdminUI.esc(tr.to_plate)}` : `&larr; ${AdminUI.esc(tr.from_plate)}`;
+        return `<tr><td>${direction}</td><td>${AdminUI.esc(tr.product)}</td>
+                <td>${AdminUI.fmt(tr.qty)} ${AdminUI.esc(tr.unit)}</td>
+                <td>${AdminUI.fmtDate(tr.transferred_at)}</td></tr>`;
+      }).join("") || `<tr><td colspan="4" class="empty">Sem transferencias</td></tr>`;
+    }
+
+    async function removeCargo(id) {
+      if (!confirm("Remover esta carga?")) return;
+      await AdminUI.fetchJSON("/admin/api/cargo/" + id, { method: "DELETE" });
+      loadTruck();
+    }
+    async function removeAttachment(id) {
+      if (!confirm("Eliminar anexo?")) return;
+      await AdminUI.fetchJSON("/admin/api/attachments/" + id, { method: "DELETE" });
+      loadTruck();
+    }
+    window.removeCargo = removeCargo;
+    window.removeAttachment = removeAttachment;
+
+    document.getElementById("btn-add-cargo").addEventListener("click", () => {
+      document.getElementById("cargo-modal").style.display = "flex";
+    });
+    document.getElementById("cargo-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/cargo", { method: "POST", body: data });
+      document.getElementById("cargo-modal").style.display = "none";
+      e.target.reset();
+      loadTruck();
+    });
+
+    document.getElementById("file-input").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/admin/api/trucks/" + truckId + "/upload", { method: "POST", body: fd });
+      if (res.ok) loadTruck();
+      else alert("Erro no upload");
+      e.target.value = "";
+    });
+
+    document.getElementById("btn-transfer").addEventListener("click", async () => {
+      const trucks = await AdminUI.fetchJSON("/admin/api/trucks");
+      const sel = document.getElementById("to-truck");
+      sel.innerHTML = trucks.filter((t) => t.id != truckId).map((t) =>
+        `<option value="${t.id}">${AdminUI.esc(t.plate)} (${AdminUI.esc(t.supplier_name || "—")})</option>`
+      ).join("");
+      document.getElementById("trans-modal").style.display = "flex";
+    });
+    document.getElementById("trans-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/transfer", { method: "POST", body: data });
+      document.getElementById("trans-modal").style.display = "none";
+      e.target.reset();
+      loadTruck();
+    });
+
+    document.querySelectorAll("[data-status]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Confirmar mudanca de estado para " + btn.dataset.status + "?")) return;
+        await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/status",
+          { method: "POST", body: { status: btn.dataset.status } });
+        loadTruck();
+      });
+    });
+
+    document.querySelectorAll("[data-close]").forEach((b) =>
+      b.addEventListener("click", () => b.closest(".modal-overlay").style.display = "none"));
+
+    loadTruck();
+  </script>
+</body>
+</html>

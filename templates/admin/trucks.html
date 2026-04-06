@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI Operacoes - Camioes</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Camioes</h1>
+      <button class="btn btn-primary" id="btn-new">+ Registar Camiao</button>
+    </header>
+
+    <section class="admin-filters">
+      <select id="f-status">
+        <option value="">Todos os estados</option>
+        <option value="expected">Esperado</option>
+        <option value="arrived">Chegou</option>
+        <option value="unloading">A descarregar</option>
+        <option value="unloaded">Descarregado</option>
+        <option value="transferred">Transferido</option>
+        <option value="cancelled">Cancelado</option>
+      </select>
+    </section>
+
+    <section class="admin-section">
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr>
+            <th>Matricula</th><th>Fornecedor</th><th>Motorista</th>
+            <th>Estado</th><th>Carga</th><th>Anexos</th><th>Chegada</th><th></th>
+          </tr></thead>
+          <tbody id="trucks-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modal" style="display:none">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Novo Camiao</h2>
+        <button class="modal-x" onclick="document.getElementById('modal').style.display='none'">&times;</button>
+      </div>
+      <form id="truck-form" class="modal-form">
+        <label>Matricula *<input type="text" name="plate" required></label>
+        <label>Motorista<input type="text" name="driver_name"></label>
+        <label>Telefone do motorista<input type="text" name="driver_phone"></label>
+        <label>Fornecedor
+          <select name="supplier_id" id="sel-supplier"><option value="">— Seleccionar —</option></select>
+        </label>
+        <label>Estado
+          <select name="status">
+            <option value="expected">Esperado</option>
+            <option value="arrived">Chegou</option>
+            <option value="unloading">A descarregar</option>
+          </select>
+        </label>
+        <label>Notas<textarea name="notes" rows="3"></textarea></label>
+        <button type="submit" class="btn btn-primary">Criar</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    AdminUI.renderLayout("trucks");
+
+    async function loadTrucks() {
+      const status = document.getElementById("f-status").value;
+      const qs = status ? "?status=" + encodeURIComponent(status) : "";
+      const trucks = await AdminUI.fetchJSON("/admin/api/trucks" + qs);
+      document.getElementById("trucks-body").innerHTML = trucks.map((t) =>
+        `<tr>
+          <td><a href="/admin/trucks/${t.id}" class="link">${AdminUI.esc(t.plate)}</a></td>
+          <td>${AdminUI.esc(t.supplier_name || "—")}</td>
+          <td>${AdminUI.esc(t.driver_name || "—")}</td>
+          <td>${AdminUI.statusBadge(t.status)}</td>
+          <td style="text-align:center">${t.cargo_count}</td>
+          <td style="text-align:center">${t.attachment_count}</td>
+          <td>${AdminUI.fmtDate(t.arrived_at)}</td>
+          <td><a href="/admin/trucks/${t.id}" class="btn btn-sm">Ver</a></td>
+        </tr>`
+      ).join("") || `<tr><td colspan="8" class="empty">Sem camioes registados</td></tr>`;
+    }
+
+    async function loadSuppliers() {
+      const suppliers = await AdminUI.fetchJSON("/admin/api/suppliers");
+      document.getElementById("sel-supplier").innerHTML = '<option value="">— Seleccionar —</option>' +
+        suppliers.map((s) => `<option value="${s.id}">${AdminUI.esc(s.name)}</option>`).join("");
+    }
+
+    document.getElementById("f-status").addEventListener("change", loadTrucks);
+    document.getElementById("btn-new").addEventListener("click", async () => {
+      await loadSuppliers();
+      document.getElementById("modal").style.display = "flex";
+    });
+
+    document.getElementById("truck-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const data = Object.fromEntries(fd);
+      if (!data.supplier_id) data.supplier_id = null;
+      await AdminUI.fetchJSON("/admin/api/trucks", { method: "POST", body: data });
+      document.getElementById("modal").style.display = "none";
+      e.target.reset();
+      loadTrucks();
+    });
+
+    loadTrucks();
+  </script>
+</body>
+</html>

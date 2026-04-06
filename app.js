@@ -1,13 +1,20 @@
+require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const https = require("https");
+const cookieParser = require("cookie-parser");
 const { parse } = require("csv-parse/sync");
 const excel = require("./excel-engine");
 const snapDb = require("./snapshot-db");
 const planning = require("./planning-data");
+const mysqlDb = require("./db/mysql");
+const auth = require("./auth");
+const adminRouter = require("./routes/admin");
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
+app.use(auth.loadUser);
 const PORT = process.env.PORT || 5000;
 
 const SHEET_CSV_URL =
@@ -99,6 +106,9 @@ async function refreshCache() {
 
 // ── Static files ──────────────────────────────────────────────
 app.use("/static", express.static(path.join(__dirname, "static")));
+
+// ── Admin (internal operations) router ────────────────────────
+app.use("/admin", adminRouter);
 
 // ── Routes ────────────────────────────────────────────────────
 app.get("/", (_req, res) => {
@@ -516,6 +526,13 @@ async function main() {
   // Init modules
   snapDb.init();
   planning.load();
+
+  // Try MySQL — but don't crash the app if it's not available (admin will be disabled)
+  try {
+    await mysqlDb.init();
+  } catch (e) {
+    console.warn("[DB] MySQL not available - /admin disabled:", e.message);
+  }
 
   console.log("Fetching initial data from Google Sheets...");
   await refreshCache();
