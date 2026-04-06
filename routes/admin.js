@@ -313,6 +313,108 @@ router.delete("/api/attachments/:id", async (req, res) => {
 });
 
 // Transfers
+// Load truck — source can be 'warehouse' or another 'truck'
+router.post("/api/trucks/:id/load", express.json(), async (req, res) => {
+  const targetId = Number(req.params.id);
+  const { source_type, source_id, items } = req.body;
+  if (!source_type || !["warehouse", "truck"].includes(source_type)) {
+    return jsonError(res, 400, "source_type deve ser 'warehouse' ou 'truck'");
+  }
+  if (!source_id) return jsonError(res, 400, "source_id obrigatorio");
+  if (source_type === "truck" && Number(source_id) === targetId) {
+    return jsonError(res, 400, "Camiao origem deve ser diferente do destino");
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    return jsonError(res, 400, "items obrigatorio");
+  }
+
+  // Resolve products
+  const resolved = [];
+  for (const it of items) {
+    const product = await Products.findById(it.product_id);
+    if (!product) return jsonError(res, 400, "Produto invalido (id=" + it.product_id + ")");
+    const qty = Number(it.qty);
+    if (!qty || qty <= 0) return jsonError(res, 400, "Quantidade invalida para " + product.name);
+    resolved.push({ product, qty, unit: it.unit || product.default_unit });
+  }
+
+  // Validate available stock at source
+  if (source_type === "warehouse") {
+    const available = await Stock.warehouseStock(source_id);
+    for (const r of resolved) {
+      const stockItem = available.find((s) => s.product_id === r.product.id || s.product === r.product.name);
+      const have = stockItem ? Number(stockItem.qty) : 0;
+      if (have < r.qty) {
+        return jsonError(res, 400, `Stock insuficiente de ${r.product.name} no armazem (disponivel: ${have}, pedido: ${r.qty})`);
+      }
+    }
+  } else {
+    const sourceCargo = await Cargo.listByTruck(source_id);
+    for (const r of resolved) {
+      const lines = sourceCargo.filter((c) =>
+        Number(c.qty_current) > 0 && !c.unloaded_to_warehouse_id &&
+        ((c.product_id === r.product.id) || c.product === r.product.name)
+      );
+      const have = lines.reduce((s, c) => s + Number(c.qty_current), 0);
+      if (have < r.qty) {
+        return jsonError(res, 400, `Stock insuficiente de ${r.product.name} no camiao origem (disponivel: ${have}, pedido: ${r.qty})`);
+      }
+    }
+  }
+
+  // Apply movements
+  for (const r of resolved) {
+    if (source_type === "warehouse") {
+      await Stock.addMovement({
+        type: "warehouse_out",
+        product: r.product.name, product_id: r.product.id,
+        qty: r.qty, truck_id: targetId, warehouse_id: Number(source_id),
+        notes: "Carregamento de camiao",
+      }, req.user.id);
+    } else {
+      const sourceCargo = await Cargo.listByTruck(source_id);
+      const lines = sourceCargo.filter((c) =>
+        Number(c.qty_current) > 0 && !c.unloaded_to_warehouse_id &&
+        ((c.product_id === r.product.id) || c.product === r.product.name)
+      );
+      let remaining = r.qty;
+      for (const line of lines) {
+        if (remaining <= 0) break;
+        const take = Math.min(remaining, Number(line.qty_current));
+        await Cargo.updateCurrent(line.id, Number(line.qty_current) - take);
+        remaining -= take;
+      }
+      const tid = await Transfers.create({
+        from_truck_id: Number(source_id), to_truck_id: targetId,
+        product: r.product.name, qty: r.qty, unit: r.unit, notes: "Carregamento entre camioes",
+      }, req.user.id);
+      await Stock.addMovement({
+        type: "transfer_out",
+        product: r.product.name, product_id: r.product.id,
+        qty: r.qty, truck_id: Number(source_id), transfer_id: tid,
+        notes: "Para camiao #" + targetId,
+      }, req.user.id);
+      await Stock.addMovement({
+        type: "transfer_in",
+        product: r.product.name, product_id: r.product.id,
+        qty: r.qty, truck_id: targetId, transfer_id: tid,
+        notes: "De camiao #" + source_id,
+      }, req.user.id);
+    }
+
+    // Add cargo line to destination truck
+    const newId = await Cargo.add(targetId, {
+      product: r.product.name, qty: r.qty, unit: r.unit,
+      notes: source_type === "warehouse" ? "Carregado de armazem" : "Carregado de camiao",
+    });
+    await execute("UPDATE truck_cargo SET product_id = ? WHERE id = ?", [r.product.id, newId]);
+  }
+
+  await auth.logAction(req, "load_truck", "truck", targetId,
+    `${source_type}=${source_id}, ${resolved.length} itens`);
+  res.json({ ok: true });
+});
+
 router.post("/api/trucks/:id/transfer", express.json(), async (req, res) => {
   const fromId = Number(req.params.id);
   const data = { ...req.body, from_truck_id: fromId };
@@ -618,81 +720,57 @@ router.get("/api/departures/:id", async (req, res) => {
   res.json(d);
 });
 router.post("/api/departures", express.json(), async (req, res) => {
-  // body: { truck_id, source_type, source_warehouse_id?, destination_*, items: [{product_id, qty, unit}], plan_id? }
-  const { truck_id, source_type, source_warehouse_id, items } = req.body;
-  if (!truck_id || !source_type || !Array.isArray(items) || items.length === 0) {
-    return jsonError(res, 400, "campos obrigatorios em falta");
-  }
-  if (source_type === "warehouse" && !source_warehouse_id) {
-    return jsonError(res, 400, "source_warehouse_id obrigatorio quando source=warehouse");
+  // body: { truck_id, destination_*, items: [{product_id, qty, unit}], plan_id? }
+  // Simplified: always uses cargo currently on the truck. No source_type.
+  const { truck_id, items } = req.body;
+  if (!truck_id || !Array.isArray(items) || items.length === 0) {
+    return jsonError(res, 400, "truck_id e items obrigatorios");
   }
 
-  // ── STOCK VALIDATION ─────────────────────────────────────────
-  if (source_type === "warehouse") {
-    const available = await Stock.warehouseStock(source_warehouse_id);
-    for (const it of items) {
-      const product = await Products.findById(it.product_id);
-      if (!product) return jsonError(res, 400, "Produto invalido (id=" + it.product_id + ")");
-      const stockItem = available.find((s) => s.product_id === product.id || s.product === product.name);
-      const have = stockItem ? Number(stockItem.qty) : 0;
-      if (have < Number(it.qty)) {
-        return jsonError(res, 400, `Stock insuficiente de ${product.name} no armazem (disponivel: ${have}, pedido: ${it.qty})`);
-      }
-    }
-  } else {
-    const truckCargo = await Cargo.listByTruck(truck_id);
-    for (const it of items) {
-      const product = await Products.findById(it.product_id);
-      if (!product) return jsonError(res, 400, "Produto invalido (id=" + it.product_id + ")");
-      const match = truckCargo.find((c) => (c.product_id === product.id) || c.product === product.name);
-      const have = match ? Number(match.qty_current) : 0;
-      if (have < Number(it.qty)) {
-        return jsonError(res, 400, `Stock insuficiente de ${product.name} no camiao (disponivel: ${have}, pedido: ${it.qty})`);
-      }
-    }
-  }
-
-  const depId = await Departures.create(req.body, req.user.id);
+  // Validate truck cargo has enough of each item
+  const truckCargo = await Cargo.listByTruck(truck_id);
+  const resolved = [];
   for (const it of items) {
     const product = await Products.findById(it.product_id);
-    if (!product) continue;
-    const unit = it.unit || product.default_unit;
-    await Departures.addItem(depId, {
-      product_id: product.id, product_name: product.name,
-      qty: it.qty, unit, notes: it.notes,
-    });
-    if (source_type === "warehouse") {
-      // Decrease warehouse stock
-      await Stock.addMovement({
-        type: "departure",
-        product: product.name, product_id: product.id,
-        qty: it.qty, truck_id,
-        warehouse_id: source_warehouse_id,
-        departure_id: depId,
-        notes: "Departure to " + (req.body.destination_district || ""),
-      }, req.user.id);
-    } else {
-      // Decrease truck cargo
-      const truckCargo = await Cargo.listByTruck(truck_id);
-      const match = truckCargo.find((c) => (c.product_id === product.id) || c.product === product.name);
-      if (match && match.qty_current >= it.qty) {
-        await Cargo.updateCurrent(match.id, Number(match.qty_current) - Number(it.qty));
-      }
-      await Stock.addMovement({
-        type: "departure",
-        product: product.name, product_id: product.id,
-        qty: it.qty, truck_id,
-        departure_id: depId,
-        notes: "Direct departure from truck",
-      }, req.user.id);
+    if (!product) return jsonError(res, 400, "Produto invalido (id=" + it.product_id + ")");
+    const lines = truckCargo.filter((c) =>
+      Number(c.qty_current) > 0 && !c.unloaded_to_warehouse_id &&
+      ((c.product_id === product.id) || c.product === product.name)
+    );
+    const have = lines.reduce((s, c) => s + Number(c.qty_current), 0);
+    if (have < Number(it.qty)) {
+      return jsonError(res, 400, `Stock insuficiente de ${product.name} no camiao (disponivel: ${have}, pedido: ${it.qty})`);
     }
+    resolved.push({ product, qty: Number(it.qty), unit: it.unit || product.default_unit, notes: it.notes, lines });
   }
-  // Update truck status
-  if (source_type === "warehouse") {
-    // Truck is being loaded for delivery; mark as in_transit via departure
-  } else {
-    await Trucks.setStatus(truck_id, "transferred");
+
+  // Force source_type='truck' for backwards compat with the schema
+  const depBody = { ...req.body, source_type: "truck", source_warehouse_id: null };
+  const depId = await Departures.create(depBody, req.user.id);
+
+  for (const r of resolved) {
+    await Departures.addItem(depId, {
+      product_id: r.product.id, product_name: r.product.name,
+      qty: r.qty, unit: r.unit, notes: r.notes,
+    });
+    // Decrement truck cargo (FIFO)
+    let remaining = r.qty;
+    for (const line of r.lines) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, Number(line.qty_current));
+      await Cargo.updateCurrent(line.id, Number(line.qty_current) - take);
+      remaining -= take;
+    }
+    await Stock.addMovement({
+      type: "departure",
+      product: r.product.name, product_id: r.product.id,
+      qty: r.qty, truck_id,
+      departure_id: depId,
+      notes: "Saida para " + (req.body.destination_district || req.body.destination_name || "destino"),
+    }, req.user.id);
   }
+  // Truck is now in transit / delivering
+  await Trucks.setStatus(truck_id, "transferred");
   await auth.logAction(req, "create_departure", "departure", depId, "truck=" + truck_id);
   res.json({ id: depId });
 });

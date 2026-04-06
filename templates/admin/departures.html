@@ -44,17 +44,8 @@
         <label>Camiao *
           <select name="truck_id" id="sel-truck" required></select>
         </label>
-        <label>Origem da carga *
-          <select name="source_type" id="sel-source" required>
-            <option value="warehouse">A partir de armazem</option>
-            <option value="truck">Directo do camiao (sem passar por armazem)</option>
-          </select>
-        </label>
-        <label id="lbl-warehouse">Armazem origem
-          <select name="source_warehouse_id" id="sel-warehouse"></select>
-        </label>
         <div id="stock-panel" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.55rem .75rem;font-size:.75rem;color:#0c4a6e;display:none">
-          <strong>Stock disponivel:</strong>
+          <strong>Carga a bordo do camiao:</strong>
           <div id="stock-panel-list" style="margin-top:.25rem"></div>
         </div>
         <label>Provincia destino<input type="text" name="destination_province"></label>
@@ -129,21 +120,18 @@
     }
 
     async function openModal(presetTruckId) {
-      [products, warehouses, trucks] = await Promise.all([
+      [products, trucks] = await Promise.all([
         AdminUI.fetchJSON("/admin/api/products"),
-        AdminUI.fetchJSON("/admin/api/warehouses"),
         AdminUI.fetchJSON("/admin/api/trucks"),
       ]);
+      // Only show trucks that have cargo on board
+      const loadedTrucks = trucks.filter((t) => Number(t.qty_on_board) > 0);
       document.getElementById("sel-truck").innerHTML = '<option value="">— Camiao —</option>' +
-        trucks.map((t) => `<option value="${t.id}">${AdminUI.esc(t.plate)} (${AdminUI.esc(t.supplier_name || "—")})</option>`).join("");
-      document.getElementById("sel-warehouse").innerHTML = '<option value="">— Armazem —</option>' +
-        warehouses.map((w) => `<option value="${w.id}">${AdminUI.esc(w.name)}</option>`).join("");
+        loadedTrucks.map((t) => `<option value="${t.id}">${AdminUI.esc(t.plate)} (a bordo: ${AdminUI.fmt(t.qty_on_board)})</option>`).join("");
       document.getElementById("items-list").innerHTML = renderItem(0);
       document.getElementById("err").textContent = "";
       if (presetTruckId) {
         document.getElementById("sel-truck").value = presetTruckId;
-        document.getElementById("sel-source").value = "truck";
-        document.getElementById("lbl-warehouse").style.display = "none";
         await refreshStockPanel();
       }
       document.getElementById("modal").style.display = "flex";
@@ -155,16 +143,12 @@
     if (urlTruck) openModal(urlTruck);
 
     async function refreshStockPanel() {
-      const sourceType = document.getElementById("sel-source").value;
       const truckId = document.getElementById("sel-truck").value;
-      const wId = document.getElementById("sel-warehouse").value;
       const panel = document.getElementById("stock-panel");
       const list = document.getElementById("stock-panel-list");
       let items = [];
       try {
-        if (sourceType === "warehouse" && wId) {
-          items = await AdminUI.fetchJSON("/admin/api/warehouses/" + wId + "/stock");
-        } else if (sourceType === "truck" && truckId) {
+        if (truckId) {
           const cargo = await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/cargo");
           items = cargo.map((c) => ({ product: c.product, qty: c.qty_current, unit: c.unit }));
         }
@@ -179,12 +163,7 @@
       panel.style.display = "block";
     }
 
-    document.getElementById("sel-source").addEventListener("change", (e) => {
-      document.getElementById("lbl-warehouse").style.display = e.target.value === "warehouse" ? "flex" : "none";
-      refreshStockPanel();
-    });
     document.getElementById("sel-truck").addEventListener("change", refreshStockPanel);
-    document.getElementById("sel-warehouse").addEventListener("change", refreshStockPanel);
 
     document.getElementById("add-item").addEventListener("click", () => {
       const list = document.getElementById("items-list");
@@ -216,8 +195,6 @@
       if (items.length === 0) { document.getElementById("err").textContent = "Adicionar pelo menos um item"; return; }
       const data = {
         truck_id: Number(fd.get("truck_id")),
-        source_type: fd.get("source_type"),
-        source_warehouse_id: fd.get("source_type") === "warehouse" ? Number(fd.get("source_warehouse_id")) : null,
         destination_province: fd.get("destination_province"),
         destination_district: fd.get("destination_district"),
         destination_name: fd.get("destination_name"),

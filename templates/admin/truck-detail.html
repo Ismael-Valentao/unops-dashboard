@@ -50,8 +50,7 @@
 
       <section class="admin-section">
         <div class="section-head">
-          <h2>Transferencias</h2>
-          <button class="btn btn-sm btn-primary" id="btn-transfer">+ Transferir</button>
+          <h2>Movimentos de Carga</h2>
         </div>
         <div class="tbl-wrap">
           <table class="adm-table">
@@ -66,9 +65,9 @@
       <h2>Acoes</h2>
       <div class="action-row">
         <button class="btn" data-status="arrived">Marcar como Chegou</button>
-        <button class="btn" data-status="unloading">Marcar a Descarregar</button>
-        <button class="btn btn-success" id="btn-unload-wh">Descarregar para Armazem</button>
-        <a class="btn btn-primary" id="btn-departure">Registar Saida</a>
+        <button class="btn btn-primary" id="btn-load">⬇ Carregar Camiao</button>
+        <button class="btn btn-success" id="btn-unload-wh">⬆ Descarregar para Armazem</button>
+        <a class="btn btn-primary" id="btn-departure">→ Registar Saida</a>
         <button class="btn" id="btn-edit-truck">Editar Camiao</button>
         <button class="btn btn-danger" data-status="cancelled">Cancelar</button>
       </div>
@@ -137,21 +136,36 @@
     </div>
   </div>
 
-  <!-- Transfer modal -->
-  <div class="modal-overlay" id="trans-modal" style="display:none">
-    <div class="modal-card">
-      <div class="modal-head"><h2>Transferir Carga</h2><button class="modal-x" data-close>&times;</button></div>
-      <form id="trans-form" class="modal-form">
-        <label>Camiao destino *
-          <select name="to_truck_id" id="to-truck" required></select>
+  <!-- Load truck modal -->
+  <div class="modal-overlay" id="load-modal" style="display:none">
+    <div class="modal-card" style="max-width:600px">
+      <div class="modal-head"><h2>Carregar Camiao</h2><button class="modal-x" data-close>&times;</button></div>
+      <form id="load-form" class="modal-form">
+        <label>Origem *
+          <select name="source_type" id="load-source-type" required>
+            <option value="warehouse">A partir de armazem</option>
+            <option value="truck">A partir de outro camiao</option>
+          </select>
         </label>
-        <label>Produto *
-          <select name="product_id" id="trans-product" required></select>
+        <label id="lbl-load-warehouse">Armazem origem *
+          <select name="source_warehouse_id" id="load-warehouse"></select>
         </label>
-        <label>Quantidade *<input type="number" name="qty" step="0.01" required></label>
-        <label>Unidade *<input type="text" name="unit" id="trans-unit" required></label>
-        <label>Notas<textarea name="notes" rows="2"></textarea></label>
-        <button type="submit" class="btn btn-primary">Transferir</button>
+        <label id="lbl-load-truck" style="display:none">Camiao origem *
+          <select name="source_truck_id" id="load-truck"></select>
+        </label>
+        <div id="load-stock-panel" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.55rem .75rem;font-size:.75rem;color:#0c4a6e;display:none">
+          <strong>Stock disponivel:</strong>
+          <div id="load-stock-list" style="margin-top:.25rem"></div>
+        </div>
+
+        <div style="border-top:1px solid #e2e8f0;padding-top:.75rem;margin-top:.5rem">
+          <strong style="font-size:.78rem;color:#475569">Itens a carregar</strong>
+          <div id="load-items" style="margin-top:.5rem"></div>
+          <button type="button" class="btn btn-sm" id="load-add">+ Adicionar item</button>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Carregar</button>
+        <div id="load-err" class="auth-error"></div>
       </form>
     </div>
   </div>
@@ -374,45 +388,110 @@
       e.target.value = "";
     });
 
-    document.getElementById("btn-transfer").addEventListener("click", async () => {
-      const [trucks, products] = await Promise.all([
-        AdminUI.fetchJSON("/admin/api/trucks"),
+    // ── Carregar Camiao ────────────────────────────────────
+    let loadProducts = [];
+    function loadItemRow() {
+      return `<div class="load-item-row" style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:.4rem;margin-bottom:.4rem">
+        <select name="product_id" required>
+          <option value="">— Produto —</option>
+          ${loadProducts.map((p) => `<option value="${p.id}" data-unit="${p.default_unit}">${AdminUI.esc(p.name)}</option>`).join("")}
+        </select>
+        <input type="number" name="qty" step="0.01" placeholder="Qtd" required>
+        <input type="text" name="unit" placeholder="kg" value="kg">
+        <button type="button" class="btn btn-sm btn-danger" onclick="this.closest('.load-item-row').remove()">x</button>
+      </div>`;
+    }
+    document.getElementById("btn-load").addEventListener("click", async () => {
+      const [products, warehouses, trucks] = await Promise.all([
         AdminUI.loadProducts(),
+        AdminUI.loadWarehouses(),
+        AdminUI.fetchJSON("/admin/api/trucks"),
       ]);
-      const sel = document.getElementById("to-truck");
-      sel.innerHTML = trucks.filter((t) => t.id != truckId).map((t) =>
-        `<option value="${t.id}">${AdminUI.esc(t.plate)} (${AdminUI.esc(t.supplier_name || "—")})</option>`
+      loadProducts = products;
+      document.getElementById("load-warehouse").innerHTML = '<option value="">— Seleccionar —</option>' +
+        warehouses.map((w) => `<option value="${w.id}">${AdminUI.esc(w.name)}</option>`).join("");
+      document.getElementById("load-truck").innerHTML = '<option value="">— Seleccionar —</option>' +
+        trucks.filter((t) => t.id != truckId && Number(t.qty_on_board) > 0)
+          .map((t) => `<option value="${t.id}">${AdminUI.esc(t.plate)} (a bordo: ${AdminUI.fmt(t.qty_on_board)})</option>`).join("");
+      document.getElementById("load-items").innerHTML = loadItemRow();
+      document.getElementById("load-err").textContent = "";
+      document.getElementById("load-stock-panel").style.display = "none";
+      document.getElementById("load-modal").style.display = "flex";
+    });
+
+    document.getElementById("load-source-type").addEventListener("change", (e) => {
+      const isWh = e.target.value === "warehouse";
+      document.getElementById("lbl-load-warehouse").style.display = isWh ? "flex" : "none";
+      document.getElementById("lbl-load-truck").style.display = isWh ? "none" : "flex";
+      refreshLoadStock();
+    });
+    document.getElementById("load-warehouse").addEventListener("change", refreshLoadStock);
+    document.getElementById("load-truck").addEventListener("change", refreshLoadStock);
+
+    async function refreshLoadStock() {
+      const sourceType = document.getElementById("load-source-type").value;
+      const wId = document.getElementById("load-warehouse").value;
+      const tId = document.getElementById("load-truck").value;
+      const panel = document.getElementById("load-stock-panel");
+      const list = document.getElementById("load-stock-list");
+      let items = [];
+      try {
+        if (sourceType === "warehouse" && wId) {
+          items = await AdminUI.fetchJSON("/admin/api/warehouses/" + wId + "/stock");
+        } else if (sourceType === "truck" && tId) {
+          const cargo = await AdminUI.fetchJSON("/admin/api/trucks/" + tId + "/cargo");
+          items = cargo.map((c) => ({ product: c.product, qty: c.qty_current, unit: c.unit }));
+        }
+      } catch (e) { items = []; }
+      if (items.length === 0) { panel.style.display = "none"; return; }
+      list.innerHTML = items.map((i) =>
+        `<div>&bull; <strong>${AdminUI.esc(i.product)}</strong>: ${AdminUI.fmt(i.qty)} ${AdminUI.esc(i.unit)}</div>`
       ).join("");
-      document.getElementById("trans-product").innerHTML = AdminUI.productSelectOptions(products);
-      document.getElementById("trans-unit").value = "kg";
-      document.getElementById("trans-modal").style.display = "flex";
+      panel.style.display = "block";
+    }
+
+    document.getElementById("load-add").addEventListener("click", () => {
+      document.getElementById("load-items").insertAdjacentHTML("beforeend", loadItemRow());
+    });
+    document.getElementById("load-items").addEventListener("change", (e) => {
+      if (e.target.name === "product_id") {
+        const opt = e.target.selectedOptions[0];
+        const unit = opt && opt.dataset.unit;
+        if (unit) e.target.closest(".load-item-row").querySelector("[name='unit']").value = unit;
+      }
     });
 
-    document.getElementById("trans-product").addEventListener("change", (e) => {
-      const opt = e.target.selectedOptions[0];
-      const unit = opt && opt.dataset.unit;
-      if (unit) document.getElementById("trans-unit").value = unit;
-    });
-
-    document.getElementById("trans-form").addEventListener("submit", async (e) => {
+    document.getElementById("load-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
-      const productId = Number(fd.get("product_id"));
-      const products = await AdminUI.loadProducts();
-      const product = products.find((p) => p.id === productId);
-      if (!product) { alert("Seleccione um produto"); return; }
-      const data = {
-        to_truck_id: Number(fd.get("to_truck_id")),
-        product: product.name,
-        product_id: product.id,
-        qty: Number(fd.get("qty")),
-        unit: fd.get("unit") || product.default_unit,
-        notes: fd.get("notes"),
-      };
-      await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/transfer", { method: "POST", body: data });
-      document.getElementById("trans-modal").style.display = "none";
-      e.target.reset();
-      loadTruck();
+      const sourceType = fd.get("source_type");
+      const sourceId = sourceType === "warehouse" ? fd.get("source_warehouse_id") : fd.get("source_truck_id");
+      if (!sourceId) {
+        document.getElementById("load-err").textContent = "Seleccione a origem";
+        return;
+      }
+      const items = [];
+      document.querySelectorAll(".load-item-row").forEach((row) => {
+        const product_id = row.querySelector("[name='product_id']").value;
+        const qty = row.querySelector("[name='qty']").value;
+        const unit = row.querySelector("[name='unit']").value;
+        if (product_id && qty) items.push({ product_id: Number(product_id), qty: Number(qty), unit });
+      });
+      if (items.length === 0) {
+        document.getElementById("load-err").textContent = "Adicionar pelo menos um item";
+        return;
+      }
+      try {
+        await AdminUI.fetchJSON("/admin/api/trucks/" + truckId + "/load", {
+          method: "POST",
+          body: { source_type: sourceType, source_id: Number(sourceId), items },
+        });
+        document.getElementById("load-modal").style.display = "none";
+        e.target.reset();
+        loadTruck();
+      } catch (err) {
+        document.getElementById("load-err").textContent = err.message;
+      }
     });
 
     document.querySelectorAll("[data-status]").forEach((btn) => {
