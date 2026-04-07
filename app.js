@@ -115,6 +115,11 @@ app.get("/", (_req, res) => {
   res.sendFile(path.join(__dirname, "templates", "index.html"));
 });
 
+// Operations team view — same dashboard with verification/errors section
+app.get("/operations/dashboard", (_req, res) => {
+  res.sendFile(path.join(__dirname, "templates", "index.html"));
+});
+
 app.get("/dashboard", (_req, res) => {
   res.sendFile(path.join(__dirname, "templates", "ceo-dashboard.html"));
 });

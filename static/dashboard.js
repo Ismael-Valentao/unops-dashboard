@@ -1321,10 +1321,32 @@
       arrow.classList.toggle("open", open);
     });
 
+    // Public visitor view at "/" hides the error verification section
+    const isPublic = location.pathname === "/" || location.pathname === "";
+
+    // Adjust header subtitle + nav links based on current view
+    const subtitle = $("#header-subtitle");
+    const opsLink = $("#ops-link");
+    if (isPublic) {
+      if (subtitle) subtitle.textContent = "Delivery Monitoring Dashboard";
+      // Show "Operations View" link for internal team
+      if (opsLink) opsLink.style.display = "inline-block";
+    } else {
+      if (subtitle) subtitle.textContent = "Operacoes - Monitoria Interna";
+      // Hide "Operations View" since we're already there
+      if (opsLink) opsLink.style.display = "none";
+    }
+
     // Show verify section and auto-run on first load
     fetchData(false).then(() => {
-      $("#verify-section").style.display = "block";
-      runVerification();
+      if (!isPublic) {
+        $("#verify-section").style.display = "block";
+        runVerification();
+      } else {
+        // Hide verification-related UI on the public homepage
+        const vs = $("#verify-section");
+        if (vs) vs.style.display = "none";
+      }
       loadSnapshotList();
       loadPvD();
       loadAnalytics();
