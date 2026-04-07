@@ -975,6 +975,18 @@
     $("#pvd-pct").textContent = t.pct + "%";
     $("#pvd-progress-bar").style.width = Math.min(t.pct, 100) + "%";
 
+    // Scope label (province/district/product filters)
+    const scopeParts = [];
+    if (fProduct.value) scopeParts.push(fProduct.value);
+    if (fDistrict.value) scopeParts.push(fDistrict.value);
+    if (fProvince.value) scopeParts.push(fProvince.value);
+    const scopeEl = $("#pvd-pct-scope");
+    if (scopeEl) {
+      scopeEl.textContent = scopeParts.length > 0
+        ? "(" + scopeParts.join(" / ") + ")"
+        : "(global)";
+    }
+
     // Populate chart province filter
     const provs = [...new Set(pvdData.by_district.map((d) => d.province).filter(Boolean))].sort();
     const provSel = $("#pvd-chart-province");
@@ -1024,6 +1036,11 @@
   function renderPvdProductChart() {
     const items = pvdData.by_product;
     const labels = items.map((p) => p.product);
+    // Build "Entregue (X%)" labels with the execution % per product
+    const deliveredLabels = items.map((p) => {
+      const pct = p.planned_kg > 0 ? (p.delivered_kg / p.planned_kg * 100) : 0;
+      return pct.toFixed(1) + "%";
+    });
 
     if (chartPvdProduct) chartPvdProduct.destroy();
     chartPvdProduct = new Chart($("#chart-pvd-product"), {
@@ -1032,17 +1049,59 @@
         labels,
         datasets: [
           { label: "Planeado (kg)", data: items.map((p) => p.planned_kg), backgroundColor: "rgba(15,76,117,.7)", borderRadius: 4 },
-          { label: "Entregue (kg)", data: items.map((p) => p.delivered_kg), backgroundColor: "rgba(27,122,90,.8)", borderRadius: 4 },
+          { label: "Entregue (kg)", data: items.map((p) => p.delivered_kg), backgroundColor: "rgba(27,122,90,.8)", borderRadius: 4,
+            _pctLabels: deliveredLabels },
         ],
       },
       options: {
         indexAxis: "y",
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } } },
+        plugins: {
+          legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                const val = ctx.parsed.x;
+                const base = ctx.dataset.label + ": " + Number(val).toLocaleString("pt-PT");
+                if (ctx.datasetIndex === 1) {
+                  const p = items[ctx.dataIndex];
+                  const pct = p.planned_kg > 0 ? (p.delivered_kg / p.planned_kg * 100) : 0;
+                  return base + "  (" + pct.toFixed(1) + "% do planeado)";
+                }
+                return base;
+              }
+            }
+          }
+        },
         scales: {
           x: { grid: { color: "#f1f5f9" }, ticks: { font: { size: 9 } } },
           y: { grid: { display: false }, ticks: { font: { size: 10 } } },
         },
+        animation: {
+          onComplete: function () {
+            const chart = this;
+            const ctx = chart.ctx;
+            const ds = chart.data.datasets[1];
+            const meta = chart.getDatasetMeta(1);
+            ctx.save();
+            ctx.font = "bold 10px -apple-system, sans-serif";
+            ctx.fillStyle = "#fff";
+            ctx.textAlign = "right";
+            ctx.textBaseline = "middle";
+            meta.data.forEach((bar, i) => {
+              const pct = deliveredLabels[i];
+              const val = ds.data[i];
+              if (val > 0) {
+                ctx.fillText(pct, bar.x - 4, bar.y);
+              } else {
+                ctx.fillStyle = "#94a3b8";
+                ctx.fillText(pct, bar.base + 30, bar.y);
+                ctx.fillStyle = "#fff";
+              }
+            });
+            ctx.restore();
+          }
+        }
       },
     });
   }
