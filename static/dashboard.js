@@ -1324,14 +1324,18 @@
     // Adjust header subtitle + nav links based on current view
     const subtitle = $("#header-subtitle");
     const opsLink = $("#ops-link");
+    const cardErrors = $("#card-errors");
     if (isPublic) {
       if (subtitle) subtitle.textContent = "Delivery Monitoring Dashboard";
       // Show "Operations View" link for internal team
       if (opsLink) opsLink.style.display = "inline-block";
+      // Hide error count card from public visitors
+      if (cardErrors) cardErrors.style.display = "none";
     } else {
       if (subtitle) subtitle.textContent = "Operacoes - Monitoria Interna";
       // Hide "Operations View" since we're already there
       if (opsLink) opsLink.style.display = "none";
+      if (cardErrors) cardErrors.style.display = "";
     }
 
     // Show verify section and auto-run on first load
