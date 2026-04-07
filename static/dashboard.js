@@ -535,7 +535,7 @@
                 .filter((u) => u && String(u).trim());
               if (!links.length) return `<td style="text-align:center;color:#cbd5e1">—</td>`;
               const payload = encodeURIComponent(JSON.stringify(links));
-              return `<td style="text-align:center"><button class="notes-eye" data-links="${payload}" title="Ver notas de entrega (${links.length})" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;cursor:pointer;font-size:.72rem;font-weight:600;padding:.25rem .55rem;border-radius:6px;display:inline-flex;align-items:center;gap:.3rem">📷 ${links.length}</button></td>`;
+              return `<td style="text-align:center"><button class="notes-eye" data-links="${payload}" title="Ver notas de entrega (${links.length})" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;cursor:pointer;font-size:.72rem;font-weight:600;padding:.25rem .55rem;border-radius:6px;display:inline-flex;align-items:center;gap:.35rem;line-height:1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>${links.length}</button></td>`;
             }
             let text = String(raw ?? "");
             if (col.truncate) text = text.slice(0, col.truncate);
