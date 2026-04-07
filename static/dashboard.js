@@ -255,6 +255,23 @@
     "#9333ea", "#ea580c", "#0d9488", "#be123c", "#4f46e5",
   ];
 
+  // Map any product name (delivery or planning) to a canonical key,
+  // mirroring the server-side matchProduct() in planning-data.js so the
+  // client tooltip can join delivery rows with planned values regardless
+  // of the exact label used (e.g. "Common Bean Seeds (kg)" → "Feijão").
+  function canonicalProduct(name) {
+    if (!name) return "";
+    const lower = String(name).toLowerCase();
+    if (lower.includes("maize") || lower.includes("milho")) return "Milho";
+    if (lower.includes("bean") || lower.includes("feij")) return "Feijão";
+    if (lower.includes("rice") || lower.includes("arroz")) return "Arroz";
+    if (lower.includes("emamectin")) return "Emamectin";
+    if (lower.includes("imid") || lower.includes("imad")) return "Imadocloprid";
+    if (lower.includes("mcpa")) return "MCPA";
+    if (lower.includes("saco") || lower.includes("hermetic")) return "Sacos Hermeticos";
+    return name;
+  }
+
   function renderDistrictChart() {
     // Aggregate delivered qty per district AND per product
     const totalByDistrict = {};       // district -> total delivered_kg
@@ -284,10 +301,8 @@
     if (pvdData && Array.isArray(pvdData.details)) {
       pvdData.details.forEach((it) => {
         if (!plannedMap[it.district]) plannedMap[it.district] = {};
-        plannedMap[it.district][it.product] = (plannedMap[it.district][it.product] || 0) + Number(it.planned_kg || 0);
-        if (it.product_delivery) {
-          plannedMap[it.district][it.product_delivery] = (plannedMap[it.district][it.product_delivery] || 0) + Number(it.planned_kg || 0);
-        }
+        const key = canonicalProduct(it.product) || it.product;
+        plannedMap[it.district][key] = (plannedMap[it.district][key] || 0) + Number(it.planned_kg || 0);
       });
     }
 
@@ -338,7 +353,7 @@
                 const sorted = Object.entries(products).sort((a, b) => b[1] - a[1]);
                 sorted.forEach(([prod, deliv]) => {
                   if (deliv <= 0) return;
-                  const plan = planned[prod] || 0;
+                  const plan = planned[canonicalProduct(prod)] || planned[prod] || 0;
                   const pct = plan > 0 ? ((deliv / plan) * 100).toFixed(1) : "—";
                   const planTxt = plan > 0 ? fmtNum(plan) : "?";
                   lines.push("  " + prod);
