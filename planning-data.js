@@ -214,9 +214,9 @@ function buildComparison(deliveryRows, filters) {
 
   function getStatus(planned, delivered) {
     if (planned <= 0) return "N/A";
-    const pct = (delivered / planned) * 100;
-    if (pct >= 95) return "Completo";
-    if (pct > 0) return "Em progresso";
+    // Completo only when fully delivered (with tiny float tolerance)
+    if (delivered >= planned - 0.001) return "Completo";
+    if (delivered > 0) return "Em progresso";
     return "Sem entregas";
   }
 
@@ -308,7 +308,9 @@ function buildSeedsTotals(deliveryRowsNoProductFilter, filters) {
     planned_kg: plannedKg,
     delivered_kg: deliveredKg,
     pct: p,
-    status: plannedKg <= 0 ? "N/A" : (p >= 95 ? "Completo" : (p > 0 ? "Em progresso" : "Sem entregas")),
+    status: plannedKg <= 0 ? "N/A"
+      : (deliveredKg >= plannedKg - 0.001 ? "Completo"
+        : (deliveredKg > 0 ? "Em progresso" : "Sem entregas")),
   };
 }
 
