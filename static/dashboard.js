@@ -532,7 +532,8 @@
             let text = String(raw ?? "");
             if (col.truncate) text = text.slice(0, col.truncate);
             const titleAttr = col.truncate ? ` title="${esc(String(r[key] ?? ""))}"` : "";
-            return `<td${titleAttr}>${highlightMatch(text, q)}</td>`;
+            const styleAttr = col.type === "date" ? ' style="text-align:center"' : "";
+            return `<td${titleAttr}${styleAttr}>${highlightMatch(text, q)}</td>`;
           })
           .join("");
         return `<tr>${cells}</tr>`;
