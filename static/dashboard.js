@@ -249,14 +249,38 @@
   }
 
   function renderDistrictChart() {
-    const map = {};
+    // Aggregate delivered qty per district AND per product (for tooltip detail)
+    const map = {};                  // district -> total delivered_kg
+    const productMap = {};           // district -> { product -> delivered_kg }
     filteredRows.forEach((r) => {
       const d = r.district || "N/A";
-      map[d] = (map[d] || 0) + (Number(r.delivered_qty) || 0);
+      const p = r.product || "Sem produto";
+      const qty = Number(r.delivered_qty) || 0;
+      map[d] = (map[d] || 0) + qty;
+      if (!productMap[d]) productMap[d] = {};
+      productMap[d][p] = (productMap[d][p] || 0) + qty;
     });
     const entries = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 15);
     const labels = entries.map((e) => e[0]);
     const data = entries.map((e) => e[1]);
+
+    // Build planned_kg per district per product from PvD details
+    // pvd details items contain: { district, product, planned_kg, delivered_kg, ... }
+    // The product names from PvD use the planning catalog ("Milho", "Feijao") while
+    // delivery rows use the catalog ("Maize Seeds (kg)"). We try both keys.
+    const plannedMap = {};           // district -> { productName -> planned_kg }
+    if (pvdData && Array.isArray(pvdData.details)) {
+      pvdData.details.forEach((it) => {
+        if (!plannedMap[it.district]) plannedMap[it.district] = {};
+        // Index under both planning and delivery names so the lookup works
+        plannedMap[it.district][it.product] = (plannedMap[it.district][it.product] || 0) + Number(it.planned_kg || 0);
+        if (it.product_delivery) {
+          plannedMap[it.district][it.product_delivery] = (plannedMap[it.district][it.product_delivery] || 0) + Number(it.planned_kg || 0);
+        }
+      });
+    }
+
+    function fmtNum(n) { return Number(n).toLocaleString("pt-PT", { maximumFractionDigits: 1 }); }
 
     if (chartDistrict) chartDistrict.destroy();
     chartDistrict = new Chart($("#chart-district"), {
@@ -276,7 +300,40 @@
         indexAxis: "y",
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: "rgba(15,23,42,.95)",
+            padding: 10,
+            titleFont: { size: 12, weight: "700" },
+            bodyFont: { size: 11 },
+            footerFont: { size: 11, weight: "700" },
+            callbacks: {
+              label: function(ctx) {
+                return "Total entregue: " + fmtNum(ctx.parsed.x) + " kg";
+              },
+              afterBody: function(items) {
+                const district = items[0].label;
+                const products = productMap[district] || {};
+                const planned = plannedMap[district] || {};
+                const lines = [""];
+                lines.push("Por produto:");
+                // Sort products by delivered desc
+                const sorted = Object.entries(products).sort((a, b) => b[1] - a[1]);
+                sorted.forEach(([prod, deliv]) => {
+                  const plan = planned[prod] || 0;
+                  const pct = plan > 0 ? ((deliv / plan) * 100).toFixed(1) : "—";
+                  const planTxt = plan > 0 ? fmtNum(plan) : "?";
+                  lines.push("  " + prod);
+                  lines.push("    Planeado: " + planTxt + " kg");
+                  lines.push("    Entregue: " + fmtNum(deliv) + " kg" +
+                    (plan > 0 ? "  (" + pct + "%)" : ""));
+                });
+                return lines;
+              },
+            },
+          },
+        },
         scales: {
           x: { grid: { display: false } },
           y: { grid: { display: false } },
@@ -899,6 +956,10 @@
   function renderPvD() {
     if (!pvdData) return;
     const t = pvdData.totals;
+
+    // Re-render the district delivery chart so its tooltip can show
+    // planned/delivered/% per product (depends on pvdData being loaded)
+    if (typeof renderDistrictChart === "function") renderDistrictChart();
 
     // Cards
     $("#pvd-planned").textContent = fmtDec(t.planned_kg);
