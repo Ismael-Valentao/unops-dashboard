@@ -17,7 +17,6 @@
 
   // Chart instances
   let chartDistrict = null;
-  let chartVerification = null;
   let chartTimeline = null;
 
   // ── Column definitions ──────────────────────────────────────
@@ -246,7 +245,6 @@
   // ── Charts ──────────────────────────────────────────────────
   function renderCharts() {
     renderDistrictChart();
-    renderVerificationChart();
     renderTimelineChart();
   }
 
@@ -287,82 +285,72 @@
     });
   }
 
-  function renderVerificationChart() {
-    // Show execution gap: Entregue vs Falta
-    const delivered = filteredRows.reduce((s, r) => s + (Number(r.delivered_qty) || 0), 0);
-    const planned = pvdData ? pvdData.totals.planned_kg : delivered;
-    const remaining = Math.max(0, planned - delivered);
-
-    if (chartVerification) chartVerification.destroy();
-    chartVerification = new Chart($("#chart-verification"), {
-      type: "doughnut",
-      data: {
-        labels: ["Entregue (kg)", "Falta entregar (kg)"],
-        datasets: [
-          {
-            data: [delivered, remaining],
-            backgroundColor: ["#16a34a", "#e2e8f0"],
-            borderWidth: 2,
-            borderColor: "#fff",
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: "65%",
-        plugins: {
-          legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } },
-          tooltip: {
-            callbacks: {
-              label: function(ctx) {
-                const val = ctx.parsed;
-                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
-                return ctx.label + ": " + Number(val).toLocaleString("pt-PT") + " (" + pct + "%)";
-              }
-            }
-          }
-        },
-      },
-    });
-  }
+  // renderVerificationChart() removed — Execucao Global chart was deleted
 
   function renderTimelineChart() {
-    const map = {};
+    // Stacked bars per day, one stack per product, value = delivered kg
+    const dateProductMap = {}; // { iso: { product: kg } }
+    const productSet = new Set();
     filteredRows.forEach((r) => {
       const d = r.delivery_date_iso || "";
       if (!d) return;
-      map[d] = (map[d] || 0) + 1;
+      const product = r.product || "Sem produto";
+      const qty = Number(r.delivered_qty) || 0;
+      if (!dateProductMap[d]) dateProductMap[d] = {};
+      dateProductMap[d][product] = (dateProductMap[d][product] || 0) + qty;
+      productSet.add(product);
     });
-    const entries = Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
-    const labels = entries.map((e) => {
-      const parts = e[0].split("-");
+
+    const sortedDates = Object.keys(dateProductMap).sort();
+    const labels = sortedDates.map((iso) => {
+      const parts = iso.split("-");
       return parts[2] + "/" + parts[1] + "/" + parts[0];
     });
-    const data = entries.map((e) => e[1]);
+
+    // Order products by total descending so the legend is meaningful
+    const products = [...productSet].sort((a, b) => {
+      const ta = sortedDates.reduce((s, d) => s + (dateProductMap[d][a] || 0), 0);
+      const tb = sortedDates.reduce((s, d) => s + (dateProductMap[d][b] || 0), 0);
+      return tb - ta;
+    });
+
+    // Distinct color palette
+    const palette = [
+      "#1b7a5a", "#0f4c75", "#d97706", "#7c3aed", "#0284c7",
+      "#dc2626", "#16a34a", "#db2777", "#0891b2", "#65a30d",
+      "#9333ea", "#ea580c", "#0d9488", "#be123c", "#4f46e5",
+    ];
+    const datasets = products.map((p, i) => ({
+      label: p,
+      data: sortedDates.map((d) => +(dateProductMap[d][p] || 0).toFixed(1)),
+      backgroundColor: palette[i % palette.length],
+      borderRadius: 3,
+      stack: "delivered",
+    }));
 
     if (chartTimeline) chartTimeline.destroy();
     chartTimeline = new Chart($("#chart-timeline"), {
       type: "bar",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: "Entregas",
-            data,
-            backgroundColor: "#1b7a5a",
-            borderRadius: 3,
-          },
-        ],
-      },
+      data: { labels, datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 10 } } },
+          tooltip: {
+            mode: "index",
+            callbacks: {
+              footer: (items) => {
+                const tot = items.reduce((s, it) => s + (Number(it.parsed.y) || 0), 0);
+                return "Total: " + tot.toLocaleString("pt-PT") + " kg";
+              },
+            },
+          },
+        },
         scales: {
-          x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 10 } } },
-          y: { beginAtZero: true, grid: { color: "#f1f5f9" } },
+          x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 45, font: { size: 10 } } },
+          y: { stacked: true, beginAtZero: true, grid: { color: "#f1f5f9" }, ticks: { font: { size: 9 } },
+            title: { display: true, text: "Quantidade (kg)", font: { size: 10 } } },
         },
       },
     });
@@ -784,22 +772,14 @@
     }
   }
 
-  // ── Analytics (exec summary, velocity, gaps, urgency, suppliers, progress) ──
-  let chartProgress = null;
-
+  // ── Analytics (exec summary, velocity, gaps, urgency, suppliers) ──
   async function loadAnalytics() {
     try {
-      const [anaRes, progRes] = await Promise.all([
-        fetch("/api/analytics"),
-        fetch("/api/analytics/progress"),
-      ]);
-      const ana = await anaRes.json();
-      const progress = await progRes.json();
+      const ana = await (await fetch("/api/analytics")).json();
       renderExecSummary(ana);
       renderGapAnalysis(ana.gaps);
       renderUrgencyTable(ana.urgency);
       renderSupplierPerf(ana.supplier_performance);
-      renderProgressChart(progress);
     } catch (e) {
       console.error("Analytics error:", e);
     }
@@ -887,56 +867,7 @@
       .join("");
   }
 
-  function renderProgressChart(progress) {
-    if (progress.length === 0) {
-      $("#chart-progress").parentElement.innerHTML += '<p style="text-align:center;color:#94a3b8;font-size:.8rem;margin-top:.5rem">Snapshots serao mostrados apos alguns dias de dados</p>';
-      return;
-    }
-    const labels = progress.map((p) => {
-      const parts = p.date.split("-");
-      return parts[2] + "/" + parts[1];
-    });
-    if (chartProgress) chartProgress.destroy();
-    chartProgress = new Chart($("#chart-progress"), {
-      type: "line",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: "Qtd. Entregue (kg)",
-            data: progress.map((p) => p.total_qty),
-            borderColor: "#1b7a5a",
-            backgroundColor: "rgba(27,122,90,.1)",
-            fill: true,
-            tension: .3,
-            pointRadius: 4,
-            pointBackgroundColor: "#1b7a5a",
-          },
-          {
-            label: "Registos",
-            data: progress.map((p) => p.total),
-            borderColor: "#0f4c75",
-            backgroundColor: "rgba(15,76,117,.1)",
-            fill: false,
-            tension: .3,
-            yAxisID: "y1",
-            pointRadius: 4,
-            pointBackgroundColor: "#0f4c75",
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } } },
-        scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-          y: { grid: { color: "#f1f5f9" }, ticks: { font: { size: 9 } }, title: { display: true, text: "kg", font: { size: 10 } } },
-          y1: { position: "right", grid: { display: false }, ticks: { font: { size: 9 } }, title: { display: true, text: "Registos", font: { size: 10 } } },
-        },
-      },
-    });
-  }
+  // renderProgressChart() removed — Progresso Diario chart was deleted
 
   // ── Planned vs Delivered ─────────────────────────────────────
   let chartPvdDistrict = null;
