@@ -19,6 +19,13 @@ const PRODUCT_MAP = {
   "Sacos Hermeticos": "Hermetic Bags",
 };
 
+// Seed segment — used to compute the seed-only execution rate independently
+// of any product filter the user might apply.
+const SEED_PRODUCTS = new Set(["Milho", "Feijão", "Arroz"]);
+function isSeedProduct(planName) {
+  return SEED_PRODUCTS.has((planName || "").trim());
+}
+
 // Reverse map for delivery → planning lookup
 const PRODUCT_MAP_REV = {};
 for (const [k, v] of Object.entries(PRODUCT_MAP)) {
@@ -270,4 +277,39 @@ function buildComparison(deliveryRows, filters) {
   };
 }
 
-module.exports = { load, getData, buildComparison, normalizeDistrict, matchProduct };
+/**
+ * Compute the seeds-only totals using rows filtered by province/district only
+ * (i.e. ignoring any product filter). This always reflects the full seed
+ * segment: Milho + Feijao + Arroz combined.
+ */
+function buildSeedsTotals(deliveryRowsNoProductFilter, filters) {
+  if (!planningData) return null;
+  const { province, district } = filters || {};
+
+  // Planning side — sum all seed products under the chosen province/district
+  let plannedKg = 0;
+  planningData.rows.forEach((r) => {
+    if (province && r.province !== province) return;
+    if (district && normalizeDistrict(r.district_raw) !== district && r.district !== district) return;
+    if (!isSeedProduct(r.product_plan)) return;
+    plannedKg += r.weight_kg;
+  });
+
+  // Delivery side — sum delivered_qty for rows whose product maps to a seed
+  let deliveredKg = 0;
+  (deliveryRowsNoProductFilter || []).forEach((r) => {
+    const planName = matchProduct(r.product);
+    if (!isSeedProduct(planName)) return;
+    deliveredKg += Number(r.delivered_qty) || 0;
+  });
+
+  const p = plannedKg > 0 ? +((deliveredKg / plannedKg) * 100).toFixed(1) : 0;
+  return {
+    planned_kg: plannedKg,
+    delivered_kg: deliveredKg,
+    pct: p,
+    status: plannedKg <= 0 ? "N/A" : (p >= 95 ? "Completo" : (p > 0 ? "Em progresso" : "Sem entregas")),
+  };
+}
+
+module.exports = { load, getData, buildComparison, buildSeedsTotals, normalizeDistrict, matchProduct, isSeedProduct };

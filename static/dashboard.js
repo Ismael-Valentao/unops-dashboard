@@ -975,6 +975,13 @@
     $("#pvd-pct").textContent = t.pct + "%";
     $("#pvd-progress-bar").style.width = Math.min(t.pct, 100) + "%";
 
+    // Seeds-only sub-bar (always Milho + Feijao + Arroz, ignores product filter)
+    const seeds = pvdData.totals_seeds;
+    if (seeds) {
+      $("#pvd-seeds-pct").textContent = seeds.pct + "%";
+      $("#pvd-seeds-bar").style.width = Math.min(seeds.pct, 100) + "%";
+    }
+
     // Scope label (province/district/product filters)
     const scopeParts = [];
     if (fProduct.value) scopeParts.push(fProduct.value);

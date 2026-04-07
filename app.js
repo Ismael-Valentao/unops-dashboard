@@ -457,9 +457,13 @@ app.get("/api/planned-vs-delivered", (req, res) => {
   let rows = cache.data;
   if (province) rows = rows.filter((r) => r.province === province);
   if (district) rows = rows.filter((r) => r.district === district);
+  // Keep a copy WITHOUT the product filter for the seeds-segment computation
+  const rowsNoProduct = rows.slice();
   if (product) rows = rows.filter((r) => r.product === product);
+
   const result = planning.buildComparison(rows, { province, district, product });
   if (!result) return res.status(500).json({ error: "Planning data not loaded" });
+  result.totals_seeds = planning.buildSeedsTotals(rowsNoProduct, { province, district });
   res.json(result);
 });
 
