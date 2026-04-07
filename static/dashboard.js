@@ -248,31 +248,42 @@
     renderTimelineChart();
   }
 
+  // Shared product color palette (also used by timeline chart)
+  const PRODUCT_PALETTE = [
+    "#1b7a5a", "#0f4c75", "#d97706", "#7c3aed", "#0284c7",
+    "#dc2626", "#16a34a", "#db2777", "#0891b2", "#65a30d",
+    "#9333ea", "#ea580c", "#0d9488", "#be123c", "#4f46e5",
+  ];
+
   function renderDistrictChart() {
-    // Aggregate delivered qty per district AND per product (for tooltip detail)
-    const map = {};                  // district -> total delivered_kg
-    const productMap = {};           // district -> { product -> delivered_kg }
+    // Aggregate delivered qty per district AND per product
+    const totalByDistrict = {};       // district -> total delivered_kg
+    const districtProducts = {};      // district -> { product -> delivered_kg }
+    const productTotals = {};         // product -> total delivered_kg (for global ordering)
     filteredRows.forEach((r) => {
       const d = r.district || "N/A";
       const p = r.product || "Sem produto";
       const qty = Number(r.delivered_qty) || 0;
-      map[d] = (map[d] || 0) + qty;
-      if (!productMap[d]) productMap[d] = {};
-      productMap[d][p] = (productMap[d][p] || 0) + qty;
+      totalByDistrict[d] = (totalByDistrict[d] || 0) + qty;
+      if (!districtProducts[d]) districtProducts[d] = {};
+      districtProducts[d][p] = (districtProducts[d][p] || 0) + qty;
+      productTotals[p] = (productTotals[p] || 0) + qty;
     });
-    const entries = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 15);
+
+    const entries = Object.entries(totalByDistrict).sort((a, b) => b[1] - a[1]).slice(0, 15);
     const labels = entries.map((e) => e[0]);
-    const data = entries.map((e) => e[1]);
+
+    // Order products by total desc so the legend & stack are consistent
+    // with "Evolução de Entregas por Data"
+    const products = Object.entries(productTotals)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name);
 
     // Build planned_kg per district per product from PvD details
-    // pvd details items contain: { district, product, planned_kg, delivered_kg, ... }
-    // The product names from PvD use the planning catalog ("Milho", "Feijao") while
-    // delivery rows use the catalog ("Maize Seeds (kg)"). We try both keys.
-    const plannedMap = {};           // district -> { productName -> planned_kg }
+    const plannedMap = {};
     if (pvdData && Array.isArray(pvdData.details)) {
       pvdData.details.forEach((it) => {
         if (!plannedMap[it.district]) plannedMap[it.district] = {};
-        // Index under both planning and delivery names so the lookup works
         plannedMap[it.district][it.product] = (plannedMap[it.district][it.product] || 0) + Number(it.planned_kg || 0);
         if (it.product_delivery) {
           plannedMap[it.district][it.product_delivery] = (plannedMap[it.district][it.product_delivery] || 0) + Number(it.planned_kg || 0);
@@ -282,45 +293,51 @@
 
     function fmtNum(n) { return Number(n).toLocaleString("pt-PT", { maximumFractionDigits: 1 }); }
 
+    // One dataset per product, stacked horizontal bars
+    const datasets = products.map((p, i) => ({
+      label: p,
+      data: labels.map((d) => +(districtProducts[d][p] || 0).toFixed(1)),
+      backgroundColor: PRODUCT_PALETTE[i % PRODUCT_PALETTE.length],
+      borderRadius: 3,
+      stack: "delivered",
+    }));
+
     if (chartDistrict) chartDistrict.destroy();
     chartDistrict = new Chart($("#chart-district"), {
       type: "bar",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: "Qtd. Entregue (kg)",
-            data,
-            backgroundColor: "#0f4c75",
-            borderRadius: 4,
-          },
-        ],
-      },
+      data: { labels, datasets },
       options: {
         indexAxis: "y",
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
+          legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 10 } } },
           tooltip: {
+            mode: "y",
+            intersect: false,
             backgroundColor: "rgba(15,23,42,.95)",
             padding: 10,
             titleFont: { size: 12, weight: "700" },
             bodyFont: { size: 11 },
             footerFont: { size: 11, weight: "700" },
             callbacks: {
-              label: function(ctx) {
-                return "Total entregue: " + fmtNum(ctx.parsed.x) + " kg";
+              // Replace per-dataset lines with a single summary
+              label: function() { return null; },
+              beforeBody: function(items) {
+                if (!items.length) return "";
+                const district = items[0].label;
+                return "Total entregue: " + fmtNum(totalByDistrict[district] || 0) + " kg";
               },
               afterBody: function(items) {
+                if (!items.length) return [];
                 const district = items[0].label;
-                const products = productMap[district] || {};
+                const products = districtProducts[district] || {};
                 const planned = plannedMap[district] || {};
                 const lines = [""];
                 lines.push("Por produto:");
-                // Sort products by delivered desc
                 const sorted = Object.entries(products).sort((a, b) => b[1] - a[1]);
                 sorted.forEach(([prod, deliv]) => {
+                  if (deliv <= 0) return;
                   const plan = planned[prod] || 0;
                   const pct = plan > 0 ? ((deliv / plan) * 100).toFixed(1) : "—";
                   const planTxt = plan > 0 ? fmtNum(plan) : "?";
@@ -331,12 +348,14 @@
                 });
                 return lines;
               },
+              // Hide the default coloured swatches since we already break it down
+              labelColor: function() { return { backgroundColor: "transparent", borderColor: "transparent" }; },
             },
           },
         },
         scales: {
-          x: { grid: { display: false } },
-          y: { grid: { display: false } },
+          x: { stacked: true, grid: { display: false }, ticks: { font: { size: 9 } } },
+          y: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
         },
       },
     });
@@ -372,11 +391,7 @@
     });
 
     // Distinct color palette
-    const palette = [
-      "#1b7a5a", "#0f4c75", "#d97706", "#7c3aed", "#0284c7",
-      "#dc2626", "#16a34a", "#db2777", "#0891b2", "#65a30d",
-      "#9333ea", "#ea580c", "#0d9488", "#be123c", "#4f46e5",
-    ];
+    const palette = PRODUCT_PALETTE;
     const datasets = products.map((p, i) => ({
       label: p,
       data: sortedDates.map((d) => +(dateProductMap[d][p] || 0).toFixed(1)),
