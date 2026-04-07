@@ -22,7 +22,6 @@
   // ── Column definitions ──────────────────────────────────────
   const ALL_COLUMNS = [
     { key: "delivery_id",          label: "ID",                  defaultOn: false, type: "text",   truncate: 8 },
-    { key: "delivery_notes_view",  label: "Nota Entrega",        defaultOn: true,  type: "notes"  },
     { key: "delivery_note_number", label: "GTU",                 defaultOn: true,  type: "text"   },
     { key: "beneficiary_name",     label: "Beneficiario",        defaultOn: true,  type: "text"   },
     { key: "supplier",             label: "Fornecedor",          defaultOn: false, type: "text"   },
@@ -37,6 +36,7 @@
     { key: "submission_date",      label: "Data Submissao",      defaultOn: false, type: "date",  sortKey: "submission_date_iso" },
     { key: "submitted_by",         label: "Submetido por",       defaultOn: true,  type: "text"   },
     { key: "verification_status",  label: "Estado",              defaultOn: true,  type: "badge"  },
+    { key: "delivery_notes_view",  label: "Nota Entrega",        defaultOn: true,  type: "notes"  },
     { key: "phone",                label: "Telefone",            defaultOn: false, type: "text"   },
     { key: "phone_alt",            label: "Tel. Alternativo",    defaultOn: false, type: "text"   },
     { key: "is_locked",            label: "Bloqueado",           defaultOn: false, type: "text"   },
@@ -535,7 +535,7 @@
                 .filter((u) => u && String(u).trim());
               if (!links.length) return `<td style="text-align:center;color:#cbd5e1">—</td>`;
               const payload = encodeURIComponent(JSON.stringify(links));
-              return `<td style="text-align:center"><button class="notes-eye" data-links="${payload}" title="Ver notas de entrega (${links.length})" style="background:none;border:none;cursor:pointer;font-size:1.1rem;padding:.2rem .4rem">👁️</button></td>`;
+              return `<td style="text-align:center"><button class="notes-eye" data-links="${payload}" title="Ver notas de entrega (${links.length})" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;cursor:pointer;font-size:.72rem;font-weight:600;padding:.25rem .55rem;border-radius:6px;display:inline-flex;align-items:center;gap:.3rem">📷 ${links.length}</button></td>`;
             }
             let text = String(raw ?? "");
             if (col.truncate) text = text.slice(0, col.truncate);
