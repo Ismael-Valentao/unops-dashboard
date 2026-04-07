@@ -21,7 +21,8 @@
 
   // ── Column definitions ──────────────────────────────────────
   const ALL_COLUMNS = [
-    { key: "delivery_id",          label: "ID",                  defaultOn: true,  type: "text",   truncate: 8 },
+    { key: "delivery_id",          label: "ID",                  defaultOn: false, type: "text",   truncate: 8 },
+    { key: "delivery_notes_view",  label: "Nota Entrega",        defaultOn: true,  type: "notes"  },
     { key: "delivery_note_number", label: "GTU",                 defaultOn: true,  type: "text"   },
     { key: "beneficiary_name",     label: "Beneficiario",        defaultOn: true,  type: "text"   },
     { key: "supplier",             label: "Fornecedor",          defaultOn: false, type: "text"   },
@@ -529,6 +530,13 @@
             if (col.type === "badge") {
               return `<td>${statusBadge(raw)}</td>`;
             }
+            if (col.type === "notes") {
+              const links = [r.delivery_note_link, r.delivery_note_link2, r.delivery_note_link3]
+                .filter((u) => u && String(u).trim());
+              if (!links.length) return `<td style="text-align:center;color:#cbd5e1">—</td>`;
+              const payload = encodeURIComponent(JSON.stringify(links));
+              return `<td style="text-align:center"><button class="notes-eye" data-links="${payload}" title="Ver notas de entrega (${links.length})" style="background:none;border:none;cursor:pointer;font-size:1.1rem;padding:.2rem .4rem">👁️</button></td>`;
+            }
             let text = String(raw ?? "");
             if (col.truncate) text = text.slice(0, col.truncate);
             const titleAttr = col.truncate ? ` title="${esc(String(r[key] ?? ""))}"` : "";
@@ -552,6 +560,79 @@
     }
 
     renderPagination(searchRows.length);
+  }
+
+  // ── Notes modal (delivery note photos) ─────────────────────
+  function ensureNotesModal() {
+    if (document.getElementById("notes-modal")) return;
+    const wrap = document.createElement("div");
+    wrap.id = "notes-modal";
+    wrap.innerHTML = `
+      <style>
+        #notes-modal{position:fixed;inset:0;background:rgba(15,23,42,.75);display:none;align-items:center;justify-content:center;z-index:9999;padding:1rem}
+        #notes-modal.open{display:flex}
+        #notes-modal .nm-box{background:#fff;border-radius:12px;max-width:900px;width:100%;max-height:90vh;overflow:auto;padding:1.25rem;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+        #notes-modal .nm-close{position:absolute;top:.6rem;right:.8rem;background:#f1f5f9;border:none;width:34px;height:34px;border-radius:50%;font-size:1.2rem;cursor:pointer;color:#334155}
+        #notes-modal .nm-close:hover{background:#e2e8f0}
+        #notes-modal h3{margin:0 0 1rem 0;font-size:1rem;color:#0f172a}
+        #notes-modal .nm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.8rem}
+        #notes-modal .nm-thumb{cursor:zoom-in;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#f8fafc;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center}
+        #notes-modal .nm-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+        #notes-modal .nm-thumb:hover{border-color:#2563eb}
+        #notes-modal .nm-link{display:block;text-align:center;font-size:.75rem;color:#64748b;margin-top:.3rem;text-decoration:none}
+        #notes-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:10000;padding:2rem}
+        #notes-lightbox.open{display:flex}
+        #notes-lightbox img{max-width:95vw;max-height:90vh;object-fit:contain;border-radius:6px}
+        #notes-lightbox .lb-close{position:absolute;top:1rem;right:1.5rem;background:#fff;border:none;width:42px;height:42px;border-radius:50%;font-size:1.5rem;cursor:pointer;color:#0f172a}
+      </style>
+      <div class="nm-box">
+        <button class="nm-close" type="button">&times;</button>
+        <h3>Notas de Entrega</h3>
+        <div class="nm-grid"></div>
+      </div>`;
+    document.body.appendChild(wrap);
+
+    const lb = document.createElement("div");
+    lb.id = "notes-lightbox";
+    lb.innerHTML = `<button class="lb-close" type="button">&times;</button><img alt="">`;
+    document.body.appendChild(lb);
+
+    wrap.addEventListener("click", (e) => {
+      if (e.target === wrap || e.target.classList.contains("nm-close")) {
+        wrap.classList.remove("open");
+      }
+    });
+    lb.addEventListener("click", (e) => {
+      if (e.target === lb || e.target.classList.contains("lb-close")) {
+        lb.classList.remove("open");
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      lb.classList.remove("open");
+      wrap.classList.remove("open");
+    });
+  }
+
+  function openNotesModal(links) {
+    ensureNotesModal();
+    const wrap = document.getElementById("notes-modal");
+    const grid = wrap.querySelector(".nm-grid");
+    grid.innerHTML = links.map((url, i) => `
+      <div>
+        <div class="nm-thumb" data-url="${esc(url)}">
+          <img src="${esc(url)}" alt="Nota ${i+1}" loading="lazy" onerror="this.parentNode.innerHTML='<span style=color:#94a3b8;font-size:.8rem;padding:1rem;text-align:center>Imagem indisponível</span>'">
+        </div>
+        <a class="nm-link" href="${esc(url)}" target="_blank" rel="noopener">Abrir original ↗</a>
+      </div>`).join("");
+    grid.querySelectorAll(".nm-thumb").forEach((el) => {
+      el.addEventListener("click", () => {
+        const lb = document.getElementById("notes-lightbox");
+        lb.querySelector("img").src = el.dataset.url;
+        lb.classList.add("open");
+      });
+    });
+    wrap.classList.add("open");
   }
 
   // ── Column picker ──────────────────────────────────────────
@@ -1322,6 +1403,16 @@
         picker.style.display = "none";
         $("#btn-columns-toggle").classList.remove("active");
       }
+    });
+
+    // Notes modal: open
+    elTableBody.addEventListener("click", (e) => {
+      const btn = e.target.closest(".notes-eye");
+      if (!btn) return;
+      try {
+        const links = JSON.parse(decodeURIComponent(btn.dataset.links));
+        openNotesModal(links);
+      } catch (err) { console.error(err); }
     });
 
     // Pagination
