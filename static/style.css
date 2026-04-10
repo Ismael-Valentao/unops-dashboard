@@ -205,6 +205,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .badge-none{background:#fef2f2;color:#dc2626;box-shadow:inset 0 0 0 1px rgba(220,38,38,.15)}
 @media(max-width:900px){.pvd-metrics{grid-template-columns:1fr}.pvd-charts{grid-template-columns:1fr}}
 
+/* ── Logistics Control ──────────────────────────────────── */
+.logistics-section{background:#fff;border-radius:12px;padding:1.25rem;
+  box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:1.25rem}
+.logistics-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem}
+.logistics-header h3{font-size:1.1rem;font-weight:700;color:#0f172a}
+.logistics-empty{text-align:center;padding:2rem 1rem;color:#94a3b8;font-size:.9rem}
+.logistics-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem}
+.logistics-card{background:#f8fafc;border-radius:10px;padding:.85rem 1rem;border-left:4px solid #0f4c75}
+.logistics-card-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:.15rem}
+.logistics-card-value{font-size:1.5rem;font-weight:800;color:#0f4c75;font-variant-numeric:tabular-nums}
+.logistics-card.card-green{border-left-color:#16a34a}.logistics-card.card-green .logistics-card-value{color:#16a34a}
+.logistics-card.card-amber{border-left-color:#d97706}.logistics-card.card-amber .logistics-card-value{color:#d97706}
+.logistics-card.card-red{border-left-color:#dc2626}.logistics-card.card-red .logistics-card-value{color:#dc2626}
+.logistics-tabs{display:flex;gap:.35rem;margin-bottom:.75rem;border-bottom:2px solid #e2e8f0;padding-bottom:0}
+.log-tab{background:none;border:none;padding:.5rem 1rem;font-size:.82rem;font-weight:600;color:#64748b;
+  cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
+.log-tab:hover{color:#0f172a}
+.log-tab.active{color:#0f4c75;border-bottom-color:#0f4c75}
+.log-tab span{font-size:.7rem;background:#e2e8f0;border-radius:10px;padding:.1rem .45rem;margin-left:.3rem}
+.log-tab.active span{background:#dbeafe;color:#1d4ed8}
+.btn-upload-sm{display:inline-flex;align-items:center;gap:4px;padding:.4rem .85rem;font-size:.78rem;
+  font-weight:600;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:8px;cursor:pointer;transition:all .15s}
+.btn-upload-sm:hover{background:#dbeafe}
+@media(max-width:900px){.logistics-metrics{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.logistics-metrics{grid-template-columns:1fr}}
+
 /* ── Metric Cards ────────────────────────────────────────── */
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin-bottom:1.25rem}
 .card{background:#fff;border-radius:10px;padding:1rem 1.15rem;

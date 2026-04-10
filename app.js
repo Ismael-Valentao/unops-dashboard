@@ -530,6 +530,94 @@ app.get("/api/export/relatorio-completo", async (_req, res) => {
   catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
+// ── Logistics cross-reference ────────────────────────────────
+const XLSX_LIB = require("xlsx");
+
+const SKU_MAP = {
+  MXIXMILHOKG: "Milho", MXIXFEIJAOKG: "Feijão", MXIXARROZKG: "Arroz",
+  AGRIFEMTINL: "Emamectin", AGRIMIDACLORIPLT: "Imidacloprid", AGRIMHMCPALT: "MCPA",
+  SUSSACO: "Sacos Herméticos", MMRMINTER25: "Sacos Herméticos",
+  SEEDARROZM50KG: "Arroz", MSEEDFJNHB5KG: "Feijão", MSEEDOPVZM523: "Milho",
+  AGRIFEMMA0125L: "Emamectin",
+};
+
+app.get("/api/logistics/compare", (_req, res) => {
+  try {
+    const filePath = path.join(__dirname, "data", "servicos.xlsx");
+    const fs = require("fs");
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Ficheiro de serviços não encontrado (data/servicos.xlsx)" });
+    }
+    const wb = XLSX_LIB.readFile(filePath);
+    const servicos = XLSX_LIB.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+
+    // Index delivery rows by GTU
+    const delivByGTU = {};
+    for (const d of cache.data) {
+      const gtu = (d.delivery_note_number || "").trim();
+      if (!gtu) continue;
+      if (!delivByGTU[gtu]) delivByGTU[gtu] = [];
+      delivByGTU[gtu].push(d);
+    }
+
+    const all = [];
+    const porFechar = [];
+    const semEntrega = [];
+    const emTransito = [];
+    let matched = 0;
+
+    for (const s of servicos) {
+      const gtu = String(s["Trabalho"] || "").trim();
+      const delRows = delivByGTU[gtu] || [];
+      const entregue = delRows.length > 0;
+      const totalDeliv = delRows.reduce((sum, d) => sum + (Number(d.delivered_qty) || 0), 0);
+      const produto = SKU_MAP[s["SKU"]] || s["SKU"] || "";
+      const estado = String(s["Estado"] || "").toUpperCase();
+
+      if (entregue) matched++;
+
+      const row = {
+        gtu,
+        estado_logistico: estado,
+        entregue_dashboard: entregue,
+        destinatario: String(s["Destinatario"] || "").trim(),
+        provincia: String(s["Provincia"] || "").trim(),
+        distrito: String(s["Distrito"] || "").trim(),
+        produto,
+        peso: Number(s["Peso"]) || 0,
+        volumes: Number(s["Volumes"]) || 0,
+        matricula: String(s["Matricula"] || "").trim(),
+        origem: String(s["Origem"] || "").trim(),
+        qtd_entregue: totalDeliv,
+        verificacao: delRows.length ? delRows[0].verification_status : "",
+      };
+
+      all.push(row);
+
+      if (estado === "FINALIZADO" && entregue) porFechar.push(row);
+      else if (estado === "FINALIZADO" && !entregue) semEntrega.push(row);
+      else if (!entregue) emTransito.push(row);
+    }
+
+    res.json({
+      summary: {
+        total: servicos.length,
+        matched,
+        por_fechar: porFechar.length,
+        sem_entrega: semEntrega.length,
+        em_transito: emTransito.length,
+      },
+      por_fechar: porFechar,
+      sem_entrega: semEntrega,
+      em_transito: emTransito,
+      all,
+    });
+  } catch (e) {
+    console.error("[Logistics]", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────
 async function main() {
   // Init modules

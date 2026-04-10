@@ -1521,6 +1521,99 @@
       if (cardErrors) cardErrors.style.display = "";
     }
 
+    // Logistics control
+    let logisticsData = null;
+    let logisticsTab = "por_fechar";
+
+    const logFileInput = $("#logistics-file");
+    if (logFileInput) {
+      logFileInput.addEventListener("change", async () => {
+        if (!logFileInput.files.length) return;
+        await loadLogistics();
+      });
+    }
+    $$(".log-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        logisticsTab = btn.dataset.tab;
+        $$(".log-tab").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        renderLogisticsTable();
+      });
+    });
+    const btnExportLog = $("#btn-export-logistics");
+    if (btnExportLog) btnExportLog.addEventListener("click", exportLogisticsExcel);
+
+    async function loadLogistics() {
+      try {
+        const res = await fetch("/api/logistics/compare");
+        if (!res.ok) { alert("Erro ao carregar dados logísticos"); return; }
+        logisticsData = await res.json();
+        renderLogistics();
+      } catch (e) { console.error(e); alert("Erro: " + e.message); }
+    }
+
+    function renderLogistics() {
+      if (!logisticsData) return;
+      const s = logisticsData.summary;
+      $("#logistics-empty").style.display = "none";
+      $("#logistics-content").style.display = "";
+      $("#btn-export-logistics").style.display = "";
+
+      $("#log-total").textContent = s.total.toLocaleString("pt-PT");
+      $("#log-matched").textContent = s.matched.toLocaleString("pt-PT");
+      $("#log-transito").textContent = s.em_transito.toLocaleString("pt-PT");
+      $("#log-sem-entrega").textContent = s.sem_entrega.toLocaleString("pt-PT");
+      $("#log-tab-fechar-n").textContent = s.por_fechar;
+      $("#log-tab-sem-n").textContent = s.sem_entrega;
+      $("#log-tab-transito-n").textContent = s.em_transito;
+
+      renderLogisticsTable();
+    }
+
+    function renderLogisticsTable() {
+      if (!logisticsData) return;
+      const rows = logisticsData[logisticsTab] || [];
+      const body = $("#logistics-body");
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:1.5rem">Sem registos</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map((r) => {
+        const estadoBg = r.estado_logistico === "FINALIZADO" ? "#dcfce7" :
+                         r.estado_logistico === "TRANSITO" ? "#fef3c7" : "#f1f5f9";
+        const estadoColor = r.estado_logistico === "FINALIZADO" ? "#166534" :
+                            r.estado_logistico === "TRANSITO" ? "#92400e" : "#64748b";
+        const verifBadge = r.verificacao ? ('<span style="font-size:.72rem;padding:.15rem .45rem;border-radius:6px;background:' +
+          (r.verificacao === "Verified" ? "#dcfce7;color:#166534" : "#fef3c7;color:#92400e") + '">' + esc(r.verificacao) + '</span>') : '—';
+        return '<tr>' +
+          '<td style="font-family:monospace;font-size:.78rem">' + esc(r.gtu) + '</td>' +
+          '<td>' + esc(r.destinatario) + '</td>' +
+          '<td>' + esc(r.distrito) + '</td>' +
+          '<td>' + esc(r.provincia) + '</td>' +
+          '<td>' + esc(r.produto) + '</td>' +
+          '<td style="text-align:right">' + Number(r.peso).toLocaleString("pt-PT") + '</td>' +
+          '<td style="font-size:.78rem">' + esc(r.matricula) + '</td>' +
+          '<td><span style="font-size:.72rem;padding:.15rem .45rem;border-radius:6px;background:' + estadoBg + ';color:' + estadoColor + '">' + esc(r.estado_logistico) + '</span></td>' +
+          '<td>' + verifBadge + '</td></tr>';
+      }).join("");
+    }
+
+    function exportLogisticsExcel() {
+      if (!logisticsData) return;
+      const data = logisticsData.all || [];
+      const csvRows = [["GTU","Estado Logístico","Entregue no Dashboard","Destinatário","Provincia","Distrito","Produto","Peso (kg)","Volumes","Matrícula","Origem","Qtd Entregue","Verificação"]];
+      data.forEach((r) => {
+        csvRows.push([r.gtu, r.estado_logistico, r.entregue_dashboard ? "SIM" : "NÃO", r.destinatario,
+          r.provincia, r.distrito, r.produto, r.peso, r.volumes, r.matricula, r.origem, r.qtd_entregue, r.verificacao]);
+      });
+      const csv = csvRows.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(",")).join("\n");
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "controlo_logistico_" + new Date().toISOString().slice(0, 10) + ".csv";
+      a.click();
+    }
+
     // Show verify section and auto-run on first load
     fetchData(false).then(() => {
       if (!isPublic) {
@@ -1534,6 +1627,7 @@
       loadSnapshotList();
       loadPvD();
       loadAnalytics();
+      loadLogistics();
     });
   }
 
