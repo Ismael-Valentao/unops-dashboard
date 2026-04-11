@@ -1521,9 +1521,31 @@
       if (cardErrors) cardErrors.style.display = "";
     }
 
-    // Logistics control
+    // ── Logistics control ──────────────────────────────────────
+    const LOG_COLUMNS = [
+      { key: "adsn",              label: "ADSN",             defaultOn: true,  type: "text" },
+      { key: "gtu",               label: "GTU",              defaultOn: true,  type: "text" },
+      { key: "destinatario",      label: "Destinatário",     defaultOn: true,  type: "text" },
+      { key: "distrito",          label: "Distrito",         defaultOn: true,  type: "text" },
+      { key: "provincia",         label: "Provincia",        defaultOn: true,  type: "text" },
+      { key: "produto",           label: "Produto",          defaultOn: true,  type: "text" },
+      { key: "peso",              label: "Peso (kg)",        defaultOn: true,  type: "number" },
+      { key: "volumes",           label: "Volumes",          defaultOn: false, type: "number" },
+      { key: "matricula",         label: "Matrícula",        defaultOn: true,  type: "text" },
+      { key: "origem",            label: "Origem",           defaultOn: false, type: "text" },
+      { key: "estado_logistico",  label: "Estado Log.",      defaultOn: true,  type: "badge_log" },
+      { key: "qtd_entregue",      label: "Qtd Entregue",     defaultOn: false, type: "number" },
+      { key: "verificacao",       label: "Verificação",      defaultOn: true,  type: "badge_verif" },
+    ];
     let logisticsData = null;
     let logisticsTab = "por_fechar";
+    let logVisibleCols = LOG_COLUMNS.filter((c) => c.defaultOn).map((c) => c.key);
+    let logSortCol = "gtu";
+    let logSortAsc = true;
+    let logPage = 1;
+    const LOG_PAGE_SIZE = 20;
+
+    function getLogColDef(key) { return LOG_COLUMNS.find((c) => c.key === key); }
 
     const logFileInput = $("#logistics-file");
     if (logFileInput) {
@@ -1535,6 +1557,7 @@
     $$(".log-tab").forEach((btn) => {
       btn.addEventListener("click", () => {
         logisticsTab = btn.dataset.tab;
+        logPage = 1;
         $$(".log-tab").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         renderLogisticsTable();
@@ -1542,6 +1565,76 @@
     });
     const btnExportLog = $("#btn-export-logistics");
     if (btnExportLog) btnExportLog.addEventListener("click", exportLogisticsExcel);
+
+    // Column picker toggle
+    const btnLogCols = $("#btn-log-columns");
+    const logColPicker = $("#log-col-picker");
+    if (btnLogCols && logColPicker) {
+      btnLogCols.addEventListener("click", (e) => {
+        e.stopPropagation();
+        logColPicker.style.display = logColPicker.style.display === "none" ? "" : "none";
+        if (logColPicker.style.display !== "none") renderLogColPicker();
+      });
+      document.addEventListener("click", (e) => {
+        if (!logColPicker.contains(e.target) && e.target !== btnLogCols) logColPicker.style.display = "none";
+      });
+      const resetBtn = $("#btn-log-col-reset");
+      if (resetBtn) resetBtn.addEventListener("click", () => {
+        logVisibleCols = LOG_COLUMNS.filter((c) => c.defaultOn).map((c) => c.key);
+        renderLogColPicker();
+        renderLogisticsHeader();
+        renderLogisticsTable();
+      });
+    }
+
+    // Sort on header click
+    const logThead = $("#logistics-thead-row");
+    if (logThead) logThead.addEventListener("click", (e) => {
+      const th = e.target.closest("th");
+      if (!th || !th.dataset.col) return;
+      const col = th.dataset.col;
+      if (logSortCol === col) logSortAsc = !logSortAsc;
+      else { logSortCol = col; logSortAsc = true; }
+      renderLogisticsTable();
+    });
+
+    // Pagination
+    const logPagEl = $("#log-pagination");
+    if (logPagEl) logPagEl.addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn || btn.disabled) return;
+      logPage = Number(btn.dataset.page);
+      renderLogisticsTable();
+    });
+
+    function renderLogColPicker() {
+      const list = $("#log-col-picker-list");
+      if (!list) return;
+      list.innerHTML = LOG_COLUMNS.map((col) => {
+        const on = logVisibleCols.includes(col.key);
+        return '<label class="col-chip ' + (on ? "on" : "") + '" data-key="' + col.key + '"><span class="col-chip-dot"></span>' + esc(col.label) + '</label>';
+      }).join("");
+      list.querySelectorAll(".col-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          const k = chip.dataset.key;
+          if (logVisibleCols.includes(k)) logVisibleCols = logVisibleCols.filter((c) => c !== k);
+          else logVisibleCols.push(k);
+          chip.classList.toggle("on");
+          renderLogisticsHeader();
+          renderLogisticsTable();
+        });
+      });
+    }
+
+    function renderLogisticsHeader() {
+      if (!logThead) return;
+      logThead.innerHTML = logVisibleCols.map((key) => {
+        const col = getLogColDef(key);
+        if (!col) return "";
+        const active = logSortCol === key ? " sort-active" : "";
+        return '<th data-col="' + key + '" class="' + active + '">' + esc(col.label) + ' \u25B4\u25BE</th>';
+      }).join("");
+    }
 
     async function loadLogistics() {
       try {
@@ -1559,51 +1652,100 @@
       $("#logistics-content").style.display = "";
       $("#btn-export-logistics").style.display = "";
 
-      $("#log-total").textContent = s.total.toLocaleString("pt-PT");
-      $("#log-matched").textContent = s.matched.toLocaleString("pt-PT");
+      const fmtP = (n) => Number(n).toLocaleString("pt-PT", { maximumFractionDigits: 0 }) + " kg";
+      $("#log-concluidos").textContent = s.concluidos.toLocaleString("pt-PT");
+      $("#log-peso-concluidos").textContent = fmtP(s.peso_concluidos);
+      $("#log-por-fechar").textContent = s.por_fechar.toLocaleString("pt-PT");
+      $("#log-peso-por-fechar").textContent = fmtP(s.peso_por_fechar);
       $("#log-transito").textContent = s.em_transito.toLocaleString("pt-PT");
+      $("#log-peso-transito").textContent = fmtP(s.peso_em_transito);
       $("#log-sem-entrega").textContent = s.sem_entrega.toLocaleString("pt-PT");
+      $("#log-peso-sem-entrega").textContent = fmtP(s.peso_sem_entrega);
       $("#log-tab-fechar-n").textContent = s.por_fechar;
+      $("#log-tab-concluidos-n").textContent = s.concluidos;
       $("#log-tab-sem-n").textContent = s.sem_entrega;
       $("#log-tab-transito-n").textContent = s.em_transito;
 
+      renderLogisticsHeader();
       renderLogisticsTable();
     }
 
     function renderLogisticsTable() {
       if (!logisticsData) return;
-      const rows = logisticsData[logisticsTab] || [];
+      const rows = (logisticsData[logisticsTab] || []).slice();
       const body = $("#logistics-body");
-      if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:1.5rem">Sem registos</td></tr>';
+      const colCount = logVisibleCols.length;
+
+      // Sort
+      rows.sort((a, b) => {
+        let va = a[logSortCol], vb = b[logSortCol];
+        const col = getLogColDef(logSortCol);
+        if (col && col.type === "number") { va = Number(va) || 0; vb = Number(vb) || 0; }
+        else { va = String(va || "").toLowerCase(); vb = String(vb || "").toLowerCase(); }
+        if (va < vb) return logSortAsc ? -1 : 1;
+        if (va > vb) return logSortAsc ? 1 : -1;
+        return 0;
+      });
+
+      // Pagination
+      const totalPages = Math.max(1, Math.ceil(rows.length / LOG_PAGE_SIZE));
+      if (logPage > totalPages) logPage = totalPages;
+      const start = (logPage - 1) * LOG_PAGE_SIZE;
+      const page = rows.slice(start, start + LOG_PAGE_SIZE);
+
+      if (!page.length) {
+        body.innerHTML = '<tr><td colspan="' + colCount + '" style="text-align:center;color:#94a3b8;padding:1.5rem">Sem registos</td></tr>';
+        renderLogPagination(0);
         return;
       }
-      body.innerHTML = rows.map((r) => {
-        const estadoBg = r.estado_logistico === "FINALIZADO" ? "#dcfce7" :
-                         r.estado_logistico === "TRANSITO" ? "#fef3c7" : "#f1f5f9";
-        const estadoColor = r.estado_logistico === "FINALIZADO" ? "#166534" :
-                            r.estado_logistico === "TRANSITO" ? "#92400e" : "#64748b";
-        const verifBadge = r.verificacao ? ('<span style="font-size:.72rem;padding:.15rem .45rem;border-radius:6px;background:' +
-          (r.verificacao === "Verified" ? "#dcfce7;color:#166534" : "#fef3c7;color:#92400e") + '">' + esc(r.verificacao) + '</span>') : '—';
-        return '<tr>' +
-          '<td style="font-family:monospace;font-size:.78rem">' + esc(r.gtu) + '</td>' +
-          '<td>' + esc(r.destinatario) + '</td>' +
-          '<td>' + esc(r.distrito) + '</td>' +
-          '<td>' + esc(r.provincia) + '</td>' +
-          '<td>' + esc(r.produto) + '</td>' +
-          '<td style="text-align:right">' + Number(r.peso).toLocaleString("pt-PT") + '</td>' +
-          '<td style="font-size:.78rem">' + esc(r.matricula) + '</td>' +
-          '<td><span style="font-size:.72rem;padding:.15rem .45rem;border-radius:6px;background:' + estadoBg + ';color:' + estadoColor + '">' + esc(r.estado_logistico) + '</span></td>' +
-          '<td>' + verifBadge + '</td></tr>';
+
+      body.innerHTML = page.map((r) => {
+        return "<tr>" + logVisibleCols.map((key) => {
+          const col = getLogColDef(key);
+          if (!col) return "<td></td>";
+          const raw = r[key];
+          if (col.type === "number") {
+            return '<td style="text-align:right">' + Number(raw || 0).toLocaleString("pt-PT", { maximumFractionDigits: 1 }) + '</td>';
+          }
+          if (col.type === "badge_log") {
+            const bg = raw === "FINALIZADO" ? "#dcfce7" : raw === "TRANSITO" ? "#fef3c7" : "#f1f5f9";
+            const color = raw === "FINALIZADO" ? "#166534" : raw === "TRANSITO" ? "#92400e" : "#64748b";
+            return '<td><span style="font-size:.72rem;padding:.15rem .45rem;border-radius:6px;background:' + bg + ';color:' + color + '">' + esc(raw || "") + '</span></td>';
+          }
+          if (col.type === "badge_verif") {
+            if (!raw) return "<td>—</td>";
+            const bg2 = raw === "Verified" ? "#dcfce7;color:#166534" : "#fef3c7;color:#92400e";
+            return '<td><span style="font-size:.72rem;padding:.15rem .45rem;border-radius:6px;background:' + bg2 + '">' + esc(raw) + '</span></td>';
+          }
+          const style = key === "gtu" || key === "adsn" ? ' style="font-family:monospace;font-size:.78rem"' : "";
+          return "<td" + style + ">" + esc(String(raw || "")) + "</td>";
+        }).join("") + "</tr>";
       }).join("");
+
+      renderLogPagination(rows.length);
+    }
+
+    function renderLogPagination(total) {
+      if (!logPagEl) return;
+      const totalPages = Math.max(1, Math.ceil(total / LOG_PAGE_SIZE));
+      if (totalPages <= 1) { logPagEl.innerHTML = ""; return; }
+      let html = '<button data-page="' + (logPage - 1) + '"' + (logPage <= 1 ? " disabled" : "") + '>&laquo;</button>';
+      const start = Math.max(1, logPage - 2);
+      const end = Math.min(totalPages, logPage + 2);
+      for (let p = start; p <= end; p++) {
+        html += '<button data-page="' + p + '"' + (p === logPage ? ' class="active"' : '') + '>' + p + '</button>';
+      }
+      html += '<button data-page="' + (logPage + 1) + '"' + (logPage >= totalPages ? " disabled" : "") + '>&raquo;</button>';
+      html += '<span style="font-size:.75rem;color:#64748b;margin-left:.5rem">' + total + ' registos</span>';
+      logPagEl.innerHTML = html;
     }
 
     function exportLogisticsExcel() {
       if (!logisticsData) return;
       const data = logisticsData.all || [];
-      const csvRows = [["GTU","Estado Logístico","Entregue no Dashboard","Destinatário","Provincia","Distrito","Produto","Peso (kg)","Volumes","Matrícula","Origem","Qtd Entregue","Verificação"]];
+      const csvRows = [["ADSN","GTU","Estado Logístico","Entregue no Dashboard","Destinatário","Provincia","Distrito","Produto","Peso (kg)","Volumes","Matrícula","Origem","Qtd Entregue","Verificação"]];
       data.forEach((r) => {
-        csvRows.push([r.gtu, r.estado_logistico, r.entregue_dashboard ? "SIM" : "NÃO", r.destinatario,
+        csvRows.push([r.adsn, r.gtu, r.estado_logistico, r.entregue_dashboard ? "SIM" : "NÃO", r.destinatario,
           r.provincia, r.distrito, r.produto, r.peso, r.volumes, r.matricula, r.origem, r.qtd_entregue, r.verificacao]);
       });
       const csv = csvRows.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(",")).join("\n");

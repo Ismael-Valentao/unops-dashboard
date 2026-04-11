@@ -344,26 +344,55 @@
       <!-- Content after upload -->
       <div id="logistics-content" style="display:none">
         <div class="logistics-metrics">
-          <div class="logistics-card"><div class="logistics-card-label">Total Serviços</div><div class="logistics-card-value" id="log-total">—</div></div>
-          <div class="logistics-card card-green"><div class="logistics-card-label">Já Entregues</div><div class="logistics-card-value" id="log-matched">—</div></div>
-          <div class="logistics-card card-amber"><div class="logistics-card-label">Em Trânsito / Criado</div><div class="logistics-card-value" id="log-transito">—</div></div>
-          <div class="logistics-card card-red"><div class="logistics-card-label">Finaliz. sem Entrega</div><div class="logistics-card-value" id="log-sem-entrega">—</div></div>
+          <div class="logistics-card card-green">
+            <div class="logistics-card-label">Finalizados no ADIL (Fechados)</div>
+            <div class="logistics-card-value" id="log-concluidos">—</div>
+            <div class="logistics-card-unit" id="log-peso-concluidos"></div>
+          </div>
+          <div class="logistics-card card-amber">
+            <div class="logistics-card-label">Por finalizar no ADIL</div>
+            <div class="logistics-card-value" id="log-por-fechar">—</div>
+            <div class="logistics-card-unit" id="log-peso-por-fechar"></div>
+          </div>
+          <div class="logistics-card">
+            <div class="logistics-card-label">Em Trânsito</div>
+            <div class="logistics-card-value" id="log-transito">—</div>
+            <div class="logistics-card-unit" id="log-peso-transito"></div>
+          </div>
+          <div class="logistics-card card-red">
+            <div class="logistics-card-label">Sem Entregas no sistema da UNOPS</div>
+            <div class="logistics-card-value" id="log-sem-entrega">—</div>
+            <div class="logistics-card-unit" id="log-peso-sem-entrega"></div>
+          </div>
         </div>
-        <div class="logistics-tabs">
-          <button class="log-tab active" data-tab="por_fechar">Por Fechar <span id="log-tab-fechar-n"></span></button>
-          <button class="log-tab" data-tab="sem_entrega">Sem Entrega <span id="log-tab-sem-n"></span></button>
-          <button class="log-tab" data-tab="em_transito">Em Trânsito <span id="log-tab-transito-n"></span></button>
+        <div class="logistics-toolbar">
+          <div class="logistics-tabs">
+            <button class="log-tab active" data-tab="por_fechar">Por finalizar no ADIL <span id="log-tab-fechar-n"></span></button>
+            <button class="log-tab" data-tab="concluidos">Finalizados no ADIL <span id="log-tab-concluidos-n"></span></button>
+            <button class="log-tab" data-tab="sem_entrega">Sem Entregas UNOPS <span id="log-tab-sem-n"></span></button>
+            <button class="log-tab" data-tab="em_transito">Em Trânsito <span id="log-tab-transito-n"></span></button>
+          </div>
+          <button id="btn-log-columns" class="btn btn-columns" title="Colunas" style="font-size:.78rem;padding:.35rem .7rem">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" style="vertical-align:-2px;margin-right:3px">
+              <path fill-rule="evenodd" d="M.99 5.24A2.25 2.25 0 013.25 3h13.5A2.25 2.25 0 0119 5.25l.01 9.5A2.25 2.25 0 0116.76 17H3.26A2.25 2.25 0 011 14.75l-.01-9.51zm8.26 9.51v-3.5H4.26v3.5h4.99zm0-5v-3.5H4.26v3.5h4.99zm1.5 5h4.99v-3.5h-4.99v3.5zm4.99-5v-3.5h-4.99v3.5h4.99z" clip-rule="evenodd"/>
+            </svg>
+            Colunas
+          </button>
         </div>
-        <div class="table-wrap" style="max-height:440px;overflow-y:auto">
+        <div id="log-col-picker" class="col-picker" style="display:none">
+          <div class="col-picker-header">
+            <span>Colunas visiveis</span>
+            <button id="btn-log-col-reset" class="col-picker-reset">Repor default</button>
+          </div>
+          <div id="log-col-picker-list" class="col-picker-list"></div>
+        </div>
+        <div class="table-wrap" style="max-height:480px;overflow-y:auto">
           <table class="mini-table" id="logistics-table">
-            <thead><tr>
-              <th>GTU</th><th>Destinatário</th><th>Distrito</th><th>Provincia</th>
-              <th>Produto</th><th style="text-align:right">Peso (kg)</th><th>Matrícula</th>
-              <th>Estado Log.</th><th>Verificação</th>
-            </tr></thead>
+            <thead><tr id="logistics-thead-row"></tr></thead>
             <tbody id="logistics-body"></tbody>
           </table>
         </div>
+        <div class="pagination" id="log-pagination"></div>
       </div>
     </section>
 

@@ -551,32 +551,54 @@ app.get("/api/logistics/compare", (_req, res) => {
     const wb = XLSX_LIB.readFile(filePath);
     const servicos = XLSX_LIB.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
 
-    // Index delivery rows by GTU
+    // Normalize GTU: GTS→GTU, remove extra slash, pad suffix to 5 digits
+    function normGTU(raw) {
+      let g = String(raw || "").trim().replace(/\\/g, "/");
+      g = g.replace(/^GTS/i, "GTU");
+      // GTU98/2023/06520 → GTU98/202306520  or  GTU98/2023/6433 → GTU98/202306433
+      g = g.replace(/^(GTU\d+\/\d{4})\/(\d+)$/i, (_, prefix, num) => prefix + num.padStart(5, "0"));
+      return g;
+    }
+
+    // Index delivery rows by normalized GTU
     const delivByGTU = {};
     for (const d of cache.data) {
-      const gtu = (d.delivery_note_number || "").trim();
+      const gtu = normGTU(d.delivery_note_number);
       if (!gtu) continue;
       if (!delivByGTU[gtu]) delivByGTU[gtu] = [];
       delivByGTU[gtu].push(d);
     }
 
+    // Index logistics rows by normalized GTU for reverse lookup
+    const logByGTU = {};
+    for (const s of servicos) {
+      const gtu = normGTU(s["Trabalho"]);
+      if (gtu) logByGTU[gtu] = s;
+    }
+
     const all = [];
-    const porFechar = [];
-    const semEntrega = [];
-    const emTransito = [];
+    const concluidos = [];   // FINALIZADO + no dashboard = tudo OK
+    const porFechar = [];    // no dashboard mas NÃO finalizado no logístico = precisa fechar
+    const semEntrega = [];   // FINALIZADO no logístico mas SEM registo no dashboard
+    const emTransito = [];   // TRANSITO/CRIADO e sem entrega no dashboard
     let matched = 0;
+    let pesoConcluidos = 0, pesoPorFechar = 0, pesoSemEntrega = 0, pesoEmTransito = 0;
 
     for (const s of servicos) {
-      const gtu = String(s["Trabalho"] || "").trim();
+      const gtu = normGTU(s["Trabalho"]);
+      // Only process série 98 (GTU98 / GTS98)
+      if (!/^GTU98\//i.test(gtu)) continue;
       const delRows = delivByGTU[gtu] || [];
       const entregue = delRows.length > 0;
       const totalDeliv = delRows.reduce((sum, d) => sum + (Number(d.delivered_qty) || 0), 0);
       const produto = SKU_MAP[s["SKU"]] || s["SKU"] || "";
       const estado = String(s["Estado"] || "").toUpperCase();
+      const peso = Number(s["Peso"]) || 0;
 
       if (entregue) matched++;
 
       const row = {
+        adsn: String(s["Serviço"] || "").trim(),
         gtu,
         estado_logistico: estado,
         entregue_dashboard: entregue,
@@ -584,7 +606,7 @@ app.get("/api/logistics/compare", (_req, res) => {
         provincia: String(s["Provincia"] || "").trim(),
         distrito: String(s["Distrito"] || "").trim(),
         produto,
-        peso: Number(s["Peso"]) || 0,
+        peso,
         volumes: Number(s["Volumes"]) || 0,
         matricula: String(s["Matricula"] || "").trim(),
         origem: String(s["Origem"] || "").trim(),
@@ -594,19 +616,52 @@ app.get("/api/logistics/compare", (_req, res) => {
 
       all.push(row);
 
-      if (estado === "FINALIZADO" && entregue) porFechar.push(row);
-      else if (estado === "FINALIZADO" && !entregue) semEntrega.push(row);
-      else if (!entregue) emTransito.push(row);
+      if (estado === "FINALIZADO" && entregue) {
+        concluidos.push(row); pesoConcluidos += peso;
+      } else if (estado === "FINALIZADO" && !entregue) {
+        semEntrega.push(row); pesoSemEntrega += peso;
+      } else if (entregue && estado !== "FINALIZADO") {
+        porFechar.push(row); pesoPorFechar += peso;
+      } else if (estado === "TRANSITO" && !entregue) {
+        emTransito.push(row); pesoEmTransito += peso;
+      }
     }
 
+    // Deliveries in dashboard with NO matching logistics row at all → also "por fechar"
+    for (const d of cache.data) {
+      const gtu = normGTU(d.delivery_note_number);
+      if (!gtu || logByGTU[gtu]) continue;
+      const peso = Number(d.delivered_qty) || 0;
+      porFechar.push({
+        adsn: "",
+        gtu,
+        estado_logistico: "NÃO ENCONTRADO",
+        entregue_dashboard: true,
+        destinatario: d.beneficiary_name || "",
+        provincia: d.province || "",
+        distrito: d.district || "",
+        produto: d.product || "",
+        peso,
+        volumes: Number(d.packages) || 0,
+        matricula: "",
+        origem: "",
+        qtd_entregue: peso,
+        verificacao: d.verification_status || "",
+      });
+      pesoPorFechar += peso;
+    }
+
+    const fmt = (n) => Math.round(n * 10) / 10;
     res.json({
       summary: {
         total: servicos.length,
         matched,
-        por_fechar: porFechar.length,
-        sem_entrega: semEntrega.length,
-        em_transito: emTransito.length,
+        concluidos: concluidos.length, peso_concluidos: fmt(pesoConcluidos),
+        por_fechar: porFechar.length, peso_por_fechar: fmt(pesoPorFechar),
+        sem_entrega: semEntrega.length, peso_sem_entrega: fmt(pesoSemEntrega),
+        em_transito: emTransito.length, peso_em_transito: fmt(pesoEmTransito),
       },
+      concluidos,
       por_fechar: porFechar,
       sem_entrega: semEntrega,
       em_transito: emTransito,

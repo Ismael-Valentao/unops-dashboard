@@ -215,6 +215,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .logistics-card{background:#f8fafc;border-radius:10px;padding:.85rem 1rem;border-left:4px solid #0f4c75}
 .logistics-card-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:.15rem}
 .logistics-card-value{font-size:1.5rem;font-weight:800;color:#0f4c75;font-variant-numeric:tabular-nums}
+.logistics-card-unit{font-size:.72rem;color:#94a3b8;margin-top:.1rem}
 .logistics-card.card-green{border-left-color:#16a34a}.logistics-card.card-green .logistics-card-value{color:#16a34a}
 .logistics-card.card-amber{border-left-color:#d97706}.logistics-card.card-amber .logistics-card-value{color:#d97706}
 .logistics-card.card-red{border-left-color:#dc2626}.logistics-card.card-red .logistics-card-value{color:#dc2626}
@@ -225,6 +226,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .log-tab.active{color:#0f4c75;border-bottom-color:#0f4c75}
 .log-tab span{font-size:.7rem;background:#e2e8f0;border-radius:10px;padding:.1rem .45rem;margin-left:.3rem}
 .log-tab.active span{background:#dbeafe;color:#1d4ed8}
+.logistics-toolbar{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem}
 .btn-upload-sm{display:inline-flex;align-items:center;gap:4px;padding:.4rem .85rem;font-size:.78rem;
   font-weight:600;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:8px;cursor:pointer;transition:all .15s}
 .btn-upload-sm:hover{background:#dbeafe}
