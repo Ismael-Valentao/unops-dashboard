@@ -560,7 +560,10 @@ const XLSX_LIB = require("xlsx");
 function normGTU(raw) {
   let g = String(raw || "").trim().replace(/\\/g, "/");
   g = g.replace(/^GTS/i, "GTU");
+  // GTU98/2023/6433 → GTU98/202306433 (extra slash + short suffix)
   g = g.replace(/^(GTU\d+\/\d{4})\/(\d+)$/i, (_, prefix, num) => prefix + num.padStart(5, "0"));
+  // GTU98/20236449 → GTU98/202306449 (no slash, year glued to short suffix: 4-digit suffix → pad to 5)
+  g = g.replace(/^(GTU\d+\/\d{4})(\d{4})$/i, (_, prefix, num) => prefix + "0" + num);
   return g;
 }
 
