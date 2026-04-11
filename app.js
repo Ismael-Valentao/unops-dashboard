@@ -651,12 +651,14 @@ app.get("/api/logistics/compare", (_req, res) => {
       }
     }
 
-    // Deliveries in dashboard with NO matching logistics row at all → also "por fechar"
+    // Deliveries in dashboard with NO matching logistics row at all
+    const semCorrespondencia = [];
+    let pesoSemCorresp = 0;
     for (const d of cache.data) {
       const gtu = normGTU(d.delivery_note_number);
       if (!gtu || logByGTU[gtu]) continue;
       const peso = Number(d.delivered_qty) || 0;
-      porFechar.push({
+      const row = {
         adsn: "",
         gtu,
         estado_logistico: "NÃO ENCONTRADO",
@@ -671,8 +673,9 @@ app.get("/api/logistics/compare", (_req, res) => {
         origem: "",
         qtd_entregue: peso,
         verificacao: d.verification_status || "",
-      });
-      pesoPorFechar += peso;
+      };
+      semCorrespondencia.push(row);
+      pesoSemCorresp += peso;
     }
 
     const fmt = (n) => Math.round(n * 10) / 10;
@@ -684,11 +687,13 @@ app.get("/api/logistics/compare", (_req, res) => {
         por_fechar: porFechar.length, peso_por_fechar: fmt(pesoPorFechar),
         sem_entrega: semEntrega.length, peso_sem_entrega: fmt(pesoSemEntrega),
         em_transito: emTransito.length, peso_em_transito: fmt(pesoEmTransito),
+        sem_correspondencia: semCorrespondencia.length, peso_sem_correspondencia: fmt(pesoSemCorresp),
       },
       concluidos,
       por_fechar: porFechar,
       sem_entrega: semEntrega,
       em_transito: emTransito,
+      sem_correspondencia: semCorrespondencia,
       all,
     });
   } catch (e) {

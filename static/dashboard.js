@@ -1666,6 +1666,7 @@
       $("#log-tab-concluidos-n").textContent = s.concluidos;
       $("#log-tab-sem-n").textContent = s.sem_entrega;
       $("#log-tab-transito-n").textContent = s.em_transito;
+      $("#log-tab-scresp-n").textContent = s.sem_correspondencia;
 
       renderLogisticsHeader();
       renderLogisticsTable();
