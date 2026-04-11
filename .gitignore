@@ -10,4 +10,4 @@ app.py
 requirements.txt
 .env
 .env.local
-data/servicos.xlsx
+
