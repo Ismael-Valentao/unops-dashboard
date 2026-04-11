@@ -22,7 +22,7 @@
   // ── Column definitions ──────────────────────────────────────
   const ALL_COLUMNS = [
     { key: "delivery_id",          label: "ID",                  defaultOn: false, type: "text",   truncate: 8 },
-    { key: "adsn",                 label: "ADSN",                defaultOn: false, type: "text"   },
+    { key: "adsn",                 label: "ADSN",                defaultOn: true,  type: "text"   },
     { key: "delivery_note_number", label: "GTU",                 defaultOn: true,  type: "text"   },
     { key: "beneficiary_name",     label: "Beneficiario",        defaultOn: true,  type: "text"   },
     { key: "supplier",             label: "Fornecedor",          defaultOn: false, type: "text"   },
@@ -32,7 +32,7 @@
     { key: "product",              label: "Produto",             defaultOn: true,  type: "text"   },
     { key: "product_unit",         label: "Unidade",             defaultOn: false, type: "text"   },
     { key: "delivered_qty",        label: "Qtd. Entregue",       defaultOn: true,  type: "number" },
-    { key: "packages",             label: "Pacotes",             defaultOn: true,  type: "number" },
+    { key: "packages",             label: "Pacotes",             defaultOn: false, type: "number" },
     { key: "delivery_date",        label: "Data Entrega",        defaultOn: true,  type: "date",  sortKey: "delivery_date_iso" },
     { key: "submission_date",      label: "Data Submissao",      defaultOn: false, type: "date",  sortKey: "submission_date_iso" },
     { key: "submitted_by",         label: "Submetido por",       defaultOn: true,  type: "text"   },
