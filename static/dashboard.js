@@ -22,6 +22,7 @@
   // ── Column definitions ──────────────────────────────────────
   const ALL_COLUMNS = [
     { key: "delivery_id",          label: "ID",                  defaultOn: false, type: "text",   truncate: 8 },
+    { key: "adsn",                 label: "ADSN",                defaultOn: false, type: "text"   },
     { key: "delivery_note_number", label: "GTU",                 defaultOn: true,  type: "text"   },
     { key: "beneficiary_name",     label: "Beneficiario",        defaultOn: true,  type: "text"   },
     { key: "supplier",             label: "Fornecedor",          defaultOn: false, type: "text"   },

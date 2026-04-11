@@ -92,11 +92,34 @@ function parseCSV(text) {
     .filter((r) => r.delivery_id !== "");
 }
 
+// ── Enrich delivery rows with ADSN from logistics file ───────
+function enrichWithADSN(rows) {
+  try {
+    const fs = require("fs");
+    const filePath = path.join(__dirname, "data", "servicos.xlsx");
+    if (!fs.existsSync(filePath)) return;
+    const wb = XLSX_LIB.readFile(filePath);
+    const servicos = XLSX_LIB.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+    const adsnByGTU = {};
+    for (const s of servicos) {
+      const gtu = normGTU(s["Trabalho"]);
+      if (gtu) adsnByGTU[gtu] = String(s["Serviço"] || "").trim();
+    }
+    for (const r of rows) {
+      const gtu = normGTU(r.delivery_note_number);
+      r.adsn = adsnByGTU[gtu] || "";
+    }
+  } catch (e) {
+    console.warn("[ADSN] Could not enrich:", e.message);
+  }
+}
+
 // ── Refresh cache ─────────────────────────────────────────────
 async function refreshCache() {
   try {
     const text = await fetchCSV(SHEET_CSV_URL);
     cache.data = parseCSV(text);
+    enrichWithADSN(cache.data);
     cache.lastUpdated = new Date().toISOString();
     console.log(`[OK] Loaded ${cache.data.length} rows at ${cache.lastUpdated}`);
   } catch (err) {
@@ -530,8 +553,18 @@ app.get("/api/export/relatorio-completo", async (_req, res) => {
   catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
-// ── Logistics cross-reference ────────────────────────────────
+// ── Shared logistics helpers ─────────────────────────────────
 const XLSX_LIB = require("xlsx");
+
+// Normalize GTU: GTS→GTU, remove extra slash, pad suffix to 5 digits
+function normGTU(raw) {
+  let g = String(raw || "").trim().replace(/\\/g, "/");
+  g = g.replace(/^GTS/i, "GTU");
+  g = g.replace(/^(GTU\d+\/\d{4})\/(\d+)$/i, (_, prefix, num) => prefix + num.padStart(5, "0"));
+  return g;
+}
+
+// ── Logistics cross-reference ────────────────────────────────
 
 const SKU_MAP = {
   MXIXMILHOKG: "Milho", MXIXFEIJAOKG: "Feijão", MXIXARROZKG: "Arroz",
@@ -550,15 +583,6 @@ app.get("/api/logistics/compare", (_req, res) => {
     }
     const wb = XLSX_LIB.readFile(filePath);
     const servicos = XLSX_LIB.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
-
-    // Normalize GTU: GTS→GTU, remove extra slash, pad suffix to 5 digits
-    function normGTU(raw) {
-      let g = String(raw || "").trim().replace(/\\/g, "/");
-      g = g.replace(/^GTS/i, "GTU");
-      // GTU98/2023/06520 → GTU98/202306520  or  GTU98/2023/6433 → GTU98/202306433
-      g = g.replace(/^(GTU\d+\/\d{4})\/(\d+)$/i, (_, prefix, num) => prefix + num.padStart(5, "0"));
-      return g;
-    }
 
     // Index delivery rows by normalized GTU
     const delivByGTU = {};
