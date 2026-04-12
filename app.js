@@ -190,9 +190,10 @@ app.get("/api/verify", (_req, res) => {
     });
   });
 
+  const IGNORED_DUPLICATE_GTUS = new Set(["GTU98/202306448"]);
   const duplicateGTUs = [];
   for (const [gtu, entries] of Object.entries(gtuMap)) {
-    if (entries.length > 1) {
+    if (entries.length > 1 && !IGNORED_DUPLICATE_GTUS.has(gtu)) {
       duplicateGTUs.push({ gtu, count: entries.length, entries });
     }
   }

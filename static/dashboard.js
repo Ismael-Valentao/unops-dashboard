@@ -792,9 +792,10 @@
       if (!gtuMap[gtu]) gtuMap[gtu] = [];
       gtuMap[gtu].push({ row: i + 2, delivery_id: r.delivery_id, beneficiary_name: r.beneficiary_name, district: r.district, packages: r.packages, delivered_qty: r.delivered_qty, verification_status: r.verification_status });
     });
+    const IGNORED_DUP_GTUS = new Set(["GTU98/202306448"]);
     const duplicate_gtus = [];
     for (const [gtu, entries] of Object.entries(gtuMap)) {
-      if (entries.length > 1) duplicate_gtus.push({ gtu, count: entries.length, entries });
+      if (entries.length > 1 && !IGNORED_DUP_GTUS.has(gtu)) duplicate_gtus.push({ gtu, count: entries.length, entries });
     }
     const weight_mismatches = [];
     rows.forEach((r, i) => {
