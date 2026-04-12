@@ -802,7 +802,9 @@
       const match = UNITS.find((u) => Math.abs(r.delivered_qty - r.packages * u) < 0.01);
       if (!match) {
         const closest = UNITS.reduce((b, u) => { const d = Math.abs(r.delivered_qty - r.packages * u); return d < b.diff ? { unit: u, expected: r.packages * u, diff: d } : b; }, { unit: 0, expected: 0, diff: Infinity });
-        weight_mismatches.push({ row: i + 2, delivery_id: r.delivery_id, gtu: r.delivery_note_number, beneficiary_name: r.beneficiary_name, district: r.district, product: r.product, packages: r.packages, delivered_qty: r.delivered_qty, closest_unit: closest.unit, expected_qty: closest.expected, difference: +(r.delivered_qty - closest.expected).toFixed(2) });
+        const diff = +(r.delivered_qty - closest.expected).toFixed(2);
+        if (Math.abs(diff) < 1) return; // ignore differences < 1 kg
+        weight_mismatches.push({ row: i + 2, delivery_id: r.delivery_id, gtu: r.delivery_note_number, beneficiary_name: r.beneficiary_name, district: r.district, product: r.product, packages: r.packages, delivered_qty: r.delivered_qty, closest_unit: closest.unit, expected_qty: closest.expected, difference: diff });
       }
     });
     const malformed_gtus = [];
