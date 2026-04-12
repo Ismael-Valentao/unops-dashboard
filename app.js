@@ -209,6 +209,8 @@ app.get("/api/verify", (_req, res) => {
         const diff = Math.abs(qty - pkgs * u);
         return diff < best.diff ? { unit: u, expected: pkgs * u, diff } : best;
       }, { unit: 0, expected: 0, diff: Infinity });
+      const diff = +(qty - closest.expected).toFixed(2);
+      if (Math.abs(diff) < 1) return; // ignore differences < 1 kg
       weightMismatches.push({
         row: i + 2,
         delivery_id: r.delivery_id,
@@ -220,7 +222,7 @@ app.get("/api/verify", (_req, res) => {
         delivered_qty: qty,
         closest_unit: closest.unit,
         expected_qty: closest.expected,
-        difference: +(qty - closest.expected).toFixed(2),
+        difference: diff,
       });
     }
   });
