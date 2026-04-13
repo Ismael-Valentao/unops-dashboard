@@ -409,7 +409,10 @@
         <h3>Distritos sem Entregas</h3>
         <div class="table-wrap" style="max-height:360px;overflow-y:auto">
           <table class="mini-table" id="urgency-table">
-            <thead><tr><th>#</th><th>Distrito</th><th>Provincia</th><th>Planeado</th><th>Entregue</th><th>%</th><th>Status</th></tr></thead>
+            <thead><tr id="urgency-thead">
+              <th data-col="rank">#</th><th data-col="district">Distrito</th><th data-col="province">Provincia</th>
+              <th data-col="planned_kg">Planeado</th><th data-col="delivered_kg">Entregue</th><th data-col="pct">%</th><th data-col="status">Status</th>
+            </tr></thead>
             <tbody id="urgency-body"></tbody>
           </table>
         </div>

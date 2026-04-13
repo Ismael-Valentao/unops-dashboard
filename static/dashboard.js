@@ -1045,18 +1045,39 @@
       .join("");
   }
 
+  let urgencyData = [];
+  let urgSortCol = "pct";
+  let urgSortAsc = true;
+
   function renderUrgencyTable(urgency) {
-    const top = urgency.slice(0, 25);
-    $("#urgency-body").innerHTML = top
-      .map((d) => `<tr>
-        <td style="font-weight:700;color:${d.rank <= 3 ? "#dc2626" : d.rank <= 10 ? "#d97706" : "#64748b"}">${d.rank}</td>
+    if (urgency) urgencyData = urgency;
+    const NUM_COLS = new Set(["rank", "planned_kg", "delivered_kg", "pct"]);
+    const sorted = urgencyData.slice().sort((a, b) => {
+      let va = a[urgSortCol], vb = b[urgSortCol];
+      if (NUM_COLS.has(urgSortCol)) { va = Number(va) || 0; vb = Number(vb) || 0; }
+      else { va = String(va || "").toLowerCase(); vb = String(vb || "").toLowerCase(); }
+      if (va < vb) return urgSortAsc ? -1 : 1;
+      if (va > vb) return urgSortAsc ? 1 : -1;
+      return 0;
+    });
+    // Update header active state
+    $$("#urgency-thead th").forEach((th) => {
+      th.classList.toggle("sort-active", th.dataset.col === urgSortCol);
+      th.style.cursor = "pointer";
+    });
+    $("#urgency-body").innerHTML = sorted
+      .map((d, i) => {
+        const rank = i + 1;
+        return `<tr>
+        <td style="font-weight:700;color:${rank <= 3 ? "#dc2626" : rank <= 10 ? "#d97706" : "#64748b"}">${rank}</td>
         <td style="font-weight:600">${esc(d.district)}</td>
         <td>${esc(d.province)}</td>
         <td style="text-align:right">${fmtDec(d.planned_kg)}</td>
         <td style="text-align:right">${fmtDec(d.delivered_kg)}</td>
         <td style="text-align:right;font-weight:700;color:${d.pct >= 95 ? "#16a34a" : d.pct > 0 ? "#d97706" : "#dc2626"}">${d.pct}%</td>
         <td>${pvdStatusBadge(d.status)}</td>
-      </tr>`)
+      </tr>`;
+      })
       .join("");
   }
 
@@ -1424,6 +1445,17 @@
         btn.textContent = "Erro!";
         setTimeout(() => { btn.disabled = false; btn.textContent = "Guardar"; }, 2000);
       }
+    });
+
+    // Urgency table sort
+    const urgThead = $("#urgency-thead");
+    if (urgThead) urgThead.addEventListener("click", (e) => {
+      const th = e.target.closest("th");
+      if (!th || !th.dataset.col) return;
+      const col = th.dataset.col;
+      if (urgSortCol === col) urgSortAsc = !urgSortAsc;
+      else { urgSortCol = col; urgSortAsc = true; }
+      renderUrgencyTable();
     });
 
     // Filters
