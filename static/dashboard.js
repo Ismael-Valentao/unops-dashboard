@@ -126,21 +126,54 @@
   }
 
   // ── Filters ─────────────────────────────────────────────────
+  // Planning geography (provinces + districts)
+  let planGeo = { provinces: [], districtsByProvince: {} };
+
+  async function loadPlanningGeography() {
+    try {
+      const res = await fetch("/api/planning-geography");
+      if (res.ok) planGeo = await res.json();
+    } catch (e) { console.warn("Geography load error:", e); }
+  }
+
+  const SEED_PRODUCTS = new Set(["Maize Seeds (kg)", "Common Bean Seeds (kg)", "Bean Seeds (kg)", "Rice Seeds (kg)"]);
+
   function populateFilters() {
-    const provinces = unique(allRows, "province");
+    // Merge planning provinces with delivery provinces
+    const delivProvs = unique(allRows, "province");
+    const allProvs = [...new Set([...delivProvs, ...planGeo.provinces])].sort();
+    fillSelect(fProvince, allProvs, "Todas Províncias");
+
     const suppliers = unique(allRows, "supplier");
-    const products = unique(allRows, "product");
-    fillSelect(fProvince, provinces, "Todas Províncias");
     fillSelect(fSupplier, suppliers, "Todos Fornecedores");
-    fillSelect(fProduct, products, "Todos Produtos");
+
+    // Products: add "Só Sementes" option at top, then individual products
+    const products = unique(allRows, "product");
+    const current = fProduct.value;
+    fProduct.innerHTML = "";
+    const opt0 = document.createElement("option");
+    opt0.value = ""; opt0.textContent = "Todos Produtos"; fProduct.appendChild(opt0);
+    const optS = document.createElement("option");
+    optS.value = "__seeds__"; optS.textContent = "Só Sementes (Milho + Feijão + Arroz)";
+    optS.style.fontWeight = "600"; fProduct.appendChild(optS);
+    products.forEach((v) => {
+      if (!v) return;
+      const o = document.createElement("option");
+      o.value = v; o.textContent = v; fProduct.appendChild(o);
+    });
+    if (current === "__seeds__" || products.includes(current)) fProduct.value = current;
+
     updateDistrictOptions();
   }
 
   function updateDistrictOptions() {
     const prov = fProvince.value;
-    const subset = prov ? allRows.filter((r) => r.province === prov) : allRows;
-    const districts = unique(subset, "district");
-    fillSelect(fDistrict, districts, "Todos Distritos");
+    // Merge delivery districts with planning districts for the selected province
+    const delivSubset = prov ? allRows.filter((r) => r.province === prov) : allRows;
+    const delivDists = unique(delivSubset, "district");
+    const planDists = prov && planGeo.districtsByProvince[prov] ? planGeo.districtsByProvince[prov] : [];
+    const allDists = [...new Set([...delivDists, ...planDists])].sort();
+    fillSelect(fDistrict, allDists, "Todos Distritos");
   }
 
   function fillSelect(el, values, placeholder) {
@@ -177,7 +210,8 @@
       if (dist && r.district !== dist) return false;
       if (status && r.verification_status !== status) return false;
       if (supplier && r.supplier !== supplier) return false;
-      if (product && r.product !== product) return false;
+      if (product === "__seeds__") { if (!SEED_PRODUCTS.has(r.product)) return false; }
+      else if (product && r.product !== product) return false;
       if (search) {
         const hay = (
           (r.beneficiary_name || "") +
@@ -1058,7 +1092,8 @@
       const prod = fProduct.value;
       if (prov) params.set("province", prov);
       if (dist) params.set("district", dist);
-      if (prod) params.set("product", prod);
+      if (prod && prod !== "__seeds__") params.set("product", prod);
+      if (prod === "__seeds__") params.set("seeds_only", "1");
       const qs = params.toString();
       const res = await fetch("/api/planned-vs-delivered" + (qs ? "?" + qs : ""));
       if (!res.ok) return;
@@ -1762,7 +1797,7 @@
     }
 
     // Show verify section and auto-run on first load
-    fetchData(false).then(() => {
+    loadPlanningGeography().then(() => fetchData(false)).then(() => {
       if (!isPublic) {
         $("#verify-section").style.display = "block";
         runVerification();

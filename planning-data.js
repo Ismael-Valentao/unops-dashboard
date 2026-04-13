@@ -146,7 +146,7 @@ function matchProduct(deliveryProductName) {
 // Build the full Planned vs Delivered comparison
 function buildComparison(deliveryRows, filters) {
   if (!planningData) return null;
-  const { province, district, product } = filters || {};
+  const { province, district, product, seedsOnly } = filters || {};
 
   // Match delivery product name to planning product
   let planProductFilter = null;
@@ -160,12 +160,13 @@ function buildComparison(deliveryRows, filters) {
   let planByDistrictProduct = planningData.byDistrictProduct;
   let totalPlannedKg = planningData.totalPlannedKg;
 
-  if (province || district || planProductFilter) {
+  if (province || district || planProductFilter || seedsOnly) {
     // Re-aggregate from raw rows with filters
     const filtered = planningData.rows.filter((r) => {
       if (province && r.province !== province) return false;
       if (district && normalizeDistrict(r.district_raw) !== district && r.district !== district) return false;
       if (planProductFilter && r.product_plan !== planProductFilter) return false;
+      if (seedsOnly && !isSeedProduct(r.product_plan)) return false;
       return true;
     });
     const byD = {}, byP = {}, byDP = {};
@@ -314,4 +315,22 @@ function buildSeedsTotals(deliveryRowsNoProductFilter, filters) {
   };
 }
 
-module.exports = { load, getData, buildComparison, buildSeedsTotals, normalizeDistrict, matchProduct, isSeedProduct };
+function getGeography() {
+  if (!planningData) return { provinces: [], districtsByProvince: {} };
+  const map = {};
+  planningData.rows.forEach((r) => {
+    const prov = r.province;
+    const dist = r.district || r.district_raw;
+    if (!prov || !dist) return;
+    if (!map[prov]) map[prov] = new Set();
+    map[prov].add(dist);
+  });
+  const provinces = Object.keys(map).sort();
+  const districtsByProvince = {};
+  for (const [prov, dists] of Object.entries(map)) {
+    districtsByProvince[prov] = [...dists].sort();
+  }
+  return { provinces, districtsByProvince };
+}
+
+module.exports = { load, getData, buildComparison, buildSeedsTotals, normalizeDistrict, matchProduct, isSeedProduct, getGeography };

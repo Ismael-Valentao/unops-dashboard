@@ -478,16 +478,23 @@ app.get("/api/ceo-overview", (_req, res) => {
 });
 
 // ── Planned vs Delivered endpoints ────────────────────────────
+app.get("/api/planning-geography", (_req, res) => {
+  res.json(planning.getGeography());
+});
+
 app.get("/api/planned-vs-delivered", (req, res) => {
-  const { province, district, product } = req.query;
+  const { province, district, product, seeds_only } = req.query;
+  const SEED_NAMES = new Set(["Maize Seeds (kg)", "Common Bean Seeds (kg)", "Bean Seeds (kg)", "Rice Seeds (kg)"]);
   let rows = cache.data;
   if (province) rows = rows.filter((r) => r.province === province);
   if (district) rows = rows.filter((r) => r.district === district);
   // Keep a copy WITHOUT the product filter for the seeds-segment computation
   const rowsNoProduct = rows.slice();
-  if (product) rows = rows.filter((r) => r.product === product);
+  if (seeds_only === "1") rows = rows.filter((r) => SEED_NAMES.has(r.product));
+  else if (product) rows = rows.filter((r) => r.product === product);
 
-  const result = planning.buildComparison(rows, { province, district, product });
+  const seedsFilter = seeds_only === "1";
+  const result = planning.buildComparison(rows, { province, district, product: seedsFilter ? undefined : product, seedsOnly: seedsFilter });
   if (!result) return res.status(500).json({ error: "Planning data not loaded" });
   result.totals_seeds = planning.buildSeedsTotals(rowsNoProduct, { province, district });
   res.json(result);
