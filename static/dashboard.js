@@ -1049,6 +1049,41 @@
   let urgSortCol = "pct";
   let urgSortAsc = true;
 
+  let provRankData = [];
+  let provSortCol = "gap_kg";
+  let provSortAsc = false; // descending by default (biggest gap first)
+
+  function renderProvRankTable(data) {
+    if (data) provRankData = data;
+    const NUM_COLS = new Set(["rank", "planned_kg", "delivered_kg", "gap_kg", "pct"]);
+    const sorted = provRankData.slice().sort((a, b) => {
+      let va = a[provSortCol], vb = b[provSortCol];
+      if (NUM_COLS.has(provSortCol)) { va = Number(va) || 0; vb = Number(vb) || 0; }
+      else { va = String(va || "").toLowerCase(); vb = String(vb || "").toLowerCase(); }
+      if (va < vb) return provSortAsc ? -1 : 1;
+      if (va > vb) return provSortAsc ? 1 : -1;
+      return 0;
+    });
+    $$("#prov-rank-thead th").forEach((th) => {
+      th.classList.toggle("sort-active", th.dataset.col === provSortCol);
+      th.style.cursor = "pointer";
+    });
+    $("#prov-rank-body").innerHTML = sorted
+      .map((d, i) => {
+        const rank = i + 1;
+        const gapColor = d.gap_kg > 50000 ? "#dc2626" : d.gap_kg > 10000 ? "#d97706" : "#16a34a";
+        return `<tr>
+          <td style="font-weight:700;color:${rank <= 2 ? "#dc2626" : rank <= 4 ? "#d97706" : "#64748b"}">${rank}</td>
+          <td style="font-weight:600">${esc(d.province)}</td>
+          <td style="text-align:right">${fmtDec(d.planned_kg)}</td>
+          <td style="text-align:right">${fmtDec(d.delivered_kg)}</td>
+          <td style="text-align:right;font-weight:700;color:${gapColor}">${fmtDec(d.gap_kg)}</td>
+          <td style="text-align:right;font-weight:700;color:${d.pct >= 95 ? "#16a34a" : d.pct > 0 ? "#d97706" : "#dc2626"}">${d.pct}%</td>
+        </tr>`;
+      })
+      .join("");
+  }
+
   function renderUrgencyTable(urgency) {
     if (urgency) urgencyData = urgency;
     const NUM_COLS = new Set(["rank", "planned_kg", "delivered_kg", "pct"]);
@@ -1140,6 +1175,21 @@
         .sort((a, b) => a.pct - b.pct)
         .map((d, i) => ({ ...d, rank: i + 1 }));
       renderUrgencyTable(urgency);
+
+      // Build province ranking by aggregating districts
+      const provMap = {};
+      pvdData.by_district.forEach((d) => {
+        const p = d.province || "N/A";
+        if (!provMap[p]) provMap[p] = { province: p, planned_kg: 0, delivered_kg: 0 };
+        provMap[p].planned_kg += d.planned_kg;
+        provMap[p].delivered_kg += d.delivered_kg;
+      });
+      const provRank = Object.values(provMap).map((p) => ({
+        ...p,
+        gap_kg: Math.max(0, p.planned_kg - p.delivered_kg),
+        pct: p.planned_kg > 0 ? Math.round((p.delivered_kg / p.planned_kg) * 1000) / 10 : 0,
+      }));
+      renderProvRankTable(provRank);
     }
 
     // Cards
@@ -1445,6 +1495,17 @@
         btn.textContent = "Erro!";
         setTimeout(() => { btn.disabled = false; btn.textContent = "Guardar"; }, 2000);
       }
+    });
+
+    // Province ranking sort
+    const provThead = $("#prov-rank-thead");
+    if (provThead) provThead.addEventListener("click", (e) => {
+      const th = e.target.closest("th");
+      if (!th || !th.dataset.col) return;
+      const col = th.dataset.col;
+      if (provSortCol === col) provSortAsc = !provSortAsc;
+      else { provSortCol = col; provSortAsc = col === "province"; }
+      renderProvRankTable();
     });
 
     // Urgency table sort
