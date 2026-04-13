@@ -800,16 +800,23 @@
   function exportTableExcel() {
     const cols = visibleCols.map((k) => getColDef(k)).filter(Boolean);
     const exportRows = getTableSearchRows();
-    const ids = exportRows.map((r) => r.delivery_id);
-    const payload = {
-      columns: cols.map((c) => ({ key: c.key, label: c.label })),
-      delivery_ids: ids,
-    };
-    downloadBlob("/api/export/tabela", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+    // Generate CSV client-side to guarantee filtered data
+    const header = cols.map((c) => c.label);
+    const csvRows = [header.map((h) => '"' + String(h).replace(/"/g, '""') + '"').join(",")];
+    exportRows.forEach((r) => {
+      const row = cols.map((c) => {
+        const val = r[c.key];
+        return '"' + String(val ?? "").replace(/"/g, '""') + '"';
+      });
+      csvRows.push(row.join(","));
     });
+    const csv = csvRows.join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "entregas_" + new Date().toISOString().slice(0, 10) + ".csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   function exportSection(section) {
