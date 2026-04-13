@@ -538,7 +538,12 @@ function sendBuf(res, { buf, filename }) {
 
 app.post("/api/export/tabela", async (req, res) => {
   try {
-    const result = await excel.exportTabela(cache.data, req.body.columns);
+    let rows = cache.data;
+    if (req.body.delivery_ids && Array.isArray(req.body.delivery_ids)) {
+      const idSet = new Set(req.body.delivery_ids);
+      rows = rows.filter((r) => idSet.has(r.delivery_id));
+    }
+    const result = await excel.exportTabela(rows, req.body.columns);
     sendBuf(res, result);
   } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
