@@ -1112,6 +1112,15 @@
     // planned/delivered/% per product (depends on pvdData being loaded)
     if (typeof renderDistrictChart === "function") renderDistrictChart();
 
+    // Update urgency table from PvD data (respects product/seeds filter)
+    if (pvdData.by_district) {
+      const urgency = pvdData.by_district
+        .filter((d) => d.pct < 100)
+        .sort((a, b) => a.pct - b.pct)
+        .map((d, i) => ({ ...d, rank: i + 1 }));
+      renderUrgencyTable(urgency);
+    }
+
     // Cards
     $("#pvd-planned").textContent = fmtDec(t.planned_kg);
     $("#pvd-delivered").textContent = fmtDec(t.delivered_kg);
