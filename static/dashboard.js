@@ -799,7 +799,8 @@
 
   function exportTableExcel() {
     const cols = visibleCols.map((k) => getColDef(k)).filter(Boolean);
-    const ids = filteredRows.map((r) => r.delivery_id);
+    const exportRows = getTableSearchRows();
+    const ids = exportRows.map((r) => r.delivery_id);
     const payload = {
       columns: cols.map((c) => ({ key: c.key, label: c.label })),
       delivery_ids: ids,
