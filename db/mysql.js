@@ -94,6 +94,47 @@ async function migrate() {
     try { await getPool().query("ALTER TABLE requisitions ADD CONSTRAINT fk_req_product FOREIGN KEY (product_id) REFERENCES products(id)"); } catch (e) {}
     console.log("[DB] migrated requisitions.product_id");
   }
+
+  // suppliers: NUIT + client_number (for PO matching)
+  if (!(await columnExists("suppliers", "nuit"))) {
+    await getPool().query("ALTER TABLE suppliers ADD COLUMN nuit VARCHAR(32) NULL AFTER contact_email");
+    console.log("[DB] migrated suppliers.nuit");
+  }
+  if (!(await columnExists("suppliers", "client_number"))) {
+    await getPool().query("ALTER TABLE suppliers ADD COLUMN client_number VARCHAR(32) NULL");
+    console.log("[DB] migrated suppliers.client_number");
+  }
+
+  // stock_movements: add entry_id, exit_id, supplier_id + extend ENUM with new types
+  if (!(await columnExists("stock_movements", "entry_id"))) {
+    await getPool().query("ALTER TABLE stock_movements ADD COLUMN entry_id INT NULL");
+    try { await getPool().query("ALTER TABLE stock_movements ADD CONSTRAINT fk_sm_entry FOREIGN KEY (entry_id) REFERENCES stock_entries(id) ON DELETE SET NULL"); } catch (e) {}
+    console.log("[DB] migrated stock_movements.entry_id");
+  }
+  if (!(await columnExists("stock_movements", "exit_id"))) {
+    await getPool().query("ALTER TABLE stock_movements ADD COLUMN exit_id INT NULL");
+    try { await getPool().query("ALTER TABLE stock_movements ADD CONSTRAINT fk_sm_exit FOREIGN KEY (exit_id) REFERENCES stock_exits(id) ON DELETE SET NULL"); } catch (e) {}
+    console.log("[DB] migrated stock_movements.exit_id");
+  }
+  if (!(await columnExists("stock_movements", "supplier_id"))) {
+    await getPool().query("ALTER TABLE stock_movements ADD COLUMN supplier_id INT NULL");
+    try { await getPool().query("ALTER TABLE stock_movements ADD CONSTRAINT fk_sm_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL"); } catch (e) {}
+    console.log("[DB] migrated stock_movements.supplier_id");
+  }
+  // Add truck_plate for movement queries by plate (denormalized for fast search)
+  if (!(await columnExists("stock_movements", "truck_plate"))) {
+    await getPool().query("ALTER TABLE stock_movements ADD COLUMN truck_plate VARCHAR(32) NULL");
+    await getPool().query("CREATE INDEX idx_sm_plate ON stock_movements (truck_plate)");
+    console.log("[DB] migrated stock_movements.truck_plate");
+  }
+  // Extend ENUM with authorization_in / adsn_out (safe to re-run)
+  await getPool().query(
+    `ALTER TABLE stock_movements MODIFY COLUMN type ENUM(
+      'truck_in','truck_unload','transfer_out','transfer_in','adjustment',
+      'warehouse_in','warehouse_out','departure',
+      'authorization_in','adsn_out'
+    ) NOT NULL`
+  );
 }
 
 async function init() {

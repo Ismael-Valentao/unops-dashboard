@@ -14,7 +14,10 @@ const {
   Users, Suppliers, Requisitions, Trucks, Cargo,
   Attachments, Transfers, Stock, Audit,
   Products, Warehouses, Departures, Plans,
+  PurchaseOrders, Authorizations, StockEntries, ADSN, StockExits,
 } = require("../db/ops-repo");
+const { parsePOExcel } = require("../lib/parse-po-excel");
+const { parseADSNExcel } = require("../lib/parse-adsn-excel");
 
 // Async error wrapper - never crashes the server
 function ah(fn) {
@@ -836,5 +839,259 @@ router.get("/api/stock-v2", async (_req, res) => {
     movements: await Stock.movements(50),
   });
 });
+
+// ─────────────────────────────────────────────────────────────
+// Purchase Orders / Autorizações / Entradas / ADSN / Saídas
+// ─────────────────────────────────────────────────────────────
+
+// Multer config for Excel imports (memory) + entry attachments (disk)
+const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const ENTRY_DIR = path.join(UPLOAD_DIR, "entries");
+if (!fs.existsSync(ENTRY_DIR)) fs.mkdirSync(ENTRY_DIR, { recursive: true });
+const entryStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const d = path.join(ENTRY_DIR, String(req.params.id || "tmp"));
+    fs.mkdirSync(d, { recursive: true });
+    cb(null, d);
+  },
+  filename: (_req, file, cb) => {
+    const ts = Date.now();
+    const safe = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+    cb(null, `${ts}_${safe}`);
+  },
+});
+const entryUpload = multer({ storage: entryStorage, limits: { fileSize: 15 * 1024 * 1024 } });
+
+// ── Purchase Orders ────────────────────────────────────────
+router.get("/purchase-orders", (_req, res) => send(res, "purchase-orders.html"));
+router.get("/purchase-orders/:id", (_req, res) => send(res, "purchase-order-detail.html"));
+
+router.get("/api/purchase-orders", ah(async (req, res) => {
+  const list = await PurchaseOrders.list(req.query);
+  res.json(list);
+}));
+
+router.get("/api/purchase-orders/:id", ah(async (req, res) => {
+  const po = await PurchaseOrders.findById(req.params.id);
+  if (!po) return jsonError(res, 404, "PO não encontrada");
+  res.json(po);
+}));
+
+router.post("/api/purchase-orders/import", auth.requireRole("superadmin", "admin"), memUpload.single("file"), ah(async (req, res) => {
+  if (!req.file) return jsonError(res, 400, "Ficheiro Excel necessário");
+  const parsed = parsePOExcel(req.file.buffer);
+  let created = 0, updated = 0, skipped = 0;
+
+  for (const poData of parsed.orders) {
+    // Match or create supplier
+    let supplier = null;
+    if (poData.supplier.nuit) supplier = await Suppliers.findByNuit(poData.supplier.nuit);
+    if (!supplier) supplier = await Suppliers.findByName(poData.supplier.name);
+    if (!supplier) {
+      const sid = await Suppliers.create({
+        name: poData.supplier.name,
+        nuit: poData.supplier.nuit,
+        client_number: poData.supplier.client_number,
+      }, req.user.id);
+      supplier = { id: sid };
+    }
+
+    // Check if PO exists
+    const existing = await PurchaseOrders.findByNumber(poData.po_number);
+    if (existing) { skipped++; continue; }
+
+    const po_id = await PurchaseOrders.create({
+      po_number: poData.po_number,
+      supplier_id: supplier.id,
+      supplier_nuit: poData.supplier.nuit,
+      po_date: poData.po_date,
+      projecto: poData.projecto,
+      imported_from: req.file.originalname,
+    }, req.user.id);
+
+    for (const it of poData.items) {
+      // Try to match product by code
+      let product_id = null;
+      const prod = await (async () => {
+        const r = await require("../db/mysql").queryOne("SELECT id FROM products WHERE code = ? LIMIT 1", [it.product_code]);
+        return r;
+      })();
+      if (prod) product_id = prod.id;
+
+      await PurchaseOrders.addItem(po_id, {
+        product_id,
+        product_code: it.product_code,
+        product_name: it.product_name,
+        qty: it.qty,
+        unit: it.unit,
+      });
+    }
+    created++;
+  }
+
+  await auth.logAction(req, "import_po_excel", "purchase_orders", null, `${created} criadas, ${skipped} duplicadas`);
+  res.json({ created, updated, skipped, total_rows: parsed.total_rows, filename: req.file.originalname });
+}));
+
+router.post("/api/purchase-orders/:id/cancel", auth.requireRole("superadmin", "admin"), ah(async (req, res) => {
+  await PurchaseOrders.updateStatus(req.params.id, "cancelled");
+  await auth.logAction(req, "cancel", "purchase_order", req.params.id);
+  res.json({ ok: true });
+}));
+
+// ── Authorizations ─────────────────────────────────────────
+router.get("/authorizations", (_req, res) => send(res, "authorizations.html"));
+router.get("/authorizations/:id", (_req, res) => send(res, "authorization-detail.html"));
+router.get("/authorizations/:id/print", (_req, res) => send(res, "authorization-print.html"));
+
+router.get("/api/authorizations", ah(async (req, res) => {
+  res.json(await Authorizations.list(req.query));
+}));
+
+router.get("/api/authorizations/:id", ah(async (req, res) => {
+  const a = await Authorizations.findById(req.params.id);
+  if (!a) return jsonError(res, 404, "Autorização não encontrada");
+  res.json(a);
+}));
+
+router.post("/api/authorizations", auth.requireRole("superadmin", "admin"), express.json(), ah(async (req, res) => {
+  const { po_id, truck_plate, driver_name } = req.body;
+  if (!po_id) return jsonError(res, 400, "po_id obrigatório");
+  if (!truck_plate) return jsonError(res, 400, "Matrícula obrigatória");
+  if (!driver_name) return jsonError(res, 400, "Nome do motorista obrigatório");
+  if (!req.body.items || !req.body.items.length) return jsonError(res, 400, "Pelo menos um item obrigatório");
+
+  const result = await Authorizations.create(req.body, req.user.id);
+  await auth.logAction(req, "create", "authorization", result.id, result.auth_number);
+  res.json(result);
+}));
+
+router.post("/api/authorizations/:id/cancel", auth.requireRole("superadmin", "admin"), ah(async (req, res) => {
+  await Authorizations.cancel(req.params.id);
+  await auth.logAction(req, "cancel", "authorization", req.params.id);
+  res.json({ ok: true });
+}));
+
+// ── Stock Entries ──────────────────────────────────────────
+router.get("/entries", (_req, res) => send(res, "entries.html"));
+router.get("/entries/:id", (_req, res) => send(res, "entry-detail.html"));
+
+router.get("/api/entries", ah(async (req, res) => {
+  res.json(await StockEntries.list(req.query));
+}));
+
+router.get("/api/entries/:id", ah(async (req, res) => {
+  const e = await StockEntries.findById(req.params.id);
+  if (!e) return jsonError(res, 404, "Entrada não encontrada");
+  res.json(e);
+}));
+
+router.post("/api/entries", auth.requireRole("superadmin", "admin", "operator"), express.json(), ah(async (req, res) => {
+  const { auth_id, items } = req.body;
+  if (!auth_id) return jsonError(res, 400, "auth_id obrigatório");
+  if (!items || !items.length) return jsonError(res, 400, "Pelo menos um item obrigatório");
+  const result = await StockEntries.create(req.body, req.user.id);
+  await auth.logAction(req, "create", "stock_entry", result.id, result.entry_number);
+  res.json(result);
+}));
+
+router.post("/api/entries/:id/attachments", auth.requireRole("superadmin", "admin", "operator"),
+  entryUpload.fields([{ name: "supplier_guide", maxCount: 5 }, { name: "signed_authorization", maxCount: 5 }, { name: "other", maxCount: 5 }]),
+  ah(async (req, res) => {
+    const entryId = req.params.id;
+    const out = [];
+    for (const kind of ["supplier_guide", "signed_authorization", "other"]) {
+      const files = (req.files && req.files[kind]) || [];
+      for (const f of files) {
+        const rel = path.relative(path.join(__dirname, ".."), f.path).replace(/\\/g, "/");
+        const id = await StockEntries.addAttachment(entryId, {
+          kind, file_path: rel, original_name: f.originalname, mime_type: f.mimetype, size_bytes: f.size,
+        }, req.user.id);
+        out.push({ id, kind, file_path: rel });
+      }
+    }
+    await auth.logAction(req, "upload", "stock_entry_attachment", entryId, `${out.length} ficheiros`);
+    res.json({ uploaded: out });
+  })
+);
+
+router.get("/api/entries/:id/attachments/:att_id/download", ah(async (req, res) => {
+  const mysql = require("../db/mysql");
+  const att = await mysql.queryOne(
+    "SELECT * FROM stock_entry_attachments WHERE id = ? AND entry_id = ? LIMIT 1",
+    [req.params.att_id, req.params.id]
+  );
+  if (!att) return jsonError(res, 404, "Anexo não encontrado");
+  const abs = path.join(__dirname, "..", att.file_path);
+  if (!fs.existsSync(abs)) return jsonError(res, 404, "Ficheiro não existe em disco");
+  res.download(abs, att.original_name);
+}));
+
+// ── ADSN Services ──────────────────────────────────────────
+router.get("/adsn", (_req, res) => send(res, "adsn.html"));
+
+router.get("/api/adsn", ah(async (req, res) => {
+  const [list, counts] = await Promise.all([ADSN.list(req.query), ADSN.counts()]);
+  res.json({ list, counts });
+}));
+
+router.get("/api/adsn/search", ah(async (req, res) => {
+  res.json(await ADSN.search(req.query.q || ""));
+}));
+
+router.get("/api/adsn/:id", ah(async (req, res) => {
+  const a = await ADSN.findById(req.params.id);
+  if (!a) return jsonError(res, 404, "ADSN não encontrado");
+  res.json(a);
+}));
+
+router.post("/api/adsn/import", auth.requireRole("superadmin", "admin"), memUpload.single("file"), ah(async (req, res) => {
+  if (!req.file) return jsonError(res, 400, "Ficheiro Excel necessário");
+  const parsed = parseADSNExcel(req.file.buffer);
+  let inserted = 0, duplicates = 0;
+  for (const rec of parsed.records) {
+    const r = await ADSN.upsert(rec, req.user.id, req.file.originalname);
+    if (r.inserted) inserted++;
+    else if (r.duplicate) duplicates++;
+  }
+  await auth.logAction(req, "import_adsn_excel", "adsn_services", null, `${inserted} inseridos, ${duplicates} duplicados`);
+  res.json({ inserted, duplicates, skipped: parsed.skipped, total: parsed.total });
+}));
+
+// ── Stock Exits ────────────────────────────────────────────
+router.get("/exits", (_req, res) => send(res, "exits.html"));
+
+router.get("/api/exits", ah(async (req, res) => {
+  res.json(await StockExits.list(req.query));
+}));
+
+router.get("/api/exits/:id", ah(async (req, res) => {
+  const e = await StockExits.findById(req.params.id);
+  if (!e) return jsonError(res, 404, "Saída não encontrada");
+  res.json(e);
+}));
+
+router.post("/api/exits", auth.requireRole("superadmin", "admin", "operator"), express.json(), ah(async (req, res) => {
+  const { adsn_id } = req.body;
+  if (!adsn_id) return jsonError(res, 400, "adsn_id obrigatório");
+  const result = await StockExits.create(req.body, req.user.id);
+  await auth.logAction(req, "create", "stock_exit", result.id, result.exit_number);
+  res.json(result);
+}));
+
+router.post("/api/exits/:id/cancel", auth.requireRole("superadmin", "admin"), ah(async (req, res) => {
+  await StockExits.cancel(req.params.id);
+  await auth.logAction(req, "cancel", "stock_exit", req.params.id);
+  res.json({ ok: true });
+}));
+
+// ── Stock (v3 queries for the new flow) ────────────────────
+router.get("/api/stock/current", ah(async (req, res) => {
+  res.json(await Stock.currentByProduct(req.query));
+}));
+
+router.get("/api/stock/movements", ah(async (req, res) => {
+  res.json(await Stock.movements(req.query));
+}));
 
 module.exports = router;

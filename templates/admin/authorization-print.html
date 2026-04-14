@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<title>Autorização de Levantamento</title>
+<style>
+  @page { size: A4; margin: 10mm 12mm; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Arial, sans-serif; color:#111; font-size:11pt; background:#f1f5f9; }
+  .print-bar { background:#0f4c75; color:#fff; padding:12px 16px; text-align:center; }
+  .print-bar button { background:#fff; color:#0f4c75; border:none; padding:8px 18px; font-weight:700; border-radius:4px; cursor:pointer; font-size:11pt; margin:0 4px; }
+  @media print { .print-bar, .btn-back { display:none !important; } body { background:#fff; } .copy { page-break-after: always; } .copy:last-child { page-break-after: auto; } }
+
+  .copy { background:#fff; max-width: 210mm; min-height: 270mm; margin: 10px auto; padding: 14mm 16mm; position:relative; box-shadow:0 1px 4px rgba(0,0,0,.1); }
+  .hdr { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #0f4c75; padding-bottom:10px; margin-bottom:12px; }
+  .hdr-left { font-size:9.5pt; line-height:1.4; }
+  .hdr-left .company { font-size:16pt; font-weight:800; color:#0f4c75; letter-spacing:1px; }
+  .hdr-left .company .sub { color:#1b7a5a; font-size:10pt; letter-spacing:.5px; }
+  .hdr-right { text-align:right; font-size:9pt; color:#475569; }
+  .copy-label { position:absolute; top:14mm; right:16mm; font-size:10pt; font-weight:700; color:#dc2626; border:2px solid #dc2626; padding:3px 10px; border-radius:3px; }
+
+  h1 { text-align:center; font-size:14pt; margin:12px 0 4px; letter-spacing:1px; }
+  .auth-num { text-align:center; font-size:11pt; color:#475569; margin-bottom:14px; }
+
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px 16px; margin-bottom:12px; font-size:10pt; }
+  .field { border-bottom:1px solid #cbd5e1; padding:4px 0; }
+  .field label { display:block; font-size:8pt; color:#64748b; text-transform:uppercase; letter-spacing:.5px; }
+  .field span { display:block; font-weight:600; color:#0f172a; }
+
+  .section-title { font-weight:700; margin:14px 0 6px; color:#0f4c75; font-size:10.5pt; border-bottom:1px solid #cbd5e1; padding-bottom:3px; }
+
+  table.items { width:100%; border-collapse:collapse; margin:6px 0 14px; font-size:10pt; }
+  table.items th { background:#0f4c75; color:#fff; padding:6px 8px; text-align:left; font-size:9pt; }
+  table.items td { border:1px solid #cbd5e1; padding:5px 8px; }
+  table.items th.right, table.items td.right { text-align:right; }
+  table.items th.center, table.items td.center { text-align:center; }
+
+  .notes { font-size:9.5pt; background:#f8fafc; padding:8px 10px; border-left:3px solid #0f4c75; margin:10px 0; }
+  .notes strong { display:block; font-size:9pt; color:#0f4c75; margin-bottom:3px; }
+
+  .signatures { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:30px; margin-top:24px; page-break-inside:avoid; }
+  .sig { text-align:center; }
+  .sig .line { border-top:1px solid #111; margin-top:40px; padding-top:4px; font-size:9pt; color:#475569; }
+
+  .footer { position:absolute; bottom:14mm; left:16mm; right:16mm; text-align:center; font-size:8pt; color:#64748b; border-top:1px solid #cbd5e1; padding-top:6px; }
+</style>
+</head>
+<body>
+<div class="print-bar">
+  <a class="btn-back" href="#" onclick="history.back();return false;" style="color:#fff;text-decoration:none;margin-right:auto;float:left">← Voltar</a>
+  <button onclick="window.print()">🖨️ Imprimir</button>
+  <button onclick="history.back()">Fechar</button>
+</div>
+
+<div id="copies"></div>
+
+<script src="/static/admin.js"></script>
+<script>
+const authId = location.pathname.split("/").slice(-2, -1)[0];
+
+async function render() {
+  const a = await AdminUI.fetchJSON("/admin/api/authorizations/" + authId);
+  const today = new Date();
+  const fmtD = (s) => {
+    if (!s) return "—";
+    const d = new Date(s.replace ? s.replace(" ", "T") : s);
+    return d.toLocaleDateString("pt-PT");
+  };
+  const esc = AdminUI.esc;
+  const fmt = (n) => Number(n).toLocaleString("pt-PT", { maximumFractionDigits: 2 });
+
+  const itemsRows = a.items.map((it) =>
+    `<tr>
+      <td class="center">${esc(it.product_code || "—")}</td>
+      <td>${esc(it.product_name)}</td>
+      <td class="right"><strong>${fmt(it.qty_to_pickup)}</strong></td>
+      <td class="center">${esc(it.unit)}</td>
+    </tr>`
+  ).join("");
+
+  const totalQty = a.items.reduce((s, it) => s + Number(it.qty_to_pickup), 0);
+
+  const copyHtml = (label) => `
+    <div class="copy">
+      <span class="copy-label">${label}</span>
+      <div class="hdr">
+        <div class="hdr-left">
+          <div class="company">ADICIO<span style="color:#1b7a5a">N</span>AL <span class="sub">LOGISTICS</span></div>
+          <div style="margin-top:4px">ADICIONAL MOÇAMBIQUE LDA</div>
+          <div>Av. das Industrias, Matola</div>
+          <div>NUIT: 400579229</div>
+        </div>
+        <div class="hdr-right">
+          <div>Data: <strong>${today.toLocaleDateString("pt-PT")}</strong></div>
+          <div>${today.toLocaleTimeString("pt-PT")}</div>
+        </div>
+      </div>
+
+      <h1>AUTORIZAÇÃO DE LEVANTAMENTO</h1>
+      <div class="auth-num">Nº ${esc(a.auth_number)}</div>
+
+      <div class="section-title">Fornecedor (Origem)</div>
+      <div class="grid">
+        <div class="field"><label>Nome</label><span>${esc(a.supplier_name || "—")}</span></div>
+        <div class="field"><label>NUIT</label><span>${esc(a.supplier_nuit || "—")}</span></div>
+        <div class="field"><label>Referência PO</label><span>${esc(a.po_number || "—")}</span></div>
+        <div class="field"><label>Projecto</label><span>${esc(a.projecto || "—")}</span></div>
+      </div>
+
+      <div class="section-title">Transportador</div>
+      <div class="grid">
+        <div class="field"><label>Empresa</label><span>${esc(a.transporter_name || "—")}</span></div>
+        <div class="field"><label>Matrícula</label><span>${esc(a.truck_plate)}</span></div>
+        <div class="field"><label>Motorista</label><span>${esc(a.driver_name)}</span></div>
+        <div class="field"><label>BI</label><span>${esc(a.driver_id_doc || "—")}</span></div>
+        <div class="field"><label>Contacto</label><span>${esc(a.driver_phone || "—")}</span></div>
+        <div class="field"><label>Data prevista de levantamento</label><span>${fmtD(a.pickup_date)}</span></div>
+      </div>
+
+      <div class="section-title">Mercadoria Autorizada</div>
+      <table class="items">
+        <thead><tr><th class="center">Código</th><th>Descrição</th><th class="right">Quantidade</th><th class="center">Unidade</th></tr></thead>
+        <tbody>${itemsRows}</tbody>
+        <tfoot><tr><td colspan="2" style="text-align:right;font-weight:700">TOTAL</td>
+          <td class="right" style="font-weight:700">${fmt(totalQty)}</td><td></td></tr></tfoot>
+      </table>
+
+      <div class="notes">
+        <strong>Observações</strong>
+        Este documento autoriza o(a) transportador(a) acima identificado(a) a levantar, em nome da AQI — Casa do Agricultor (Farmers Home, Lda), a mercadoria descrita, no fornecedor indicado. O fornecedor deve emitir a respectiva Guia de Remessa e entregar cópia ao motorista. Qualquer divergência entre quantidades autorizadas e entregues deve ser registada no momento do levantamento.
+        ${a.notes ? `<div style="margin-top:4px"><em>${esc(a.notes)}</em></div>` : ""}
+      </div>
+
+      <div class="signatures">
+        <div class="sig"><div class="line">Emissor (ADICIONAL)</div></div>
+        <div class="sig"><div class="line">Motorista</div></div>
+        <div class="sig"><div class="line">Fornecedor (carimbo)</div></div>
+      </div>
+
+      <div class="footer">
+        Documento processado por computador — ADICIONAL MOÇAMBIQUE LDA — NUIT: 400579229<br>
+        Autorização ${esc(a.auth_number)} emitida em ${AdminUI.fmtDate(a.issued_at)}
+      </div>
+    </div>`;
+
+  document.getElementById("copies").innerHTML =
+    copyHtml("ORIGINAL") + copyHtml("DUPLICADO") + copyHtml("TRIPLICADO");
+}
+
+render().catch((e) => {
+  document.body.innerHTML = '<div style="padding:2rem;color:#dc2626">Erro: ' + e.message + '</div>';
+});
+</script>
+</body>
+</html>

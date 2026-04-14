@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AQI Operacoes - Entrada</title>
+<link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+<div id="layout"></div>
+<main class="admin-main">
+  <header class="admin-header">
+    <h1 id="title">Entrada</h1>
+    <a href="/admin/entries" class="btn">← Voltar</a>
+  </header>
+
+  <section class="admin-section">
+    <div id="info" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.75rem;margin-bottom:1.25rem"></div>
+
+    <h3 style="margin:1rem 0 .75rem">Itens recebidos</h3>
+    <div class="tbl-wrap">
+      <table class="adm-table">
+        <thead><tr><th>Produto</th><th style="text-align:right">Autorizado</th><th style="text-align:right">Recebido</th><th style="text-align:right">Diferença</th><th>Unidade</th></tr></thead>
+        <tbody id="items-body"></tbody>
+      </table>
+    </div>
+
+    <h3 style="margin:1.5rem 0 .75rem">Documentos</h3>
+    <form id="upload-form" enctype="multipart/form-data" style="background:#f8fafc;padding:1rem;border-radius:8px;margin-bottom:1rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+        <label style="display:block">
+          <span style="font-weight:600;font-size:.85rem">Guia do Fornecedor</span>
+          <input type="file" name="supplier_guide" accept=".pdf,image/*" multiple>
+        </label>
+        <label style="display:block">
+          <span style="font-weight:600;font-size:.85rem">Autorização Assinada</span>
+          <input type="file" name="signed_authorization" accept=".pdf,image/*" multiple>
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary">Carregar ficheiros</button>
+    </form>
+
+    <div class="tbl-wrap">
+      <table class="adm-table">
+        <thead><tr><th>Tipo</th><th>Ficheiro</th><th>Data</th><th>Tamanho</th><th></th></tr></thead>
+        <tbody id="att-body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script src="/static/admin.js"></script>
+<script>
+AdminUI.renderLayout("entries");
+const entryId = location.pathname.split("/").pop();
+
+const KIND_LABELS = {
+  supplier_guide: "📄 Guia Fornecedor",
+  signed_authorization: "✍️ Autorização Assinada",
+  other: "📎 Outro",
+};
+
+async function load() {
+  const e = await AdminUI.fetchJSON("/admin/api/entries/" + entryId);
+  document.getElementById("title").textContent = "Entrada " + e.entry_number;
+  document.getElementById("info").innerHTML = `
+    <div class="info-card"><div class="info-label">Nº</div><div class="info-value">${AdminUI.esc(e.entry_number)}</div></div>
+    <div class="info-card"><div class="info-label">Data</div><div class="info-value">${AdminUI.fmtDate(e.received_at)}</div></div>
+    <div class="info-card"><div class="info-label">Autorização</div><div class="info-value"><a href="/admin/authorizations/${e.auth_id}">${AdminUI.esc(e.auth_number || "—")}</a></div></div>
+    <div class="info-card"><div class="info-label">PO</div><div class="info-value">${AdminUI.esc(e.po_number || "—")}</div></div>
+    <div class="info-card"><div class="info-label">Fornecedor</div><div class="info-value">${AdminUI.esc(e.supplier_name || "—")}</div></div>
+    <div class="info-card"><div class="info-label">Matrícula</div><div class="info-value"><strong>${AdminUI.esc(e.truck_plate || "—")}</strong></div></div>
+    <div class="info-card"><div class="info-label">Motorista</div><div class="info-value">${AdminUI.esc(e.driver_name || "—")}</div></div>
+  `;
+
+  document.getElementById("items-body").innerHTML = e.items.map((it) => {
+    const diff = Number(it.qty_received) - Number(it.qty_to_pickup || 0);
+    const diffColor = diff < 0 ? "#dc2626" : diff > 0 ? "#d97706" : "#16a34a";
+    return `<tr>
+      <td>${AdminUI.esc(it.product_name)}</td>
+      <td style="text-align:right">${AdminUI.fmt(it.qty_to_pickup)}</td>
+      <td style="text-align:right;font-weight:700">${AdminUI.fmt(it.qty_received)}</td>
+      <td style="text-align:right;color:${diffColor}">${diff > 0 ? "+" : ""}${AdminUI.fmt(diff)}</td>
+      <td>${AdminUI.esc(it.unit)}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("att-body").innerHTML = e.attachments.map((att) =>
+    `<tr>
+      <td>${KIND_LABELS[att.kind] || att.kind}</td>
+      <td>${AdminUI.esc(att.original_name)}</td>
+      <td>${AdminUI.fmtDate(att.uploaded_at)}</td>
+      <td>${att.size_bytes ? (Math.round(att.size_bytes / 1024) + " KB") : "—"}</td>
+      <td><a class="btn btn-sm" href="/admin/api/entries/${entryId}/attachments/${att.id}/download">Descarregar</a></td>
+    </tr>`
+  ).join("") || '<tr><td colspan="5" class="empty">Sem documentos anexos. Faça upload acima.</td></tr>';
+}
+
+document.getElementById("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  try {
+    const r = await fetch("/admin/api/entries/" + entryId + "/attachments", { method: "POST", body: fd });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "Erro");
+    alert("✓ " + (j.uploaded ? j.uploaded.length : 0) + " ficheiro(s) carregado(s)");
+    e.target.reset();
+    load();
+  } catch (err) { alert("Erro: " + err.message); }
+});
+
+load();
+</script>
+</body>
+</html>

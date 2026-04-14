@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AQI Operacoes - Entradas</title>
+<link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+<div id="layout"></div>
+<main class="admin-main">
+  <header class="admin-header">
+    <h1>Entradas de Stock</h1>
+    <button class="btn btn-primary" id="btn-new">+ Nova Entrada</button>
+  </header>
+
+  <section class="admin-section">
+    <div class="tbl-wrap">
+      <table class="adm-table">
+        <thead><tr>
+          <th>Nº Entrada</th><th>Data</th><th>Autorização</th>
+          <th>PO / Fornecedor</th><th>Matrícula</th>
+          <th style="text-align:right">Qtd Total</th><th></th>
+        </tr></thead>
+        <tbody id="body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- New Entry modal -->
+<div class="modal-overlay" id="modal" style="display:none">
+  <div class="modal-card" style="max-width:820px">
+    <div class="modal-head"><h2>Registar Entrada</h2><button class="modal-x" data-close>&times;</button></div>
+    <form id="form" class="modal-form">
+      <label>Pesquisar Autorização *
+        <input type="text" id="auth-search" placeholder="Nº, matrícula, motorista..." autocomplete="off">
+        <div id="auth-results" style="max-height:180px;overflow-y:auto;border:1px solid #cbd5e1;border-radius:4px;display:none;margin-top:4px"></div>
+      </label>
+      <div id="auth-preview" style="display:none;background:#f0f9ff;padding:.75rem;border-radius:6px;margin:.5rem 0;font-size:.9rem"></div>
+
+      <h3 style="margin:1rem 0 .5rem;font-size:1rem">Itens recebidos</h3>
+      <div class="tbl-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Produto</th><th style="text-align:right">Autorizado</th><th style="text-align:right">Recebido *</th></tr></thead>
+          <tbody id="items-body"><tr><td colspan="3" class="empty">Seleccione uma autorização</td></tr></tbody>
+        </table>
+      </div>
+
+      <label>Notas<textarea name="notes" rows="2"></textarea></label>
+
+      <button type="submit" class="btn btn-primary" id="btn-save" disabled>Gravar Entrada + Enviar Uploads</button>
+    </form>
+  </div>
+</div>
+
+<script src="/static/admin.js"></script>
+<script>
+AdminUI.renderLayout("entries");
+let selectedAuth = null;
+let authList = [];
+
+async function load() {
+  const list = await AdminUI.fetchJSON("/admin/api/entries");
+  const body = document.getElementById("body");
+  if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="empty">Sem entradas registadas</td></tr>'; return; }
+  body.innerHTML = list.map((e) =>
+    `<tr>
+      <td><a href="/admin/entries/${e.id}"><strong>${AdminUI.esc(e.entry_number)}</strong></a></td>
+      <td>${AdminUI.fmtDate(e.received_at)}</td>
+      <td><a href="/admin/authorizations/${e.auth_id}">${AdminUI.esc(e.auth_number || "—")}</a></td>
+      <td>${AdminUI.esc(e.po_number || "—")}<br><small style="color:#64748b">${AdminUI.esc(e.supplier_name || "")}</small></td>
+      <td><strong>${AdminUI.esc(e.truck_plate || "—")}</strong></td>
+      <td style="text-align:right">${AdminUI.fmt(e.total_qty)}</td>
+      <td><a class="btn btn-sm" href="/admin/entries/${e.id}">Ver</a></td>
+    </tr>`
+  ).join("");
+}
+
+async function loadAuthList() {
+  authList = await AdminUI.fetchJSON("/admin/api/authorizations?status=issued");
+}
+
+function filterAuth(q) {
+  q = q.toLowerCase();
+  const body = document.getElementById("auth-results");
+  const matches = authList.filter((a) =>
+    (a.auth_number || "").toLowerCase().includes(q) ||
+    (a.truck_plate || "").toLowerCase().includes(q) ||
+    (a.driver_name || "").toLowerCase().includes(q) ||
+    (a.supplier_name || "").toLowerCase().includes(q) ||
+    (a.po_number || "").toLowerCase().includes(q)
+  ).slice(0, 20);
+
+  if (!matches.length) { body.style.display = "none"; return; }
+  body.style.display = "block";
+  body.innerHTML = matches.map((a) =>
+    `<div class="auth-result" data-id="${a.id}" style="padding:.5rem .75rem;border-bottom:1px solid #f1f5f9;cursor:pointer">
+      <strong>${AdminUI.esc(a.auth_number)}</strong> — ${AdminUI.esc(a.truck_plate)} (${AdminUI.esc(a.driver_name)})<br>
+      <small style="color:#64748b">PO ${AdminUI.esc(a.po_number || "—")} — ${AdminUI.esc(a.supplier_name || "—")}</small>
+    </div>`
+  ).join("");
+  body.querySelectorAll(".auth-result").forEach((el) => {
+    el.addEventListener("click", () => selectAuth(Number(el.dataset.id)));
+  });
+}
+
+async function selectAuth(id) {
+  const a = await AdminUI.fetchJSON("/admin/api/authorizations/" + id);
+  selectedAuth = a;
+  document.getElementById("auth-search").value = a.auth_number;
+  document.getElementById("auth-results").style.display = "none";
+  document.getElementById("auth-preview").style.display = "block";
+  document.getElementById("auth-preview").innerHTML = `
+    <strong>${AdminUI.esc(a.auth_number)}</strong> — PO ${AdminUI.esc(a.po_number || "")} / ${AdminUI.esc(a.supplier_name || "")}<br>
+    Matrícula: <strong>${AdminUI.esc(a.truck_plate)}</strong> · Motorista: ${AdminUI.esc(a.driver_name)}
+  `;
+  document.getElementById("items-body").innerHTML = a.items.map((it) =>
+    `<tr data-auth-item-id="${it.id}" data-product-id="${it.product_id || ''}" data-product-name="${AdminUI.esc(it.product_name)}" data-unit="${AdminUI.esc(it.unit)}">
+      <td>${AdminUI.esc(it.product_name)}</td>
+      <td style="text-align:right">${AdminUI.fmt(it.qty_to_pickup)} ${AdminUI.esc(it.unit)}</td>
+      <td><input type="number" min="0" step="0.1" value="${it.qty_to_pickup}" data-qty style="width:120px;text-align:right;padding:.4rem;border:1px solid #cbd5e1;border-radius:4px"></td>
+    </tr>`
+  ).join("");
+  document.getElementById("btn-save").disabled = false;
+}
+
+document.getElementById("btn-new").addEventListener("click", async () => {
+  document.getElementById("form").reset();
+  document.getElementById("auth-preview").style.display = "none";
+  document.getElementById("items-body").innerHTML = '<tr><td colspan="3" class="empty">Seleccione uma autorização</td></tr>';
+  selectedAuth = null;
+  document.getElementById("btn-save").disabled = true;
+  if (!authList.length) await loadAuthList();
+  document.getElementById("modal").style.display = "flex";
+
+  // Pre-select from query param
+  const newFrom = new URLSearchParams(location.search).get("new_from");
+  if (newFrom) selectAuth(Number(newFrom));
+});
+
+document.getElementById("auth-search").addEventListener("input", (e) => {
+  filterAuth(e.target.value);
+});
+
+document.getElementById("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!selectedAuth) { alert("Selecciona uma autorização"); return; }
+  const items = [];
+  document.querySelectorAll("#items-body tr[data-auth-item-id]").forEach((tr) => {
+    const qty = Number(tr.querySelector("[data-qty]").value) || 0;
+    items.push({
+      auth_item_id: Number(tr.dataset.authItemId),
+      product_id: tr.dataset.productId ? Number(tr.dataset.productId) : null,
+      product_name: tr.dataset.productName,
+      qty_received: qty,
+      unit: tr.dataset.unit,
+    });
+  });
+  if (!items.some((i) => i.qty_received > 0)) { alert("Indica pelo menos uma quantidade"); return; }
+
+  try {
+    const r = await AdminUI.fetchJSON("/admin/api/entries", {
+      method: "POST",
+      body: { auth_id: selectedAuth.id, items, notes: e.target.notes.value },
+    });
+    alert("✓ Entrada " + r.entry_number + " criada. Redireccionando para upload de ficheiros.");
+    location.href = "/admin/entries/" + r.id;
+  } catch (err) { alert("Erro: " + err.message); }
+});
+
+document.querySelectorAll("[data-close]").forEach((b) =>
+  b.addEventListener("click", () => b.closest(".modal-overlay").style.display = "none")
+);
+
+load();
+
+// Auto-open from query
+if (new URLSearchParams(location.search).get("new_from")) {
+  document.getElementById("btn-new").click();
+}
+</script>
+</body>
+</html>

@@ -233,3 +233,147 @@ CREATE TABLE IF NOT EXISTS departure_cargo (
   FOREIGN KEY (departure_id) REFERENCES truck_departures(id) ON DELETE CASCADE,
   FOREIGN KEY (product_id) REFERENCES products(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Purchase Orders (PO → Autorização → Entrada → ADSN → Saída flow) ──
+CREATE TABLE IF NOT EXISTS purchase_orders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  po_number VARCHAR(64) NOT NULL UNIQUE,
+  supplier_id INT NOT NULL,
+  supplier_nuit VARCHAR(32),
+  po_date DATE,
+  projecto VARCHAR(128),
+  notes TEXT,
+  status ENUM('draft','issued','in_pickup','received','partial','closed','cancelled') NOT NULL DEFAULT 'issued',
+  imported_from VARCHAR(255),
+  created_at DATETIME NOT NULL,
+  created_by INT,
+  FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_po_supplier (supplier_id),
+  INDEX idx_po_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS po_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  po_id INT NOT NULL,
+  product_id INT,
+  product_code VARCHAR(64),
+  product_name VARCHAR(255) NOT NULL,
+  qty DECIMAL(14,2) NOT NULL,
+  unit VARCHAR(32) NOT NULL DEFAULT 'kg',
+  qty_authorized DECIMAL(14,2) NOT NULL DEFAULT 0,
+  qty_received DECIMAL(14,2) NOT NULL DEFAULT 0,
+  FOREIGN KEY (po_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS pickup_authorizations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  auth_number VARCHAR(64) NOT NULL UNIQUE,
+  po_id INT NOT NULL,
+  transporter_name VARCHAR(255),
+  truck_plate VARCHAR(32) NOT NULL,
+  driver_name VARCHAR(255) NOT NULL,
+  driver_phone VARCHAR(64),
+  driver_id_doc VARCHAR(64),
+  pickup_date DATE,
+  status ENUM('issued','in_transit','received','partial','cancelled') NOT NULL DEFAULT 'issued',
+  notes TEXT,
+  issued_at DATETIME NOT NULL,
+  issued_by INT,
+  FOREIGN KEY (po_id) REFERENCES purchase_orders(id),
+  FOREIGN KEY (issued_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_auth_plate (truck_plate),
+  INDEX idx_auth_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS pickup_auth_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  auth_id INT NOT NULL,
+  po_item_id INT NOT NULL,
+  product_id INT,
+  product_name VARCHAR(255) NOT NULL,
+  qty_to_pickup DECIMAL(14,2) NOT NULL,
+  unit VARCHAR(32) NOT NULL DEFAULT 'kg',
+  FOREIGN KEY (auth_id) REFERENCES pickup_authorizations(id) ON DELETE CASCADE,
+  FOREIGN KEY (po_item_id) REFERENCES po_items(id),
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stock_entries (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  entry_number VARCHAR(64) NOT NULL UNIQUE,
+  auth_id INT NOT NULL,
+  received_at DATETIME NOT NULL,
+  received_by INT,
+  notes TEXT,
+  FOREIGN KEY (auth_id) REFERENCES pickup_authorizations(id),
+  FOREIGN KEY (received_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stock_entry_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  entry_id INT NOT NULL,
+  auth_item_id INT NOT NULL,
+  product_id INT,
+  product_name VARCHAR(255) NOT NULL,
+  qty_received DECIMAL(14,2) NOT NULL,
+  unit VARCHAR(32) NOT NULL DEFAULT 'kg',
+  FOREIGN KEY (entry_id) REFERENCES stock_entries(id) ON DELETE CASCADE,
+  FOREIGN KEY (auth_item_id) REFERENCES pickup_auth_items(id),
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stock_entry_attachments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  entry_id INT NOT NULL,
+  kind ENUM('supplier_guide','signed_authorization','other') NOT NULL,
+  file_path VARCHAR(512) NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(128),
+  size_bytes INT,
+  uploaded_at DATETIME NOT NULL,
+  uploaded_by INT,
+  FOREIGN KEY (entry_id) REFERENCES stock_entries(id) ON DELETE CASCADE,
+  FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS adsn_services (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  adsn_code VARCHAR(64) NOT NULL UNIQUE,
+  gtu VARCHAR(64),
+  tipo VARCHAR(64),
+  projecto VARCHAR(128),
+  origem VARCHAR(128),
+  destinatario VARCHAR(255),
+  destinatario_contact VARCHAR(128),
+  provincia VARCHAR(64),
+  distrito VARCHAR(64),
+  sku VARCHAR(64),
+  product_name VARCHAR(255),
+  peso_kg DECIMAL(14,2) NOT NULL,
+  volumes INT,
+  status ENUM('pending','dispatched','cancelled') NOT NULL DEFAULT 'pending',
+  imported_at DATETIME NOT NULL,
+  imported_by INT,
+  imported_from VARCHAR(255),
+  FOREIGN KEY (imported_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_adsn_status (status),
+  INDEX idx_adsn_gtu (gtu)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stock_exits (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  exit_number VARCHAR(64) NOT NULL UNIQUE,
+  adsn_id INT NOT NULL UNIQUE,
+  truck_plate VARCHAR(32),
+  driver_name VARCHAR(255),
+  driver_phone VARCHAR(64),
+  transporter_name VARCHAR(255),
+  dispatched_at DATETIME NOT NULL,
+  dispatched_by INT,
+  notes TEXT,
+  FOREIGN KEY (adsn_id) REFERENCES adsn_services(id),
+  FOREIGN KEY (dispatched_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_exit_plate (truck_plate)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

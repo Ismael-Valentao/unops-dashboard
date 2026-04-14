@@ -54,6 +54,7 @@ a{color:inherit;text-decoration:none}
 .sb-link:hover{color:#fff;background:rgba(255,255,255,.05)}
 .sb-link.active{color:#fff;background:rgba(15,76,117,.3);border-left-color:#38bdf8}
 .sb-icon{width:18px;display:inline-block;text-align:center}
+.sb-section{font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:#475569;padding:.85rem 1.25rem .25rem;font-weight:700}
 .sb-foot{padding:1rem 1.25rem;border-top:1px solid #334155;font-size:.75rem;color:#64748b}
 .sb-user{color:#fff;font-weight:600;margin-bottom:.25rem}
 .sb-role{display:inline-block;background:#0f4c75;color:#fff;padding:.1rem .5rem;
@@ -142,6 +143,14 @@ a{color:inherit;text-decoration:none}
 .att-card img{width:100%;height:90px;object-fit:cover;border-radius:6px}
 .att-file{font-size:2rem;width:100%;height:90px;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:6px}
 .att-card a{font-size:.7rem;color:#0f4c75;font-weight:600;word-break:break-all}
+
+/* Info / metric cards for PO & Auth detail pages */
+.info-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .8rem}
+.info-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:.15rem}
+.info-value{font-size:.95rem;font-weight:600;color:#0f172a}
+.metric-card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.75rem 1rem}
+.metric-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:.2rem}
+.metric-value{font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums}
 
 @media(max-width:900px){
   .admin-body{flex-direction:column}

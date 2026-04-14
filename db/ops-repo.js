@@ -70,17 +70,24 @@ const Suppliers = {
   async findById(id) {
     return queryOne("SELECT * FROM suppliers WHERE id = ?", [id]);
   },
+  async findByNuit(nuit) {
+    if (!nuit) return null;
+    return queryOne("SELECT * FROM suppliers WHERE nuit = ? LIMIT 1", [nuit]);
+  },
+  async findByName(name) {
+    return queryOne("SELECT * FROM suppliers WHERE name = ? LIMIT 1", [name]);
+  },
   async create(data, userId) {
     const r = await execute(
-      "INSERT INTO suppliers (name, contact_name, contact_phone, contact_email, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?)",
-      [data.name, data.contact_name || null, data.contact_phone || null, data.contact_email || null, data.notes || null, now(), userId || null]
+      "INSERT INTO suppliers (name, contact_name, contact_phone, contact_email, nuit, client_number, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)",
+      [data.name, data.contact_name || null, data.contact_phone || null, data.contact_email || null, data.nuit || null, data.client_number || null, data.notes || null, now(), userId || null]
     );
     return r.insertId;
   },
   async update(id, data) {
     return execute(
-      "UPDATE suppliers SET name=?, contact_name=?, contact_phone=?, contact_email=?, notes=? WHERE id=?",
-      [data.name, data.contact_name || null, data.contact_phone || null, data.contact_email || null, data.notes || null, id]
+      "UPDATE suppliers SET name=?, contact_name=?, contact_phone=?, contact_email=?, nuit=?, client_number=?, notes=? WHERE id=?",
+      [data.name, data.contact_name || null, data.contact_phone || null, data.contact_email || null, data.nuit || null, data.client_number || null, data.notes || null, id]
     );
   },
   async remove(id) {
@@ -556,8 +563,519 @@ const Audit = {
   },
 };
 
+// ── Purchase Orders ─────────────────────────────────────────
+const PurchaseOrders = {
+  async list(filters) {
+    const f = filters || {};
+    const where = [];
+    const params = [];
+    if (f.supplier_id) { where.push("po.supplier_id = ?"); params.push(f.supplier_id); }
+    if (f.status) { where.push("po.status = ?"); params.push(f.status); }
+    if (f.q) { where.push("(po.po_number LIKE ? OR s.name LIKE ?)"); params.push("%" + f.q + "%", "%" + f.q + "%"); }
+    const whereSql = where.length ? " WHERE " + where.join(" AND ") : "";
+    return query(
+      `SELECT po.*, s.name AS supplier_name,
+              (SELECT COUNT(*) FROM po_items WHERE po_id = po.id) AS item_count,
+              (SELECT COALESCE(SUM(qty),0) FROM po_items WHERE po_id = po.id) AS total_qty,
+              (SELECT COALESCE(SUM(qty_received),0) FROM po_items WHERE po_id = po.id) AS total_received
+       FROM purchase_orders po
+       LEFT JOIN suppliers s ON po.supplier_id = s.id
+       ${whereSql}
+       ORDER BY po.created_at DESC LIMIT 500`,
+      params
+    );
+  },
+  async findById(id) {
+    const po = await queryOne(
+      `SELECT po.*, s.name AS supplier_name, s.nuit AS supplier_nuit_current, s.client_number AS supplier_client_number
+       FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id = s.id
+       WHERE po.id = ?`,
+      [id]
+    );
+    if (!po) return null;
+    po.items = await query(
+      `SELECT pi.*, p.code AS product_code_catalog, p.name AS product_name_catalog
+       FROM po_items pi LEFT JOIN products p ON pi.product_id = p.id
+       WHERE pi.po_id = ? ORDER BY pi.id`,
+      [id]
+    );
+    return po;
+  },
+  async findByNumber(number) {
+    return queryOne("SELECT * FROM purchase_orders WHERE po_number = ?", [number]);
+  },
+  async create(data, userId) {
+    const r = await execute(
+      `INSERT INTO purchase_orders (po_number, supplier_id, supplier_nuit, po_date, projecto, notes, status, imported_from, created_at, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [
+        data.po_number, data.supplier_id, data.supplier_nuit || null,
+        data.po_date || null, data.projecto || null, data.notes || null,
+        data.status || "issued", data.imported_from || null, now(), userId || null,
+      ]
+    );
+    return r.insertId;
+  },
+  async addItem(po_id, item) {
+    const r = await execute(
+      `INSERT INTO po_items (po_id, product_id, product_code, product_name, qty, unit, qty_authorized, qty_received)
+       VALUES (?,?,?,?,?,?,0,0)`,
+      [po_id, item.product_id || null, item.product_code || null, item.product_name, item.qty, item.unit || "kg"]
+    );
+    return r.insertId;
+  },
+  async updateStatus(id, status) {
+    return execute("UPDATE purchase_orders SET status = ? WHERE id = ?", [status, id]);
+  },
+  async recomputeStatus(id) {
+    const items = await query("SELECT qty, qty_received FROM po_items WHERE po_id = ?", [id]);
+    if (!items.length) return;
+    const totalQty = items.reduce((s, i) => s + Number(i.qty), 0);
+    const totalReceived = items.reduce((s, i) => s + Number(i.qty_received), 0);
+    let status;
+    if (totalReceived <= 0.001) status = "issued";
+    else if (totalReceived >= totalQty - 0.001) status = "received";
+    else status = "partial";
+    await this.updateStatus(id, status);
+  },
+};
+
+// ── Pickup Authorizations ──────────────────────────────────
+const Authorizations = {
+  async list(filters) {
+    const f = filters || {};
+    const where = [];
+    const params = [];
+    if (f.status) { where.push("a.status = ?"); params.push(f.status); }
+    if (f.plate) { where.push("a.truck_plate LIKE ?"); params.push("%" + f.plate + "%"); }
+    if (f.po_id) { where.push("a.po_id = ?"); params.push(f.po_id); }
+    if (f.supplier_id) { where.push("po.supplier_id = ?"); params.push(f.supplier_id); }
+    const whereSql = where.length ? " WHERE " + where.join(" AND ") : "";
+    return query(
+      `SELECT a.*, po.po_number, po.supplier_id, s.name AS supplier_name,
+              (SELECT COALESCE(SUM(qty_to_pickup),0) FROM pickup_auth_items WHERE auth_id = a.id) AS total_qty
+       FROM pickup_authorizations a
+       LEFT JOIN purchase_orders po ON a.po_id = po.id
+       LEFT JOIN suppliers s ON po.supplier_id = s.id
+       ${whereSql}
+       ORDER BY a.issued_at DESC LIMIT 500`,
+      params
+    );
+  },
+  async findById(id) {
+    const auth = await queryOne(
+      `SELECT a.*, po.po_number, po.supplier_id, po.projecto, po.po_date,
+              s.name AS supplier_name, s.nuit AS supplier_nuit, s.contact_name AS supplier_contact,
+              s.contact_phone AS supplier_phone
+       FROM pickup_authorizations a
+       LEFT JOIN purchase_orders po ON a.po_id = po.id
+       LEFT JOIN suppliers s ON po.supplier_id = s.id
+       WHERE a.id = ?`,
+      [id]
+    );
+    if (!auth) return null;
+    auth.items = await query(
+      `SELECT ai.*, pi.product_code, pi.qty AS po_qty
+       FROM pickup_auth_items ai
+       LEFT JOIN po_items pi ON ai.po_item_id = pi.id
+       WHERE ai.auth_id = ? ORDER BY ai.id`,
+      [id]
+    );
+    return auth;
+  },
+  async nextNumber() {
+    const year = new Date().getFullYear();
+    const prefix = `AUTH-${year}-`;
+    const row = await queryOne(
+      "SELECT auth_number FROM pickup_authorizations WHERE auth_number LIKE ? ORDER BY id DESC LIMIT 1",
+      [prefix + "%"]
+    );
+    let seq = 1;
+    if (row) {
+      const m = row.auth_number.match(/-(\d+)$/);
+      if (m) seq = Number(m[1]) + 1;
+    }
+    return prefix + String(seq).padStart(4, "0");
+  },
+  async create(data, userId) {
+    const auth_number = await this.nextNumber();
+    const r = await execute(
+      `INSERT INTO pickup_authorizations
+       (auth_number, po_id, transporter_name, truck_plate, driver_name, driver_phone, driver_id_doc, pickup_date, status, notes, issued_at, issued_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        auth_number, data.po_id, data.transporter_name || null,
+        data.truck_plate, data.driver_name, data.driver_phone || null,
+        data.driver_id_doc || null, data.pickup_date || null,
+        data.status || "issued", data.notes || null, now(), userId || null,
+      ]
+    );
+    const auth_id = r.insertId;
+    // Add items
+    for (const it of (data.items || [])) {
+      await execute(
+        `INSERT INTO pickup_auth_items (auth_id, po_item_id, product_id, product_name, qty_to_pickup, unit)
+         VALUES (?,?,?,?,?,?)`,
+        [auth_id, it.po_item_id, it.product_id || null, it.product_name, it.qty_to_pickup, it.unit || "kg"]
+      );
+      // Increment qty_authorized on po_item
+      await execute(
+        "UPDATE po_items SET qty_authorized = qty_authorized + ? WHERE id = ?",
+        [it.qty_to_pickup, it.po_item_id]
+      );
+    }
+    await PurchaseOrders.updateStatus(data.po_id, "in_pickup");
+    return { id: auth_id, auth_number };
+  },
+  async updateStatus(id, status) {
+    return execute("UPDATE pickup_authorizations SET status = ? WHERE id = ?", [status, id]);
+  },
+  async cancel(id) {
+    const items = await query("SELECT po_item_id, qty_to_pickup FROM pickup_auth_items WHERE auth_id = ?", [id]);
+    for (const it of items) {
+      await execute("UPDATE po_items SET qty_authorized = GREATEST(0, qty_authorized - ?) WHERE id = ?", [it.qty_to_pickup, it.po_item_id]);
+    }
+    return this.updateStatus(id, "cancelled");
+  },
+};
+
+// ── Stock Entries (confirms an Authorization → stock in) ─────
+const StockEntries = {
+  async list(filters) {
+    const f = filters || {};
+    const where = [];
+    const params = [];
+    if (f.auth_id) { where.push("e.auth_id = ?"); params.push(f.auth_id); }
+    if (f.supplier_id) { where.push("po.supplier_id = ?"); params.push(f.supplier_id); }
+    const whereSql = where.length ? " WHERE " + where.join(" AND ") : "";
+    return query(
+      `SELECT e.*, a.auth_number, a.truck_plate, a.driver_name,
+              po.po_number, po.supplier_id, s.name AS supplier_name,
+              (SELECT COALESCE(SUM(qty_received),0) FROM stock_entry_items WHERE entry_id = e.id) AS total_qty
+       FROM stock_entries e
+       LEFT JOIN pickup_authorizations a ON e.auth_id = a.id
+       LEFT JOIN purchase_orders po ON a.po_id = po.id
+       LEFT JOIN suppliers s ON po.supplier_id = s.id
+       ${whereSql}
+       ORDER BY e.received_at DESC LIMIT 500`,
+      params
+    );
+  },
+  async findById(id) {
+    const entry = await queryOne(
+      `SELECT e.*, a.auth_number, a.truck_plate, a.driver_name, a.driver_phone, a.transporter_name,
+              po.po_number, po.supplier_id, s.name AS supplier_name, s.nuit AS supplier_nuit
+       FROM stock_entries e
+       LEFT JOIN pickup_authorizations a ON e.auth_id = a.id
+       LEFT JOIN purchase_orders po ON a.po_id = po.id
+       LEFT JOIN suppliers s ON po.supplier_id = s.id
+       WHERE e.id = ?`,
+      [id]
+    );
+    if (!entry) return null;
+    entry.items = await query(
+      `SELECT ei.*, ai.qty_to_pickup
+       FROM stock_entry_items ei
+       LEFT JOIN pickup_auth_items ai ON ei.auth_item_id = ai.id
+       WHERE ei.entry_id = ? ORDER BY ei.id`,
+      [id]
+    );
+    entry.attachments = await query(
+      "SELECT * FROM stock_entry_attachments WHERE entry_id = ? ORDER BY uploaded_at",
+      [id]
+    );
+    return entry;
+  },
+  async nextNumber() {
+    const year = new Date().getFullYear();
+    const prefix = `ENT-${year}-`;
+    const row = await queryOne(
+      "SELECT entry_number FROM stock_entries WHERE entry_number LIKE ? ORDER BY id DESC LIMIT 1",
+      [prefix + "%"]
+    );
+    let seq = 1;
+    if (row) {
+      const m = row.entry_number.match(/-(\d+)$/);
+      if (m) seq = Number(m[1]) + 1;
+    }
+    return prefix + String(seq).padStart(4, "0");
+  },
+  async create(data, userId) {
+    const entry_number = await this.nextNumber();
+    const auth = await queryOne(
+      `SELECT a.po_id, a.truck_plate, po.supplier_id
+       FROM pickup_authorizations a
+       LEFT JOIN purchase_orders po ON a.po_id = po.id
+       WHERE a.id = ?`,
+      [data.auth_id]
+    );
+    if (!auth) throw new Error("Autorização não encontrada");
+
+    const r = await execute(
+      "INSERT INTO stock_entries (entry_number, auth_id, received_at, received_by, notes) VALUES (?,?,?,?,?)",
+      [entry_number, data.auth_id, now(), userId || null, data.notes || null]
+    );
+    const entry_id = r.insertId;
+
+    for (const it of (data.items || [])) {
+      if (!it.qty_received || it.qty_received <= 0) continue;
+      await execute(
+        `INSERT INTO stock_entry_items (entry_id, auth_item_id, product_id, product_name, qty_received, unit)
+         VALUES (?,?,?,?,?,?)`,
+        [entry_id, it.auth_item_id, it.product_id || null, it.product_name, it.qty_received, it.unit || "kg"]
+      );
+      // Update po_items.qty_received
+      const ai = await queryOne("SELECT po_item_id FROM pickup_auth_items WHERE id = ?", [it.auth_item_id]);
+      if (ai) {
+        await execute("UPDATE po_items SET qty_received = qty_received + ? WHERE id = ?", [it.qty_received, ai.po_item_id]);
+      }
+      // Stock movement
+      await execute(
+        `INSERT INTO stock_movements (type, product, product_id, qty, entry_id, supplier_id, truck_plate, created_at, created_by, notes)
+         VALUES ('authorization_in', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [it.product_name, it.product_id || null, it.qty_received, entry_id, auth.supplier_id || null, auth.truck_plate || null, now(), userId || null, `Entrada ${entry_number}`]
+      );
+    }
+
+    await Authorizations.updateStatus(data.auth_id, "received");
+    await PurchaseOrders.recomputeStatus(auth.po_id);
+    return { id: entry_id, entry_number };
+  },
+  async addAttachment(entry_id, { kind, file_path, original_name, mime_type, size_bytes }, userId) {
+    const r = await execute(
+      `INSERT INTO stock_entry_attachments (entry_id, kind, file_path, original_name, mime_type, size_bytes, uploaded_at, uploaded_by)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [entry_id, kind, file_path, original_name, mime_type || null, size_bytes || null, now(), userId || null]
+    );
+    return r.insertId;
+  },
+};
+
+// ── ADSN Services (exit codes from main system) ──────────────
+const ADSN = {
+  async list(filters) {
+    const f = filters || {};
+    const where = [];
+    const params = [];
+    if (f.status) { where.push("status = ?"); params.push(f.status); }
+    if (f.q) { where.push("(adsn_code LIKE ? OR gtu LIKE ? OR destinatario LIKE ?)"); params.push("%" + f.q + "%", "%" + f.q + "%", "%" + f.q + "%"); }
+    if (f.provincia) { where.push("provincia = ?"); params.push(f.provincia); }
+    const whereSql = where.length ? " WHERE " + where.join(" AND ") : "";
+    return query(
+      `SELECT * FROM adsn_services ${whereSql} ORDER BY imported_at DESC LIMIT 1000`,
+      params
+    );
+  },
+  async findById(id) {
+    return queryOne("SELECT * FROM adsn_services WHERE id = ?", [id]);
+  },
+  async findByCode(code) {
+    return queryOne("SELECT * FROM adsn_services WHERE adsn_code = ?", [code]);
+  },
+  async search(q) {
+    return query(
+      `SELECT id, adsn_code, gtu, destinatario, distrito, product_name, peso_kg, status
+       FROM adsn_services
+       WHERE status = 'pending' AND (adsn_code LIKE ? OR gtu LIKE ? OR destinatario LIKE ?)
+       ORDER BY imported_at DESC LIMIT 30`,
+      ["%" + q + "%", "%" + q + "%", "%" + q + "%"]
+    );
+  },
+  async upsert(row, userId, fileName) {
+    // Ignore duplicates (UNIQUE on adsn_code)
+    try {
+      const r = await execute(
+        `INSERT INTO adsn_services
+         (adsn_code, gtu, tipo, projecto, origem, destinatario, destinatario_contact, provincia, distrito, sku, product_name, peso_kg, volumes, status, imported_at, imported_by, imported_from)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?)`,
+        [
+          row.adsn_code, row.gtu || null, row.tipo || null, row.projecto || null,
+          row.origem || null, row.destinatario || null, row.destinatario_contact || null,
+          row.provincia || null, row.distrito || null, row.sku || null,
+          row.product_name || null, row.peso_kg || 0, row.volumes || 0,
+          now(), userId || null, fileName || null,
+        ]
+      );
+      return { inserted: true, id: r.insertId };
+    } catch (e) {
+      if (e.code === "ER_DUP_ENTRY") return { inserted: false, duplicate: true };
+      throw e;
+    }
+  },
+  async updateStatus(id, status) {
+    return execute("UPDATE adsn_services SET status = ? WHERE id = ?", [status, id]);
+  },
+  async counts() {
+    const rows = await query("SELECT status, COUNT(*) AS c FROM adsn_services GROUP BY status");
+    const out = { pending: 0, dispatched: 0, cancelled: 0 };
+    rows.forEach((r) => { out[r.status] = r.c; });
+    return out;
+  },
+};
+
+// ── Stock Exits (one per ADSN) ───────────────────────────────
+const StockExits = {
+  async list(filters) {
+    const f = filters || {};
+    const where = [];
+    const params = [];
+    if (f.plate) { where.push("e.truck_plate LIKE ?"); params.push("%" + f.plate + "%"); }
+    if (f.from) { where.push("e.dispatched_at >= ?"); params.push(f.from); }
+    if (f.to) { where.push("e.dispatched_at <= ?"); params.push(f.to); }
+    const whereSql = where.length ? " WHERE " + where.join(" AND ") : "";
+    return query(
+      `SELECT e.*, a.adsn_code, a.gtu, a.destinatario, a.provincia, a.distrito,
+              a.product_name, a.peso_kg
+       FROM stock_exits e
+       LEFT JOIN adsn_services a ON e.adsn_id = a.id
+       ${whereSql}
+       ORDER BY e.dispatched_at DESC LIMIT 500`,
+      params
+    );
+  },
+  async findById(id) {
+    return queryOne(
+      `SELECT e.*, a.adsn_code, a.gtu, a.destinatario, a.destinatario_contact,
+              a.provincia, a.distrito, a.product_name, a.sku, a.peso_kg, a.volumes
+       FROM stock_exits e
+       LEFT JOIN adsn_services a ON e.adsn_id = a.id
+       WHERE e.id = ?`,
+      [id]
+    );
+  },
+  async nextNumber() {
+    const year = new Date().getFullYear();
+    const prefix = `OUT-${year}-`;
+    const row = await queryOne(
+      "SELECT exit_number FROM stock_exits WHERE exit_number LIKE ? ORDER BY id DESC LIMIT 1",
+      [prefix + "%"]
+    );
+    let seq = 1;
+    if (row) {
+      const m = row.exit_number.match(/-(\d+)$/);
+      if (m) seq = Number(m[1]) + 1;
+    }
+    return prefix + String(seq).padStart(4, "0");
+  },
+  async create(data, userId) {
+    const adsn = await ADSN.findById(data.adsn_id);
+    if (!adsn) throw new Error("ADSN não encontrado");
+    if (adsn.status === "dispatched") throw new Error("Este ADSN já foi despachado");
+    if (adsn.status === "cancelled") throw new Error("Este ADSN foi cancelado");
+
+    // Validate stock availability for this product
+    const available = await Stock.availableByProductName(adsn.product_name);
+    if (available < Number(adsn.peso_kg) - 0.001) {
+      throw new Error(`Stock insuficiente de ${adsn.product_name} (disponível: ${available}, pedido: ${adsn.peso_kg})`);
+    }
+
+    const exit_number = await this.nextNumber();
+    const r = await execute(
+      `INSERT INTO stock_exits
+       (exit_number, adsn_id, truck_plate, driver_name, driver_phone, transporter_name, dispatched_at, dispatched_by, notes)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [
+        exit_number, data.adsn_id, data.truck_plate || null, data.driver_name || null,
+        data.driver_phone || null, data.transporter_name || null,
+        data.dispatched_at || now(), userId || null, data.notes || null,
+      ]
+    );
+    const exit_id = r.insertId;
+
+    // Stock movement
+    await execute(
+      `INSERT INTO stock_movements (type, product, qty, exit_id, truck_plate, created_at, created_by, notes)
+       VALUES ('adsn_out', ?, ?, ?, ?, ?, ?, ?)`,
+      [adsn.product_name, adsn.peso_kg, exit_id, data.truck_plate || null, now(), userId || null, `Saída ${exit_number} (ADSN ${adsn.adsn_code})`]
+    );
+
+    await ADSN.updateStatus(data.adsn_id, "dispatched");
+    return { id: exit_id, exit_number };
+  },
+  async cancel(id) {
+    const exit = await queryOne("SELECT adsn_id FROM stock_exits WHERE id = ?", [id]);
+    if (!exit) return;
+    // Reverse stock movement (add adjustment)
+    const mv = await queryOne("SELECT product, qty FROM stock_movements WHERE exit_id = ? AND type = 'adsn_out' LIMIT 1", [id]);
+    if (mv) {
+      await execute(
+        `INSERT INTO stock_movements (type, product, qty, created_at, notes)
+         VALUES ('adjustment', ?, ?, ?, ?)`,
+        [mv.product, mv.qty, now(), `Reversão de saída cancelada (exit_id=${id})`]
+      );
+    }
+    await ADSN.updateStatus(exit.adsn_id, "pending");
+    return execute("DELETE FROM stock_exits WHERE id = ?", [id]);
+  },
+};
+
+// Add helper to existing Stock for availability check by product name
+Stock.availableByProductName = async function(productName) {
+  const r = await queryOne(
+    `SELECT COALESCE(SUM(CASE
+       WHEN type IN ('authorization_in','warehouse_in','truck_in') THEN qty
+       WHEN type IN ('adsn_out','warehouse_out','departure','transfer_out','truck_unload') THEN -qty
+       WHEN type = 'adjustment' THEN qty
+       ELSE 0 END), 0) AS available
+     FROM stock_movements WHERE product = ?`,
+    [productName]
+  );
+  return Number(r ? r.available : 0);
+};
+
+// Extended stock queries
+Stock.currentByProduct = async function(filters) {
+  const f = filters || {};
+  const where = [];
+  const params = [];
+  if (f.supplier_id) { where.push("supplier_id = ?"); params.push(f.supplier_id); }
+  if (f.plate) { where.push("truck_plate LIKE ?"); params.push("%" + f.plate + "%"); }
+  if (f.from) { where.push("created_at >= ?"); params.push(f.from); }
+  if (f.to) { where.push("created_at <= ?"); params.push(f.to); }
+  const whereSql = where.length ? " WHERE " + where.join(" AND ") : "";
+  return query(
+    `SELECT product, product_id,
+            SUM(CASE
+              WHEN type IN ('authorization_in','warehouse_in','truck_in') THEN qty
+              WHEN type IN ('adsn_out','warehouse_out','departure','transfer_out','truck_unload') THEN -qty
+              WHEN type = 'adjustment' THEN qty
+              ELSE 0 END) AS qty_available
+     FROM stock_movements ${whereSql}
+     GROUP BY product, product_id
+     HAVING qty_available > 0
+     ORDER BY product`,
+    params
+  );
+};
+
+Stock.movements = async function(filters) {
+  const f = filters || {};
+  const where = [];
+  const params = [];
+  if (f.plate) { where.push("m.truck_plate LIKE ?"); params.push("%" + f.plate + "%"); }
+  if (f.supplier_id) { where.push("m.supplier_id = ?"); params.push(f.supplier_id); }
+  if (f.product_id) { where.push("m.product_id = ?"); params.push(f.product_id); }
+  if (f.type) { where.push("m.type = ?"); params.push(f.type); }
+  if (f.from) { where.push("m.created_at >= ?"); params.push(f.from); }
+  if (f.to) { where.push("m.created_at <= ?"); params.push(f.to); }
+  const whereSql = where.length ? " WHERE " + where.join(" AND ") : "";
+  return query(
+    `SELECT m.*, u.name AS user_name, s.name AS supplier_name,
+            e.entry_number, x.exit_number
+     FROM stock_movements m
+     LEFT JOIN users u ON m.created_by = u.id
+     LEFT JOIN suppliers s ON m.supplier_id = s.id
+     LEFT JOIN stock_entries e ON m.entry_id = e.id
+     LEFT JOIN stock_exits x ON m.exit_id = x.id
+     ${whereSql}
+     ORDER BY m.created_at DESC LIMIT 500`,
+    params
+  );
+};
+
 module.exports = {
   Users, Sessions, Suppliers, Requisitions, Trucks, Cargo,
   Attachments, Transfers, Stock, Audit,
   Products, Warehouses, Departures, Plans,
+  PurchaseOrders, Authorizations, StockEntries, ADSN, StockExits,
 };

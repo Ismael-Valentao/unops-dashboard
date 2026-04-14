@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AQI Operacoes - Purchase Orders</title>
+<link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+<div id="layout"></div>
+<main class="admin-main">
+  <header class="admin-header">
+    <h1>Purchase Orders</h1>
+    <div style="display:flex;gap:.5rem">
+      <label class="btn btn-primary" style="cursor:pointer">
+        📥 Importar Excel (EFP)
+        <input type="file" id="import-file" accept=".xlsx,.xls" style="display:none">
+      </label>
+    </div>
+  </header>
+
+  <section class="admin-section">
+    <div style="display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+      <input type="text" id="f-q" placeholder="Pesquisar nº ou fornecedor..." style="flex:1;min-width:200px;padding:.5rem .75rem;border:1px solid #cbd5e1;border-radius:6px">
+      <select id="f-status" style="padding:.5rem;border:1px solid #cbd5e1;border-radius:6px">
+        <option value="">Todos estados</option>
+        <option value="issued">Emitida</option>
+        <option value="in_pickup">Em levantamento</option>
+        <option value="partial">Parcial</option>
+        <option value="received">Recebida</option>
+        <option value="cancelled">Cancelada</option>
+      </select>
+    </div>
+    <div class="tbl-wrap">
+      <table class="adm-table">
+        <thead><tr>
+          <th>Nº PO</th><th>Data</th><th>Fornecedor</th><th>NUIT</th>
+          <th style="text-align:right">Itens</th><th style="text-align:right">Qtd Total</th>
+          <th style="text-align:right">Recebido</th><th>Estado</th><th></th>
+        </tr></thead>
+        <tbody id="po-body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script src="/static/admin.js"></script>
+<script>
+AdminUI.renderLayout("purchase-orders");
+
+async function load() {
+  const q = document.getElementById("f-q").value.trim();
+  const status = document.getElementById("f-status").value;
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (status) params.set("status", status);
+  const list = await AdminUI.fetchJSON("/admin/api/purchase-orders?" + params);
+  const body = document.getElementById("po-body");
+  if (!list.length) { body.innerHTML = '<tr><td colspan="9" class="empty">Sem POs. Importe um Excel EFP para começar.</td></tr>'; return; }
+  body.innerHTML = list.map((p) =>
+    `<tr>
+      <td><a href="/admin/purchase-orders/${p.id}"><strong>${AdminUI.esc(p.po_number)}</strong></a></td>
+      <td>${p.po_date ? AdminUI.esc(p.po_date.slice(0,10)) : "—"}</td>
+      <td>${AdminUI.esc(p.supplier_name || "—")}</td>
+      <td>${AdminUI.esc(p.supplier_nuit || "—")}</td>
+      <td style="text-align:right">${p.item_count}</td>
+      <td style="text-align:right">${AdminUI.fmt(p.total_qty)}</td>
+      <td style="text-align:right">${AdminUI.fmt(p.total_received)}</td>
+      <td>${AdminUI.statusBadge(p.status)}</td>
+      <td><a class="btn btn-sm" href="/admin/purchase-orders/${p.id}">Ver</a></td>
+    </tr>`
+  ).join("");
+}
+
+document.getElementById("f-q").addEventListener("input", () => {
+  clearTimeout(window._q); window._q = setTimeout(load, 250);
+});
+document.getElementById("f-status").addEventListener("change", load);
+
+document.getElementById("import-file").addEventListener("change", async (e) => {
+  if (!e.target.files.length) return;
+  const fd = new FormData(); fd.append("file", e.target.files[0]);
+  try {
+    const r = await fetch("/admin/api/purchase-orders/import", { method: "POST", body: fd });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "Erro ao importar");
+    alert(`✓ Importado: ${j.created} POs criadas, ${j.skipped} já existiam (${j.total_rows} linhas)`);
+    e.target.value = "";
+    load();
+  } catch (err) { alert("Erro: " + err.message); }
+});
+
+load();
+</script>
+</body>
+</html>

@@ -16,7 +16,7 @@
     <section class="admin-section">
       <div class="tbl-wrap">
         <table class="adm-table">
-          <thead><tr><th>Nome</th><th>Contacto</th><th>Telefone</th><th>Email</th><th>Notas</th><th></th></tr></thead>
+          <thead><tr><th>Nome</th><th>NUIT</th><th>Nº Cliente</th><th>Contacto</th><th>Telefone</th><th>Email</th><th></th></tr></thead>
           <tbody id="sup-body"></tbody>
         </table>
       </div>
@@ -29,6 +29,8 @@
       <form id="form" class="modal-form">
         <input type="hidden" name="id">
         <label>Nome *<input type="text" name="name" required></label>
+        <label>NUIT<input type="text" name="nuit"></label>
+        <label>Nº Cliente<input type="text" name="client_number"></label>
         <label>Pessoa de contacto<input type="text" name="contact_name"></label>
         <label>Telefone<input type="text" name="contact_phone"></label>
         <label>Email<input type="email" name="contact_email"></label>
@@ -45,17 +47,19 @@
       const list = await AdminUI.fetchJSON("/admin/api/suppliers");
       document.getElementById("sup-body").innerHTML = list.map((s) =>
         `<tr><td><strong>${AdminUI.esc(s.name)}</strong></td>
+         <td>${AdminUI.esc(s.nuit || "—")}</td>
+         <td>${AdminUI.esc(s.client_number || "—")}</td>
          <td>${AdminUI.esc(s.contact_name || "—")}</td>
          <td>${AdminUI.esc(s.contact_phone || "—")}</td>
          <td>${AdminUI.esc(s.contact_email || "—")}</td>
-         <td>${AdminUI.esc(s.notes || "")}</td>
          <td><button class="btn btn-sm" onclick='editSupplier(${JSON.stringify(s)})'>Editar</button>
              <button class="btn btn-sm btn-danger" onclick="removeSupplier(${s.id})">x</button></td></tr>`
-      ).join("") || `<tr><td colspan="6" class="empty">Sem fornecedores</td></tr>`;
+      ).join("") || `<tr><td colspan="7" class="empty">Sem fornecedores</td></tr>`;
     }
     function editSupplier(s) {
       const f = document.getElementById("form");
       f.id.value = s.id; f.name.value = s.name;
+      f.nuit.value = s.nuit || ""; f.client_number.value = s.client_number || "";
       f.contact_name.value = s.contact_name || ""; f.contact_phone.value = s.contact_phone || "";
       f.contact_email.value = s.contact_email || ""; f.notes.value = s.notes || "";
       document.getElementById("modal").style.display = "flex";

@@ -1,17 +1,27 @@
 /* ── AQI Admin UI helpers ─────────────────────────────────── */
 window.AdminUI = (function () {
   const NAV = [
-    { key: "dashboard",    label: "Dashboard",    icon: "▣",  href: "/admin" },
-    { key: "trucks",       label: "Camioes",      icon: "🚛", href: "/admin/trucks" },
-    { key: "departures",   label: "Saidas",       icon: "📤", href: "/admin/departures" },
-    { key: "stock",        label: "Stock",        icon: "📦", href: "/admin/stock" },
-    { key: "warehouses",   label: "Armazens",     icon: "🏬", href: "/admin/warehouses" },
-    { key: "products",     label: "Produtos",     icon: "🏷",  href: "/admin/products" },
-    { key: "plans",        label: "Planos",       icon: "🗺",  href: "/admin/plans" },
-    { key: "suppliers",    label: "Fornecedores", icon: "🏭", href: "/admin/suppliers" },
-    { key: "requisitions", label: "Requisicoes",  icon: "📋", href: "/admin/requisitions" },
-    { key: "audit",        label: "Auditoria",    icon: "🔍", href: "/admin/audit", roles: ["superadmin", "admin"] },
-    { key: "users",        label: "Utilizadores", icon: "👥", href: "/admin/users", roles: ["superadmin"] },
+    { key: "dashboard",       label: "Dashboard",    icon: "▣",  href: "/admin" },
+    { section: "Compras" },
+    { key: "purchase-orders", label: "Purchase Orders", icon: "📄", href: "/admin/purchase-orders" },
+    { key: "authorizations",  label: "Autorizações", icon: "📝", href: "/admin/authorizations" },
+    { key: "entries",         label: "Entradas",     icon: "📥", href: "/admin/entries" },
+    { section: "Saídas" },
+    { key: "adsn",            label: "ADSNs",        icon: "🎫", href: "/admin/adsn" },
+    { key: "exits",           label: "Saídas",       icon: "📤", href: "/admin/exits" },
+    { section: "Stock" },
+    { key: "stock",           label: "Stock",        icon: "📦", href: "/admin/stock" },
+    { key: "products",        label: "Produtos",     icon: "🏷",  href: "/admin/products" },
+    { key: "suppliers",       label: "Fornecedores", icon: "🏭", href: "/admin/suppliers" },
+    { section: "Legado" },
+    { key: "trucks",          label: "Camiões",      icon: "🚛", href: "/admin/trucks" },
+    { key: "departures",      label: "Saídas (legado)", icon: "📤", href: "/admin/departures" },
+    { key: "warehouses",      label: "Armazéns",     icon: "🏬", href: "/admin/warehouses" },
+    { key: "plans",           label: "Planos",       icon: "🗺",  href: "/admin/plans" },
+    { key: "requisitions",    label: "Requisições",  icon: "📋", href: "/admin/requisitions" },
+    { section: "Admin" },
+    { key: "audit",           label: "Auditoria",    icon: "🔍", href: "/admin/audit", roles: ["superadmin", "admin"] },
+    { key: "users",           label: "Utilizadores", icon: "👥", href: "/admin/users", roles: ["superadmin"] },
   ];
 
   function esc(s) {
@@ -41,6 +51,8 @@ window.AdminUI = (function () {
       pending: "Pendente", partial: "Parcial", received: "Recebida",
       planned: "Planeada", in_transit: "Em transito", delivered: "Entregue",
       draft: "Rascunho", reserved: "Reservado", executing: "Em execucao", completed: "Completo",
+      issued: "Emitida", in_pickup: "Em levantamento", closed: "Fechada",
+      dispatched: "Despachado",
     };
     return `<span class="badge badge-${status}">${labels[status] || status}</span>`;
   }
@@ -88,11 +100,12 @@ window.AdminUI = (function () {
     const me = await loadMe();
     if (!me) { location.href = "/admin/login"; return; }
 
-    const links = NAV.filter((n) => !n.roles || n.roles.includes(me.role)).map((n) =>
-      `<a href="${n.href}" class="sb-link ${n.key === activeKey ? "active" : ""}">
+    const links = NAV.filter((n) => !n.roles || n.roles.includes(me.role)).map((n) => {
+      if (n.section) return `<div class="sb-section">${esc(n.section)}</div>`;
+      return `<a href="${n.href}" class="sb-link ${n.key === activeKey ? "active" : ""}">
         <span class="sb-icon">${n.icon}</span>${n.label}
-      </a>`
-    ).join("");
+      </a>`;
+    }).join("");
 
     document.getElementById("layout").innerHTML = `
       <aside class="sidebar">

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AQI Operacoes - Autorizações</title>
+<link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+<div id="layout"></div>
+<main class="admin-main">
+  <header class="admin-header">
+    <h1>Autorizações de Levantamento</h1>
+  </header>
+
+  <section class="admin-section">
+    <div style="display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+      <input type="text" id="f-plate" placeholder="Pesquisar por matrícula..." style="flex:1;min-width:200px;padding:.5rem .75rem;border:1px solid #cbd5e1;border-radius:6px">
+      <select id="f-status" style="padding:.5rem;border:1px solid #cbd5e1;border-radius:6px">
+        <option value="">Todos estados</option>
+        <option value="issued">Emitida</option>
+        <option value="in_transit">Em trânsito</option>
+        <option value="received">Recebida</option>
+        <option value="partial">Parcial</option>
+        <option value="cancelled">Cancelada</option>
+      </select>
+    </div>
+    <div class="tbl-wrap">
+      <table class="adm-table">
+        <thead><tr>
+          <th>Nº Autorização</th><th>Data Emissão</th><th>PO</th>
+          <th>Fornecedor</th><th>Matrícula</th><th>Motorista</th>
+          <th style="text-align:right">Qtd Total</th><th>Estado</th><th></th>
+        </tr></thead>
+        <tbody id="auth-body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script src="/static/admin.js"></script>
+<script>
+AdminUI.renderLayout("authorizations");
+
+async function load() {
+  const plate = document.getElementById("f-plate").value.trim();
+  const status = document.getElementById("f-status").value;
+  const params = new URLSearchParams();
+  if (plate) params.set("plate", plate);
+  if (status) params.set("status", status);
+  const list = await AdminUI.fetchJSON("/admin/api/authorizations?" + params);
+  const body = document.getElementById("auth-body");
+  if (!list.length) { body.innerHTML = '<tr><td colspan="9" class="empty">Sem autorizações. Emita uma a partir de uma PO.</td></tr>'; return; }
+  body.innerHTML = list.map((a) =>
+    `<tr>
+      <td><a href="/admin/authorizations/${a.id}"><strong>${AdminUI.esc(a.auth_number)}</strong></a></td>
+      <td>${AdminUI.fmtDate(a.issued_at)}</td>
+      <td><a href="/admin/purchase-orders/${a.po_id}">${AdminUI.esc(a.po_number || "—")}</a></td>
+      <td>${AdminUI.esc(a.supplier_name || "—")}</td>
+      <td><strong>${AdminUI.esc(a.truck_plate)}</strong></td>
+      <td>${AdminUI.esc(a.driver_name)}</td>
+      <td style="text-align:right">${AdminUI.fmt(a.total_qty)}</td>
+      <td>${AdminUI.statusBadge(a.status)}</td>
+      <td><a class="btn btn-sm" href="/admin/authorizations/${a.id}">Ver</a></td>
+    </tr>`
+  ).join("");
+}
+
+document.getElementById("f-plate").addEventListener("input", () => {
+  clearTimeout(window._t); window._t = setTimeout(load, 250);
+});
+document.getElementById("f-status").addEventListener("change", load);
+
+load();
+</script>
+</body>
+</html>

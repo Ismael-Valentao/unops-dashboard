@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AQI Operacoes - Saídas</title>
+<link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+<div id="layout"></div>
+<main class="admin-main">
+  <header class="admin-header">
+    <h1>Saídas de Stock</h1>
+    <button class="btn btn-primary" id="btn-new">+ Nova Saída</button>
+  </header>
+
+  <section class="admin-section">
+    <div style="display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+      <input type="text" id="f-plate" placeholder="Pesquisar por matrícula..." style="flex:1;min-width:200px;padding:.5rem .75rem;border:1px solid #cbd5e1;border-radius:6px">
+    </div>
+    <div class="tbl-wrap">
+      <table class="adm-table">
+        <thead><tr>
+          <th>Nº Saída</th><th>Data</th><th>ADSN</th><th>GTU</th>
+          <th>Destinatário</th><th>Distrito</th><th>Produto</th>
+          <th style="text-align:right">Peso</th><th>Matrícula</th>
+        </tr></thead>
+        <tbody id="body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- New Exit modal -->
+<div class="modal-overlay" id="modal" style="display:none">
+  <div class="modal-card" style="max-width:720px">
+    <div class="modal-head"><h2>Nova Saída</h2><button class="modal-x" data-close>&times;</button></div>
+    <form id="form" class="modal-form">
+      <label>Pesquisar ADSN *
+        <input type="text" id="adsn-search" placeholder="ADSN, GTU, destinatário..." autocomplete="off">
+        <div id="adsn-results" style="max-height:180px;overflow-y:auto;border:1px solid #cbd5e1;border-radius:4px;display:none;margin-top:4px"></div>
+      </label>
+      <div id="adsn-preview" style="display:none;background:#f0f9ff;padding:.75rem;border-radius:6px;margin:.5rem 0;font-size:.9rem"></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        <label>Transportador<input type="text" name="transporter_name"></label>
+        <label>Matrícula<input type="text" name="truck_plate"></label>
+        <label>Motorista<input type="text" name="driver_name"></label>
+        <label>Contacto<input type="text" name="driver_phone"></label>
+      </div>
+      <label>Notas<textarea name="notes" rows="2"></textarea></label>
+
+      <button type="submit" class="btn btn-primary" id="btn-save" disabled>Registar Saída</button>
+    </form>
+  </div>
+</div>
+
+<script src="/static/admin.js"></script>
+<script>
+AdminUI.renderLayout("exits");
+let selectedAdsn = null;
+
+async function load() {
+  const plate = document.getElementById("f-plate").value.trim();
+  const params = new URLSearchParams();
+  if (plate) params.set("plate", plate);
+  const list = await AdminUI.fetchJSON("/admin/api/exits?" + params);
+  const body = document.getElementById("body");
+  if (!list.length) { body.innerHTML = '<tr><td colspan="9" class="empty">Sem saídas registadas</td></tr>'; return; }
+  body.innerHTML = list.map((e) =>
+    `<tr>
+      <td><strong>${AdminUI.esc(e.exit_number)}</strong></td>
+      <td>${AdminUI.fmtDate(e.dispatched_at)}</td>
+      <td><code>${AdminUI.esc(e.adsn_code)}</code></td>
+      <td><code>${AdminUI.esc(e.gtu || "—")}</code></td>
+      <td>${AdminUI.esc(e.destinatario || "—")}</td>
+      <td>${AdminUI.esc(e.distrito || "—")}</td>
+      <td>${AdminUI.esc(e.product_name || "—")}</td>
+      <td style="text-align:right">${AdminUI.fmt(e.peso_kg)}</td>
+      <td>${AdminUI.esc(e.truck_plate || "—")}</td>
+    </tr>`
+  ).join("");
+}
+
+function showSearchResults(results) {
+  const body = document.getElementById("adsn-results");
+  if (!results.length) { body.style.display = "none"; return; }
+  body.style.display = "block";
+  body.innerHTML = results.map((a) =>
+    `<div class="adsn-result" data-id="${a.id}" style="padding:.5rem .75rem;border-bottom:1px solid #f1f5f9;cursor:pointer">
+      <strong>${AdminUI.esc(a.adsn_code)}</strong> — ${AdminUI.esc(a.gtu || "")}<br>
+      <small style="color:#64748b">${AdminUI.esc(a.destinatario || "—")} / ${AdminUI.esc(a.distrito || "—")} — ${AdminUI.esc(a.product_name || "")} ${AdminUI.fmt(a.peso_kg)}kg</small>
+    </div>`
+  ).join("");
+  body.querySelectorAll(".adsn-result").forEach((el) => {
+    el.addEventListener("click", () => selectAdsn(Number(el.dataset.id)));
+  });
+}
+
+async function selectAdsn(id) {
+  const a = await AdminUI.fetchJSON("/admin/api/adsn/" + id);
+  selectedAdsn = a;
+  document.getElementById("adsn-search").value = a.adsn_code;
+  document.getElementById("adsn-results").style.display = "none";
+  document.getElementById("adsn-preview").style.display = "block";
+  document.getElementById("adsn-preview").innerHTML = `
+    <strong>${AdminUI.esc(a.adsn_code)}</strong> — GTU ${AdminUI.esc(a.gtu || "")}<br>
+    Destinatário: <strong>${AdminUI.esc(a.destinatario || "—")}</strong> (${AdminUI.esc(a.distrito || "—")}, ${AdminUI.esc(a.provincia || "")})<br>
+    Produto: ${AdminUI.esc(a.product_name || "")} · Peso: <strong>${AdminUI.fmt(a.peso_kg)} kg</strong>
+  `;
+  document.getElementById("btn-save").disabled = false;
+}
+
+document.getElementById("adsn-search").addEventListener("input", async (e) => {
+  const q = e.target.value.trim();
+  if (q.length < 2) { document.getElementById("adsn-results").style.display = "none"; return; }
+  clearTimeout(window._t);
+  window._t = setTimeout(async () => {
+    const results = await AdminUI.fetchJSON("/admin/api/adsn/search?q=" + encodeURIComponent(q));
+    showSearchResults(results);
+  }, 200);
+});
+
+document.getElementById("btn-new").addEventListener("click", () => {
+  document.getElementById("form").reset();
+  document.getElementById("adsn-preview").style.display = "none";
+  selectedAdsn = null;
+  document.getElementById("btn-save").disabled = true;
+  document.getElementById("modal").style.display = "flex";
+});
+
+document.getElementById("f-plate").addEventListener("input", () => {
+  clearTimeout(window._f); window._f = setTimeout(load, 250);
+});
+
+document.getElementById("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!selectedAdsn) { alert("Selecciona um ADSN"); return; }
+  const f = e.target;
+  try {
+    const r = await AdminUI.fetchJSON("/admin/api/exits", {
+      method: "POST",
+      body: {
+        adsn_id: selectedAdsn.id,
+        transporter_name: f.transporter_name.value,
+        truck_plate: f.truck_plate.value,
+        driver_name: f.driver_name.value,
+        driver_phone: f.driver_phone.value,
+        notes: f.notes.value,
+      },
+    });
+    alert("✓ Saída " + r.exit_number + " registada");
+    document.getElementById("modal").style.display = "none";
+    load();
+  } catch (err) { alert("Erro: " + err.message); }
+});
+
+document.querySelectorAll("[data-close]").forEach((b) =>
+  b.addEventListener("click", () => b.closest(".modal-overlay").style.display = "none")
+);
+
+load();
+</script>
+</body>
+</html>
