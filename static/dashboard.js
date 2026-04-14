@@ -1237,9 +1237,27 @@
       provs.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
     if (provs.includes(curProv)) provSel.value = curProv;
 
-    // Update top gap card
+    // Update top gap card + breakdown by category
     const gap = Math.max(0, t.planned_kg - t.delivered_kg);
     $("#m-gap").textContent = fmtDec(gap);
+
+    const categories = { Sementes: 0, "Químicos": 0, Sacos: 0, Outros: 0 };
+    (pvdData.by_product || []).forEach((p) => {
+      const g = Math.max(0, (p.planned_kg || 0) - (p.delivered_kg || 0));
+      if (g <= 0.5) return;
+      const name = String(p.product || p.product_plan || "").toLowerCase();
+      if (/milho|feij|arroz|maize|bean|rice|sementes?|seed/.test(name)) categories.Sementes += g;
+      else if (/emamectin|imidaclop|mcpa|qu[ií]m|chem/.test(name)) categories["Químicos"] += g;
+      else if (/saco|hermetic/.test(name)) categories.Sacos += g;
+      else categories.Outros += g;
+    });
+    const bd = $("#m-gap-breakdown");
+    if (bd) {
+      const entries = Object.entries(categories).filter(([, v]) => v > 0.5);
+      bd.innerHTML = entries.length
+        ? entries.map(([k, v]) => `<div class="bd-row"><span class="bd-k">${k}</span><span class="bd-v">${fmtDec(v)}</span></div>`).join("")
+        : "";
+    }
 
     // Charts
     renderPvdDistrictChart();
