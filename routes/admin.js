@@ -1094,4 +1094,75 @@ router.get("/api/stock/movements", ah(async (req, res) => {
   res.json(await Stock.movements(req.query));
 }));
 
+// ── Trucks loaded on a given day (default today) ───────────
+router.get("/api/trucks-today", ah(async (req, res) => {
+  const mysql = require("../db/mysql");
+  const date = (req.query.date && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date))
+    ? req.query.date
+    : new Date().toISOString().slice(0, 10);
+
+  const rows = await mysql.query(
+    `SELECT a.id, a.auth_number, a.truck_plate, a.driver_name, a.driver_phone,
+            a.transporter_name, a.status, a.issued_at, a.pickup_date,
+            po.po_number, po.supplier_id, s.name AS supplier_name,
+            (SELECT GROUP_CONCAT(CONCAT(product_name, ' (', qty_to_pickup, ' ', unit, ')') SEPARATOR '; ')
+             FROM pickup_auth_items WHERE auth_id = a.id) AS items_desc,
+            (SELECT COALESCE(SUM(qty_to_pickup),0) FROM pickup_auth_items WHERE auth_id = a.id) AS total_qty,
+            (SELECT COUNT(*) FROM stock_entries WHERE auth_id = a.id) AS entries_count
+     FROM pickup_authorizations a
+     LEFT JOIN purchase_orders po ON a.po_id = po.id
+     LEFT JOIN suppliers s ON po.supplier_id = s.id
+     WHERE DATE(a.issued_at) = ? OR DATE(a.pickup_date) = ?
+     ORDER BY a.issued_at DESC`,
+    [date, date]
+  );
+
+  // Fetch detailed items for category breakdown
+  const authIds = rows.map((r) => r.id);
+  const items = authIds.length
+    ? await mysql.query(
+        `SELECT auth_id, product_name, qty_to_pickup, unit
+         FROM pickup_auth_items WHERE auth_id IN (${authIds.map(() => "?").join(",")})`,
+        authIds
+      )
+    : [];
+
+  // Categorize
+  const cats = { Sementes: 0, "Químicos": 0, Sacos: 0, Outros: 0 };
+  const bySupplier = {};
+  items.forEach((it) => {
+    const q = Number(it.qty_to_pickup) || 0;
+    const name = String(it.product_name || "").toLowerCase();
+    if (/milho|feij|arroz|maize|bean|rice|seed/.test(name)) cats.Sementes += q;
+    else if (/emamectin|imidaclop|mcpa/.test(name)) cats["Químicos"] += q;
+    else if (/saco|hermetic/.test(name)) cats.Sacos += q;
+    else cats.Outros += q;
+  });
+  rows.forEach((r) => {
+    const sup = r.supplier_name || "—";
+    if (!bySupplier[sup]) bySupplier[sup] = { trucks: 0, qty: 0 };
+    bySupplier[sup].trucks++;
+    bySupplier[sup].qty += Number(r.total_qty) || 0;
+  });
+
+  const total_qty = rows.reduce((s, r) => s + (Number(r.total_qty) || 0), 0);
+  res.json({
+    date,
+    trucks: rows,
+    summary: {
+      count: rows.length,
+      total_qty,
+      by_status: {
+        issued:     rows.filter((r) => r.status === "issued").length,
+        in_transit: rows.filter((r) => r.status === "in_transit").length,
+        received:   rows.filter((r) => r.status === "received" || r.entries_count > 0).length,
+        cancelled:  rows.filter((r) => r.status === "cancelled").length,
+      },
+      by_category: cats,
+      by_supplier: Object.entries(bySupplier).map(([name, v]) => ({ supplier: name, ...v }))
+        .sort((a, b) => b.qty - a.qty),
+    },
+  });
+}));
+
 module.exports = router;

@@ -14,6 +14,35 @@
       <span class="admin-sub">Visao geral em tempo real</span>
     </header>
 
+    <!-- 🚛 Camiões Carregados no Dia -->
+    <section class="admin-section" style="border-left:4px solid #0f4c75;background:linear-gradient(to right,#f0f9ff,#fff)">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem;margin-bottom:.75rem">
+        <h2 style="margin:0">🚛 Camiões Carregados</h2>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <label style="font-size:.85rem;color:#475569">Data:</label>
+          <input type="date" id="trucks-today-date" style="padding:.4rem .6rem;border:1px solid #cbd5e1;border-radius:6px">
+          <button id="btn-today" class="btn btn-sm">Hoje</button>
+        </div>
+      </div>
+
+      <div id="tt-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.6rem;margin-bottom:1rem"></div>
+
+      <div class="tbl-wrap">
+        <table class="adm-table" id="tt-table">
+          <thead><tr>
+            <th>Autorização</th><th>Matrícula</th><th>Motorista</th>
+            <th>Fornecedor</th><th>Produtos</th>
+            <th style="text-align:right">Qtd Total</th><th>Estado</th>
+            <th>Emitida</th><th></th>
+          </tr></thead>
+          <tbody id="tt-body"></tbody>
+        </table>
+      </div>
+
+      <div id="tt-suppliers" style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap"></div>
+    </section>
+
+    <h2 style="margin-top:1.5rem">Visão Geral</h2>
     <section class="admin-cards" id="cards">
       <div class="adm-card">
         <div class="adm-card-lbl">Camioes Esperados</div>
@@ -69,6 +98,65 @@
   <script src="/static/admin.js"></script>
   <script>
     AdminUI.renderLayout("dashboard");
+
+    // ── Trucks Today ──
+    const todayStr = () => new Date().toISOString().slice(0, 10);
+    document.getElementById("trucks-today-date").value = todayStr();
+
+    async function loadTrucksToday() {
+      const date = document.getElementById("trucks-today-date").value || todayStr();
+      const d = await AdminUI.fetchJSON("/admin/api/trucks-today?date=" + date);
+      const fmt = AdminUI.fmt, esc = AdminUI.esc;
+
+      const s = d.summary;
+      const cats = s.by_category || {};
+      document.getElementById("tt-summary").innerHTML = `
+        <div class="adm-card"><div class="adm-card-lbl">Camiões</div><div class="adm-card-val">${s.count}</div></div>
+        <div class="adm-card adm-card-blue"><div class="adm-card-lbl">Qtd Total</div><div class="adm-card-val" style="font-size:1.2rem">${fmt(s.total_qty)} kg</div></div>
+        <div class="adm-card adm-card-green"><div class="adm-card-lbl">Sementes</div><div class="adm-card-val" style="font-size:1.1rem">${fmt(cats.Sementes || 0)}</div></div>
+        <div class="adm-card adm-card-amber"><div class="adm-card-lbl">Químicos</div><div class="adm-card-val" style="font-size:1.1rem">${fmt(cats["Químicos"] || 0)}</div></div>
+        <div class="adm-card"><div class="adm-card-lbl">Sacos</div><div class="adm-card-val" style="font-size:1.1rem">${fmt(cats.Sacos || 0)}</div></div>
+        <div class="adm-card"><div class="adm-card-lbl">Recebidos</div><div class="adm-card-val" style="color:#16a34a">${s.by_status.received}</div></div>
+      `;
+
+      const body = document.getElementById("tt-body");
+      if (!d.trucks.length) {
+        body.innerHTML = `<tr><td colspan="9" class="empty">Sem camiões carregados em ${date}</td></tr>`;
+      } else {
+        body.innerHTML = d.trucks.map((t) => {
+          const stateLabel = t.entries_count > 0 ? "Recebido" : t.status;
+          const stateColor = t.entries_count > 0 ? "#16a34a" : (t.status === "cancelled" ? "#dc2626" : "#0f4c75");
+          return `<tr>
+            <td><a href="/admin/authorizations/${t.id}"><strong>${esc(t.auth_number)}</strong></a></td>
+            <td><strong>${esc(t.truck_plate)}</strong></td>
+            <td>${esc(t.driver_name)}<br><small style="color:#64748b">${esc(t.driver_phone || "")}</small></td>
+            <td>${esc(t.supplier_name || "—")}<br><small style="color:#64748b">PO ${esc(t.po_number || "—")}</small></td>
+            <td style="font-size:.82rem">${esc(t.items_desc || "—")}</td>
+            <td style="text-align:right;font-weight:700">${fmt(t.total_qty)}</td>
+            <td><span style="padding:.15rem .5rem;border-radius:4px;font-size:.72rem;font-weight:600;background:${stateColor}1a;color:${stateColor}">${esc(stateLabel)}</span></td>
+            <td>${AdminUI.fmtDate(t.issued_at)}</td>
+            <td><a class="btn btn-sm" href="/admin/authorizations/${t.id}">Ver</a>
+                <a class="btn btn-sm" href="/admin/authorizations/${t.id}/print" target="_blank">🖨️</a></td>
+          </tr>`;
+        }).join("");
+      }
+
+      // By supplier chips
+      document.getElementById("tt-suppliers").innerHTML = (s.by_supplier || []).map((x) =>
+        `<span style="background:#f1f5f9;padding:.3rem .7rem;border-radius:99px;font-size:.78rem;color:#334155">
+          <strong>${esc(x.supplier)}</strong>: ${x.trucks} camião(ões), ${fmt(x.qty)} kg
+        </span>`
+      ).join("");
+    }
+
+    document.getElementById("trucks-today-date").addEventListener("change", loadTrucksToday);
+    document.getElementById("btn-today").addEventListener("click", () => {
+      document.getElementById("trucks-today-date").value = todayStr();
+      loadTrucksToday();
+    });
+
+    loadTrucksToday();
+
     AdminUI.fetchJSON("/admin/api/dashboard").then((d) => {
       document.getElementById("c-expected").textContent = d.trucks.expected;
       document.getElementById("c-arrived").textContent = d.trucks.arrived;
