@@ -266,6 +266,25 @@
     $("#m-verified-pct").textContent = pct + "%";
     $("#m-pending").textContent = fmt(pending);
     $("#m-errors").textContent = fmt(errors);
+
+    // Breakdown da quantidade entregue por categoria
+    const cats = { Sementes: 0, "Químicos": 0, Sacos: 0, Outros: 0 };
+    rows.forEach((r) => {
+      const q = Number(r.delivered_qty) || 0;
+      if (q <= 0) return;
+      const name = String(r.product || "").toLowerCase();
+      if (/milho|feij|arroz|maize|bean|rice|seed/.test(name)) cats.Sementes += q;
+      else if (/emamectin|imidaclop|mcpa/.test(name)) cats["Químicos"] += q;
+      else if (/saco|hermetic/.test(name)) cats.Sacos += q;
+      else cats.Outros += q;
+    });
+    const bdq = $("#m-qty-breakdown");
+    if (bdq) {
+      const entries = Object.entries(cats).filter(([, v]) => v > 0.5);
+      bdq.innerHTML = entries.length
+        ? entries.map(([k, v]) => `<div class="bd-row"><span class="bd-k">${k}</span><span class="bd-v bd-v-blue">${fmtDec(v)}</span></div>`).join("")
+        : "";
+    }
   }
 
   function fmt(n) {
