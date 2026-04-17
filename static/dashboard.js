@@ -745,8 +745,12 @@
   function statusBadge(s) {
     if (s === "Verified")
       return '<span class="badge badge-verified">Verified</span>';
+    if (s === "Partially Verified")
+      return '<span class="badge badge-partial">Partially Verified</span>';
     if (s === "Pending Verification")
       return '<span class="badge badge-pending">Pending</span>';
+    if (s === "Not Reachable")
+      return '<span class="badge badge-unreachable">Not Reachable</span>';
     if (s === "#ERROR!")
       return '<span class="badge badge-error">#ERROR!</span>';
     return esc(s || "—");

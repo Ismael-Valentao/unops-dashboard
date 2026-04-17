@@ -64,6 +64,34 @@ function jsonError(res, status, msg) {
   return res.status(status).json({ error: msg });
 }
 
+// ── MySQL gate: if DB not available, show friendly page instead of crashing ──
+router.use(async (req, res, next) => {
+  try {
+    const { getPool } = require("../db/mysql");
+    const conn = await getPool().getConnection();
+    conn.release();
+    next();
+  } catch (e) {
+    if (req.accepts("html")) {
+      res.status(503).send(`<!doctype html><html><head><meta charset="utf-8"><title>MySQL indisponível</title>
+        <style>body{font-family:system-ui,sans-serif;max-width:640px;margin:4rem auto;padding:2rem;background:#f8fafc}
+          h1{color:#dc2626;margin:0 0 .5rem}code{background:#fff;padding:.15rem .35rem;border-radius:4px;font-size:.85rem}
+          .box{background:#fff;border-left:4px solid #dc2626;padding:1rem 1.25rem;border-radius:6px;margin-top:1rem}</style>
+        </head><body>
+        <h1>⚠️ MySQL indisponível</h1>
+        <p>O sistema interno (<code>/admin/*</code>) precisa de uma base MySQL que não está acessível.</p>
+        <div class="box">
+          <strong>Erro:</strong> ${e.code || e.message}
+        </div>
+        <p style="margin-top:1.25rem">O dashboard público continua a funcionar normalmente.</p>
+        <p><a href="/">← Voltar ao dashboard público</a></p>
+        </body></html>`);
+    } else {
+      res.status(503).json({ error: "MySQL indisponível", code: e.code || e.message });
+    }
+  }
+});
+
 // ── Setup (first time) ──────────────────────────────────────
 router.get("/setup", async (_req, res) => {
   if (!(await auth.setupNeeded())) return res.redirect("/admin/login");
