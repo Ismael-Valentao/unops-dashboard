@@ -251,8 +251,14 @@
     const verified = rows.filter(
       (r) => r.verification_status === "Verified"
     ).length;
+    const partial = rows.filter(
+      (r) => r.verification_status === "Partially Verified"
+    ).length;
     const pending = rows.filter(
       (r) => r.verification_status === "Pending Verification"
+    ).length;
+    const unreachable = rows.filter(
+      (r) => r.verification_status === "Not Reachable"
     ).length;
     const errors = rows.filter(
       (r) => r.verification_status === "#ERROR!"
@@ -264,7 +270,9 @@
     $("#m-packages").textContent = fmt(pkgs);
     // Gap will be updated when PvD loads
     $("#m-verified-pct").textContent = pct + "%";
+    const partEl = $("#m-partial"); if (partEl) partEl.textContent = fmt(partial);
     $("#m-pending").textContent = fmt(pending);
+    const unrEl = $("#m-unreachable"); if (unrEl) unrEl.textContent = fmt(unreachable);
     $("#m-errors").textContent = fmt(errors);
 
     // Breakdown da quantidade entregue por categoria

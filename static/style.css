@@ -248,6 +248,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .card-error .card-value{color:#dc2626}
 .card-gap{border-left-color:#7c3aed}
 .card-gap .card-value{color:#7c3aed}
+.card-partial{border-left-color:#1e40af}
+.card-partial .card-value{color:#1e40af}
+.card-unreachable{border-left-color:#475569}
+.card-unreachable .card-value{color:#475569}
 .card-breakdown{margin-top:.5rem;border-top:1px dashed #e2e8f0;padding-top:.4rem;display:flex;flex-direction:column;gap:.15rem}
 .card-breakdown .bd-row{display:flex;justify-content:space-between;font-size:.72rem;color:#64748b}
 .card-breakdown .bd-k{font-weight:500}
