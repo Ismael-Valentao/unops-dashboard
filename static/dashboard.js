@@ -243,10 +243,17 @@
   }
 
   // ── Metrics ─────────────────────────────────────────────────
+  function isSacoProduct(name) {
+    const l = String(name || "").toLowerCase();
+    return /saco|hermetic/.test(l);
+  }
+
   function renderMetrics() {
     const rows = filteredRows;
     const total = rows.length;
-    const qty = rows.reduce((s, r) => s + (Number(r.delivered_qty) || 0), 0);
+    // Separate kg-based products from unit-based (sacos)
+    const qty = rows.reduce((s, r) => isSacoProduct(r.product) ? s : s + (Number(r.delivered_qty) || 0), 0);
+    const qtySacos = rows.reduce((s, r) => isSacoProduct(r.product) ? s + (Number(r.delivered_qty) || 0) : s, 0);
     const pkgs = rows.reduce((s, r) => s + (Number(r.packages) || 0), 0);
     const verified = rows.filter(
       (r) => r.verification_status === "Verified"
@@ -267,6 +274,7 @@
 
     $("#m-total").textContent = fmt(total);
     $("#m-qty").textContent = fmtDec(qty);
+    const sacosEl = $("#m-qty-sacos"); if (sacosEl) sacosEl.textContent = fmt(qtySacos);
     $("#m-packages").textContent = fmt(pkgs);
     // Gap will be updated when PvD loads
     $("#m-verified-pct").textContent = pct + "%";
@@ -275,16 +283,16 @@
     const unrEl = $("#m-unreachable"); if (unrEl) unrEl.textContent = fmt(unreachable);
     $("#m-errors").textContent = fmt(errors);
 
-    // Breakdown da quantidade entregue por categoria
-    const cats = { Sementes: 0, "Químicos": 0, Sacos: 0, Outros: 0 };
+    // Breakdown da quantidade entregue (só sementes + químicos + outros em kg — sacos vão no card separado)
+    const cats = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Outros (kg)": 0 };
     rows.forEach((r) => {
       const q = Number(r.delivered_qty) || 0;
       if (q <= 0) return;
       const name = String(r.product || "").toLowerCase();
-      if (/milho|feij|arroz|maize|bean|rice|seed/.test(name)) cats.Sementes += q;
-      else if (/emamectin|imidaclop|mcpa/.test(name)) cats["Químicos"] += q;
-      else if (/saco|hermetic/.test(name)) cats.Sacos += q;
-      else cats.Outros += q;
+      if (/milho|feij|arroz|maize|bean|rice|seed/.test(name)) cats["Sementes (kg)"] += q;
+      else if (/emamectin|imidaclop|mcpa/.test(name)) cats["Químicos (kg)"] += q;
+      else if (/saco|hermetic/.test(name)) { /* skip — shown separately */ }
+      else cats["Outros (kg)"] += q;
     });
     const bdq = $("#m-qty-breakdown");
     if (bdq) {
@@ -1269,18 +1277,26 @@
     if (provs.includes(curProv)) provSel.value = curProv;
 
     // Update top gap card + breakdown by category
-    const gap = Math.max(0, t.planned_kg - t.delivered_kg);
-    $("#m-gap").textContent = fmtDec(gap);
-
-    const categories = { Sementes: 0, "Químicos": 0, Sacos: 0, Outros: 0 };
+    // Main value excludes Sacos (counted in units, not kg) for coherence
+    let gapKg = 0, gapSacos = 0;
     (pvdData.by_product || []).forEach((p) => {
       const g = Math.max(0, (p.planned_kg || 0) - (p.delivered_kg || 0));
       if (g <= 0.5) return;
       const name = String(p.product || p.product_plan || "").toLowerCase();
-      if (/milho|feij|arroz|maize|bean|rice|sementes?|seed/.test(name)) categories.Sementes += g;
-      else if (/emamectin|imidaclop|mcpa|qu[ií]m|chem/.test(name)) categories["Químicos"] += g;
-      else if (/saco|hermetic/.test(name)) categories.Sacos += g;
-      else categories.Outros += g;
+      if (/saco|hermetic/.test(name)) gapSacos += g;
+      else gapKg += g;
+    });
+    $("#m-gap").textContent = fmtDec(gapKg);
+
+    const categories = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (un)": 0, "Outros (kg)": 0 };
+    (pvdData.by_product || []).forEach((p) => {
+      const g = Math.max(0, (p.planned_kg || 0) - (p.delivered_kg || 0));
+      if (g <= 0.5) return;
+      const name = String(p.product || p.product_plan || "").toLowerCase();
+      if (/milho|feij|arroz|maize|bean|rice|sementes?|seed/.test(name)) categories["Sementes (kg)"] += g;
+      else if (/emamectin|imidaclop|mcpa|qu[ií]m|chem/.test(name)) categories["Químicos (kg)"] += g;
+      else if (/saco|hermetic/.test(name)) categories["Sacos (un)"] += g;
+      else categories["Outros (kg)"] += g;
     });
     const bd = $("#m-gap-breakdown");
     if (bd) {
