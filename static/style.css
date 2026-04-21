@@ -34,9 +34,9 @@ body.view-updated #updated-badge{
   text-transform:uppercase;
 }
 body.view-updated::before{
-  content:"Está a ver o PLANEAMENTO REVISTO (Qtd Actualizada). Os valores aqui substituem o plano original quando o extensionista actualizou a quantidade.";
+  content:"Está a ver o plano actualizado (última versão partilhada pela UNOPS)";
   display:block;background:#fffbeb;color:#78350f;padding:.4rem 1.5rem;
-  font-size:.72rem;font-weight:500;border-bottom:1px solid #fbbf24;text-align:center;
+  font-size:.72rem;font-weight:600;border-bottom:1px solid #fbbf24;text-align:center;
 }
 @media(max-width:1400px){body.view-updated::before{padding:.35rem .75rem;font-size:.68rem}}
 
