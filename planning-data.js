@@ -16,8 +16,16 @@ const PRODUCT_MAP = {
   "Emamectin":        "Emamectin",
   "Imadocloprid":     "Imidacloprid",
   "MCPA":             "MCPA",
-  "Sacos Hermeticos": "Hermetic Bags",
+  "Sacos Hermeticos": "Hermetic bags (un)",
 };
+
+// Saco (hermetic bag) weight — each unit weighs 0.3 kg.
+// Planning stores count (Peso do Volume Kg = nº unidades); we multiply to get real kg.
+const SACO_KG_PER_UNIT = 0.3;
+function isSacoProduct(name) {
+  const l = String(name || "").toLowerCase();
+  return l.includes("saco") || l.includes("hermetic");
+}
 
 // Seed segment — used to compute the seed-only execution rate independently
 // of any product filter the user might apply.
@@ -61,17 +69,24 @@ function load() {
   const ws = wb.Sheets[wb.SheetNames[0]];
   const raw = XLSX.utils.sheet_to_json(ws);
 
-  const rows = raw.map((r) => ({
-    product_plan:  (r["Referencia"] || "").trim(),
-    product_delivery: PRODUCT_MAP[(r["Referencia"] || "").trim()] || (r["Referencia"] || "").trim(),
-    province:      (r["Morada Destino (Provincia)"] || "").trim(),
-    district:      normalizeDistrict(r["Distrito"]),
-    district_raw:  (r["Distrito"] || "").trim(),
-    beneficiary:   (r["Nome Destino "] || r["Nome Destino"] || "").trim(),
-    volumes:       Number(r["Nº Volume novo"]) || 0,
-    weight_kg:     Number(r["Peso do Volume Kg"]) || 0,
-    posto:         (r["Posto Administrativo"] || "").trim(),
-  })).filter((r) => r.weight_kg > 0);
+  const rows = raw.map((r) => {
+    const plan = (r["Referencia"] || "").trim();
+    const stored = Number(r["Peso do Volume Kg"]) || 0;
+    // Sacos: stored value is count → convert to kg
+    const weight_kg = isSacoProduct(plan) ? stored * SACO_KG_PER_UNIT : stored;
+    return {
+      product_plan:  plan,
+      product_delivery: PRODUCT_MAP[plan] || plan,
+      province:      (r["Morada Destino (Provincia)"] || "").trim(),
+      district:      normalizeDistrict(r["Distrito"]),
+      district_raw:  (r["Distrito"] || "").trim(),
+      beneficiary:   (r["Nome Destino "] || r["Nome Destino"] || "").trim(),
+      volumes:       Number(r["Nº Volume novo"]) || 0,
+      weight_kg,
+      weight_units:  isSacoProduct(plan) ? stored : null,
+      posto:         (r["Posto Administrativo"] || "").trim(),
+    };
+  }).filter((r) => r.weight_kg > 0);
 
   // Aggregations
   const byDistrict = {};

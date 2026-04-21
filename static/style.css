@@ -17,6 +17,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .subtitle{font-size:0.85rem;opacity:.8}
 .header-nav-link{margin-left:.5rem;color:#fff;background:rgba(255,255,255,.15);padding:.25rem .7rem;border-radius:6px;font-size:.75rem;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,.3);white-space:nowrap}
 .header-nav-link:hover{background:rgba(255,255,255,.25)}
+.header-nav-updated{background:rgba(251,191,36,.35);border-color:rgba(251,191,36,.8);color:#fffbeb}
+.header-nav-updated:hover{background:rgba(251,191,36,.55)}
+
+/* ── Vista ACTUALIZADA (Qtd Actualizada) ─────────────────── */
+body.view-updated .header{
+  background:linear-gradient(135deg,#7c2d12 0%,#b45309 50%,#ca8a04 100%);
+  box-shadow:0 2px 12px rgba(180,83,9,.35);
+  border-bottom:3px solid #fbbf24;
+}
+body.view-updated #updated-badge{
+  display:inline-block;margin-left:.55rem;padding:.15rem .55rem;
+  background:#fef3c7;color:#78350f;border-radius:4px;
+  font-size:.65rem;font-weight:800;letter-spacing:.08em;
+  vertical-align:middle;border:1px solid #fbbf24;
+  text-transform:uppercase;
+}
+body.view-updated::before{
+  content:"Está a ver o PLANEAMENTO REVISTO (Qtd Actualizada). Os valores aqui substituem o plano original quando o extensionista actualizou a quantidade.";
+  display:block;background:#fffbeb;color:#78350f;padding:.4rem 1.5rem;
+  font-size:.72rem;font-weight:500;border-bottom:1px solid #fbbf24;text-align:center;
+}
+@media(max-width:1400px){body.view-updated::before{padding:.35rem .75rem;font-size:.68rem}}
 
 /* Compact header on mid-size screens to prevent wrapping */
 @media(max-width:1400px){

@@ -23,8 +23,14 @@ const PRODUCT_MAP = {
   "Emamectin":        "Emamectin",
   "Imadocloprid":     "Imidacloprid",
   "MCPA":             "MCPA",
-  "Sacos Hermeticos": "Hermetic Bags",
+  "Sacos Hermeticos": "Hermetic bags (un)",
 };
+
+const SACO_KG_PER_UNIT = 0.3;
+function isSacoProduct(name) {
+  const l = String(name || "").toLowerCase();
+  return l.includes("saco") || l.includes("hermetic");
+}
 const SEED_PRODUCTS = new Set(["Milho", "Feijão", "Arroz"]);
 function isSeedProduct(planName) { return SEED_PRODUCTS.has((planName || "").trim()); }
 const PRODUCT_MAP_REV = {};
@@ -69,16 +75,19 @@ function load() {
   const raw = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
   const rows = raw.map((r) => {
-    const qtdAct = parseQty(r["Qtd Actualizada"]);
-    const pesoOrig = parseQty(r["Peso do Volume Kg"]);
-    // If Qtd Actualizada is explicitly provided (including 0), use it.
-    // Only fall back to Peso do Volume Kg when Qtd Actualizada cell is empty.
+    const prodPlan = String(r["Referencia"] || "").trim();
+    const isSaco = isSacoProduct(prodPlan);
+    const qtdActRaw = parseQty(r["Qtd Actualizada"]);
+    const pesoOrigRaw = parseQty(r["Peso do Volume Kg"]);
     const hasUpdatedCol = r["Qtd Actualizada"] !== "" && r["Qtd Actualizada"] !== null && r["Qtd Actualizada"] !== undefined;
+    // Convert sacos from count to kg (0.3 kg/un)
+    const qtdAct = isSaco ? qtdActRaw * SACO_KG_PER_UNIT : qtdActRaw;
+    const pesoOrig = isSaco ? pesoOrigRaw * SACO_KG_PER_UNIT : pesoOrigRaw;
     const weight_kg = hasUpdatedCol ? qtdAct : pesoOrig;
 
     return {
-      product_plan:     String(r["Referencia"] || "").trim(),
-      product_delivery: PRODUCT_MAP[String(r["Referencia"] || "").trim()] || String(r["Referencia"] || "").trim(),
+      product_plan:     prodPlan,
+      product_delivery: PRODUCT_MAP[prodPlan] || prodPlan,
       province:         String(r["Morada Destino (Provincia)"] || "").trim(),
       district:         normalizeDistrict(r["Distrito"]),
       district_raw:     String(r["Distrito"] || "").trim(),

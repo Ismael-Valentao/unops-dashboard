@@ -80,6 +80,14 @@ function parseCSV(text) {
       row.packages = parseFloat(row.packages) || 0;
       row.delivered_qty = parseFloat(row.delivered_qty) || 0;
 
+      // Convert Hermetic Bags from units (un) to kg (0.3 kg/un) so everything
+      // aggregates consistently in kg. Keep the original count for reference.
+      const lowerProd = String(row.product || "").toLowerCase();
+      if (lowerProd.includes("hermetic") || lowerProd.includes("saco")) {
+        row.delivered_qty_units = row.delivered_qty;
+        row.delivered_qty = +(row.delivered_qty * 0.3).toFixed(2);
+      }
+
       // Normalise backslashes in delivery note number
       row.delivery_note_number = row.delivery_note_number.replace(/\\/g, "/");
 

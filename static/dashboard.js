@@ -251,17 +251,12 @@
   }
 
   // ── Metrics ─────────────────────────────────────────────────
-  function isSacoProduct(name) {
-    const l = String(name || "").toLowerCase();
-    return /saco|hermetic/.test(l);
-  }
-
+  // Sacos herméticos are pre-converted to kg at parse time (0.3 kg/un) so we
+  // simply aggregate everything as kg here.
   function renderMetrics() {
     const rows = filteredRows;
     const total = rows.length;
-    // Separate kg-based products from unit-based (sacos)
-    const qty = rows.reduce((s, r) => isSacoProduct(r.product) ? s : s + (Number(r.delivered_qty) || 0), 0);
-    const qtySacos = rows.reduce((s, r) => isSacoProduct(r.product) ? s + (Number(r.delivered_qty) || 0) : s, 0);
+    const qty = rows.reduce((s, r) => s + (Number(r.delivered_qty) || 0), 0);
     const pkgs = rows.reduce((s, r) => s + (Number(r.packages) || 0), 0);
     const verified = rows.filter(
       (r) => r.verification_status === "Verified"
@@ -282,7 +277,6 @@
 
     $("#m-total").textContent = fmt(total);
     $("#m-qty").textContent = fmtDec(qty);
-    const sacosEl = $("#m-qty-sacos"); if (sacosEl) sacosEl.textContent = fmt(qtySacos);
     $("#m-packages").textContent = fmt(pkgs);
     // Gap will be updated when PvD loads
     $("#m-verified-pct").textContent = pct + "%";
@@ -291,15 +285,16 @@
     const unrEl = $("#m-unreachable"); if (unrEl) unrEl.textContent = fmt(unreachable);
     $("#m-errors").textContent = fmt(errors);
 
-    // Breakdown da quantidade entregue (só sementes + químicos + outros em kg — sacos vão no card separado)
-    const cats = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Outros (kg)": 0 };
+    // Breakdown da quantidade entregue por categoria — tudo em kg
+    // (sacos herméticos já convertidos no backend: 0.3 kg/un)
+    const cats = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (kg)": 0, "Outros (kg)": 0 };
     rows.forEach((r) => {
       const q = Number(r.delivered_qty) || 0;
       if (q <= 0) return;
       const name = String(r.product || "").toLowerCase();
       if (/milho|feij|arroz|maize|bean|rice|seed/.test(name)) cats["Sementes (kg)"] += q;
       else if (/emamectin|imidaclop|mcpa/.test(name)) cats["Químicos (kg)"] += q;
-      else if (/saco|hermetic/.test(name)) { /* skip — shown separately */ }
+      else if (/saco|hermetic/.test(name)) cats["Sacos (kg)"] += q;
       else cats["Outros (kg)"] += q;
     });
     const bdq = $("#m-qty-breakdown");
@@ -1285,26 +1280,18 @@
       provs.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
     if (provs.includes(curProv)) provSel.value = curProv;
 
-    // Update top gap card + breakdown by category
-    // Main value excludes Sacos (counted in units, not kg) for coherence
-    let gapKg = 0, gapSacos = 0;
-    (pvdData.by_product || []).forEach((p) => {
-      const g = Math.max(0, (p.planned_kg || 0) - (p.delivered_kg || 0));
-      if (g <= 0.5) return;
-      const name = String(p.product || p.product_plan || "").toLowerCase();
-      if (/saco|hermetic/.test(name)) gapSacos += g;
-      else gapKg += g;
-    });
-    $("#m-gap").textContent = fmtDec(gapKg);
+    // Update top gap card — tudo em kg (sacos já convertidos 0.3 kg/un)
+    const gap = Math.max(0, t.planned_kg - t.delivered_kg);
+    $("#m-gap").textContent = fmtDec(gap);
 
-    const categories = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (un)": 0, "Outros (kg)": 0 };
+    const categories = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (kg)": 0, "Outros (kg)": 0 };
     (pvdData.by_product || []).forEach((p) => {
       const g = Math.max(0, (p.planned_kg || 0) - (p.delivered_kg || 0));
       if (g <= 0.5) return;
       const name = String(p.product || p.product_plan || "").toLowerCase();
       if (/milho|feij|arroz|maize|bean|rice|sementes?|seed/.test(name)) categories["Sementes (kg)"] += g;
       else if (/emamectin|imidaclop|mcpa|qu[ií]m|chem/.test(name)) categories["Químicos (kg)"] += g;
-      else if (/saco|hermetic/.test(name)) categories["Sacos (un)"] += g;
+      else if (/saco|hermetic/.test(name)) categories["Sacos (kg)"] += g;
       else categories["Outros (kg)"] += g;
     });
     const bd = $("#m-gap-breakdown");
@@ -1736,24 +1723,46 @@
     const opsLink = $("#ops-link");
     const cardErrors = $("#card-errors");
     if (IS_UPDATED) {
-      if (subtitle) subtitle.textContent = "📝 Plano ACTUALIZADO (Qtd Actualizada)";
+      document.body.classList.add("view-updated");
+      if (subtitle) subtitle.textContent = "Plano Revisto — Qtd Actualizada pelos extensionistas";
       if (opsLink) opsLink.style.display = "none";
       if (cardErrors) cardErrors.style.display = "none";
-      // Add a banner badge to the title area
-      const title = document.querySelector("h1") || document.querySelector(".header-title");
-      if (title && !document.getElementById("updated-banner")) {
-        const b = document.createElement("span");
-        b.id = "updated-banner";
-        b.textContent = "ACTUALIZADO";
-        b.style.cssText = "display:inline-block;margin-left:.6rem;padding:.2rem .6rem;background:#fef3c7;color:#92400e;border-radius:4px;font-size:.7rem;font-weight:700;letter-spacing:.05em;vertical-align:middle;border:1px solid #f59e0b";
-        title.appendChild(b);
+      // Add navigation link back to original view
+      const hl = document.querySelector(".header-left");
+      if (hl && !document.getElementById("orig-link")) {
+        const a = document.createElement("a");
+        a.id = "orig-link";
+        a.href = "/";
+        a.className = "header-nav-link";
+        a.textContent = "← Vista Original";
+        hl.appendChild(a);
       }
+      // Update page title
+      const t = document.querySelector("h1.logo");
+      if (t && !t.dataset.updatedAdded) {
+        const badge = document.createElement("span");
+        badge.id = "updated-badge";
+        badge.textContent = "ACTUALIZADO";
+        t.appendChild(badge);
+        t.dataset.updatedAdded = "1";
+      }
+      document.title = "AQI Control File — Plano Actualizado";
     } else if (isPublic) {
       if (subtitle) subtitle.textContent = "Delivery Monitoring Dashboard";
       // Show "Operations View" link for internal team
       if (opsLink) opsLink.style.display = "inline-block";
       // Hide error count card from public visitors
       if (cardErrors) cardErrors.style.display = "none";
+      // Add link to updated view
+      const hl = document.querySelector(".header-left");
+      if (hl && !document.getElementById("upd-link")) {
+        const a = document.createElement("a");
+        a.id = "upd-link";
+        a.href = "/updated";
+        a.className = "header-nav-link header-nav-updated";
+        a.textContent = "📝 Vista Actualizada";
+        hl.appendChild(a);
+      }
     } else {
       if (subtitle) subtitle.textContent = "Operacoes - Monitoria Interna";
       // Hide "Operations View" since we're already there
