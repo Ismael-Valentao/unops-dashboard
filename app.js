@@ -7,6 +7,8 @@ const { parse } = require("csv-parse/sync");
 const excel = require("./excel-engine");
 const snapDb = require("./snapshot-db");
 const planning = require("./planning-data");
+const planningUpdated = require("./planning-data-updated");
+function pickPlanning(req) { return req.query.updated === "1" ? planningUpdated : planning; }
 const mysqlDb = require("./db/mysql");
 const auth = require("./auth");
 const adminRouter = require("./routes/admin");
@@ -140,6 +142,11 @@ app.get("/", (_req, res) => {
 
 // Operations team view — same dashboard with verification/errors section
 app.get("/operations/dashboard", (_req, res) => {
+  res.sendFile(path.join(__dirname, "templates", "index.html"));
+});
+
+// Dashboard usando o planeamento ACTUALIZADO (Qtd Actualizada)
+app.get("/updated", (_req, res) => {
   res.sendFile(path.join(__dirname, "templates", "index.html"));
 });
 
@@ -478,8 +485,8 @@ app.get("/api/ceo-overview", (_req, res) => {
 });
 
 // ── Planned vs Delivered endpoints ────────────────────────────
-app.get("/api/planning-geography", (_req, res) => {
-  res.json(planning.getGeography());
+app.get("/api/planning-geography", (req, res) => {
+  res.json(pickPlanning(req).getGeography());
 });
 
 app.get("/api/planned-vs-delivered", (req, res) => {
@@ -494,9 +501,10 @@ app.get("/api/planned-vs-delivered", (req, res) => {
   else if (product) rows = rows.filter((r) => r.product === product);
 
   const seedsFilter = seeds_only === "1";
-  const result = planning.buildComparison(rows, { province, district, product: seedsFilter ? undefined : product, seedsOnly: seedsFilter });
+  const plan = pickPlanning(req);
+  const result = plan.buildComparison(rows, { province, district, product: seedsFilter ? undefined : product, seedsOnly: seedsFilter });
   if (!result) return res.status(500).json({ error: "Planning data not loaded" });
-  result.totals_seeds = planning.buildSeedsTotals(rowsNoProduct, { province, district });
+  result.totals_seeds = plan.buildSeedsTotals(rowsNoProduct, { province, district });
   res.json(result);
 });
 
@@ -725,6 +733,7 @@ async function main() {
   // Init modules
   snapDb.init();
   planning.load();
+  planningUpdated.load();
 
   // Try MySQL — but don't crash the app if it's not available (admin will be disabled)
   try {

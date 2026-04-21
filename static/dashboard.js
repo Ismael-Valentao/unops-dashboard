@@ -129,9 +129,17 @@
   // Planning geography (provinces + districts)
   let planGeo = { provinces: [], districtsByProvince: {} };
 
+  // Detect /updated route → use "Qtd Actualizada" planning data
+  const IS_UPDATED = location.pathname === "/updated" || location.pathname.startsWith("/updated/");
+  const PLAN_PARAM = IS_UPDATED ? "updated=1" : "";
+  const addPlanParam = (url) => {
+    if (!PLAN_PARAM) return url;
+    return url + (url.includes("?") ? "&" : "?") + PLAN_PARAM;
+  };
+
   async function loadPlanningGeography() {
     try {
-      const res = await fetch("/api/planning-geography");
+      const res = await fetch(addPlanParam("/api/planning-geography"));
       if (res.ok) planGeo = await res.json();
     } catch (e) { console.warn("Geography load error:", e); }
   }
@@ -1201,6 +1209,7 @@
       if (dist) params.set("district", dist);
       if (prod && prod !== "__seeds__") params.set("product", prod);
       if (prod === "__seeds__") params.set("seeds_only", "1");
+      if (IS_UPDATED) params.set("updated", "1");
       const qs = params.toString();
       const res = await fetch("/api/planned-vs-delivered" + (qs ? "?" + qs : ""));
       if (!res.ok) return;
@@ -1726,7 +1735,20 @@
     const subtitle = $("#header-subtitle");
     const opsLink = $("#ops-link");
     const cardErrors = $("#card-errors");
-    if (isPublic) {
+    if (IS_UPDATED) {
+      if (subtitle) subtitle.textContent = "📝 Plano ACTUALIZADO (Qtd Actualizada)";
+      if (opsLink) opsLink.style.display = "none";
+      if (cardErrors) cardErrors.style.display = "none";
+      // Add a banner badge to the title area
+      const title = document.querySelector("h1") || document.querySelector(".header-title");
+      if (title && !document.getElementById("updated-banner")) {
+        const b = document.createElement("span");
+        b.id = "updated-banner";
+        b.textContent = "ACTUALIZADO";
+        b.style.cssText = "display:inline-block;margin-left:.6rem;padding:.2rem .6rem;background:#fef3c7;color:#92400e;border-radius:4px;font-size:.7rem;font-weight:700;letter-spacing:.05em;vertical-align:middle;border:1px solid #f59e0b";
+        title.appendChild(b);
+      }
+    } else if (isPublic) {
       if (subtitle) subtitle.textContent = "Delivery Monitoring Dashboard";
       // Show "Operations View" link for internal team
       if (opsLink) opsLink.style.display = "inline-block";
