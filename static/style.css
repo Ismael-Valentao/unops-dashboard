@@ -39,9 +39,9 @@ body.view-updated .header{
 .updates-panel{animation:fadeIn .15s ease-in}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 .updates-note{font-size:.82rem;color:#64748b;margin-bottom:.75rem;font-style:italic}
-#upd-prov-table th.grp-grey{background:#f1f5f9;color:#475569}
-#upd-prov-table th.grp-blue{background:#dbeafe;color:#1e40af}
-#upd-prov-table th.grp-amber{background:#fef3c7;color:#92400e}
+#upd-prov-table th.grp-grey{background:#f1f5f9;color:#475569;text-align:center}
+#upd-prov-table th.grp-blue{background:#dbeafe;color:#1e40af;text-align:center}
+#upd-prov-table th.grp-amber{background:#fef3c7;color:#92400e;text-align:center}
 #upd-prov-table td.grp-grey{background:#f8fafc}
 #upd-prov-table td.grp-blue{background:#eff6ff}
 #upd-prov-table tr.upd-total-row{background:#fef9c3 !important;font-weight:700}

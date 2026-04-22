@@ -319,15 +319,15 @@
       const varColor = (v) => v > 0 ? "#16a34a" : v < 0 ? "#dc2626" : "#64748b";
       const tr = [
         `<td><strong>${esc(p.province)}</strong></td>`,
-        `<td class="grp-grey">${fmt(p.antes.kit1)}</td>`,
-        `<td class="grp-grey">${fmt(p.antes.kit2)}</td>`,
-        `<td class="grp-grey"><strong>${fmt(p.antes.total)}</strong></td>`,
-        `<td class="grp-blue">${fmt(p.depois.kit1)}</td>`,
-        `<td class="grp-blue">${fmt(p.depois.kit2)}</td>`,
-        `<td class="grp-blue"><strong>${fmt(p.depois.total)}</strong></td>`,
-        `<td style="color:${varColor(p.variacao.kit1)};font-weight:600">${fmtSigned(p.variacao.kit1)}</td>`,
-        `<td style="color:${varColor(p.variacao.kit2)};font-weight:600">${fmtSigned(p.variacao.kit2)}</td>`,
-        `<td style="color:${varColor(p.variacao.total)};font-weight:700">${fmtSigned(p.variacao.total)}</td>`,
+        `<td class="num grp-grey">${fmt(p.antes.kit1)}</td>`,
+        `<td class="num grp-grey">${fmt(p.antes.kit2)}</td>`,
+        `<td class="num grp-grey"><strong>${fmt(p.antes.total)}</strong></td>`,
+        `<td class="num grp-blue">${fmt(p.depois.kit1)}</td>`,
+        `<td class="num grp-blue">${fmt(p.depois.kit2)}</td>`,
+        `<td class="num grp-blue"><strong>${fmt(p.depois.total)}</strong></td>`,
+        `<td class="num" style="color:${varColor(p.variacao.kit1)};font-weight:600">${fmtSigned(p.variacao.kit1)}</td>`,
+        `<td class="num" style="color:${varColor(p.variacao.kit2)};font-weight:600">${fmtSigned(p.variacao.kit2)}</td>`,
+        `<td class="num" style="color:${varColor(p.variacao.total)};font-weight:700">${fmtSigned(p.variacao.total)}</td>`,
       ].join("");
       return `<tr class="${p.isTotal ? "upd-total-row" : ""}">${tr}</tr>`;
     }).join("");
