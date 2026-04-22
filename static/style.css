@@ -166,8 +166,13 @@ body.view-updated::before{
 .mini-table tbody td{padding:.35rem .5rem;border-bottom:1px solid #f1f5f9}
 .mini-table tbody tr:hover{background:#f0f9ff}
 
-/* Numeric column alignment — header matches right-aligned data cells */
-th.num, #data-table th.num, .pvd-table th.num, .mini-table th.num, .verify-table th.num, .adm-table th.num{
+/* Numeric column alignment — header + cells both right-aligned */
+th.num, td.num,
+#data-table th.num, #data-table td.num,
+.pvd-table th.num, .pvd-table td.num,
+.mini-table th.num, .mini-table td.num,
+.verify-table th.num, .verify-table td.num,
+.adm-table th.num, .adm-table td.num{
   text-align:right !important;
 }
 

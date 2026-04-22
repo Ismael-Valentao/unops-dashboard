@@ -906,7 +906,7 @@
               return `<td style="text-align:right">${fmtDec(Number(raw) || 0)}</td>`;
             }
             if (col.type === "badge") {
-              return `<td>${statusBadge(raw)}</td>`;
+              return `<td class="num">${statusBadge(raw)}</td>`;
             }
             if (col.type === "notes") {
               const links = [r.delivery_note_link, r.delivery_note_link2, r.delivery_note_link3]
@@ -1432,12 +1432,12 @@
         const rank = i + 1;
         const gapColor = d.gap_kg > 50000 ? "#dc2626" : d.gap_kg > 10000 ? "#d97706" : "#16a34a";
         return `<tr>
-          <td style="font-weight:700;color:${rank <= 2 ? "#dc2626" : rank <= 4 ? "#d97706" : "#64748b"}">${rank}</td>
+          <td class="num" style="font-weight:700;color:${rank <= 2 ? "#dc2626" : rank <= 4 ? "#d97706" : "#64748b"}">${rank}</td>
           <td style="font-weight:600">${esc(d.province)}</td>
-          <td style="text-align:right">${fmtDec(d.planned_kg)}</td>
-          <td style="text-align:right">${fmtDec(d.delivered_kg)}</td>
-          <td style="text-align:right;font-weight:700;color:${gapColor}">${fmtDec(d.gap_kg)}</td>
-          <td style="text-align:right;font-weight:700;color:${d.pct >= 95 ? "#16a34a" : d.pct > 0 ? "#d97706" : "#dc2626"}">${d.pct}%</td>
+          <td class="num">${fmtDec(d.planned_kg)}</td>
+          <td class="num">${fmtDec(d.delivered_kg)}</td>
+          <td class="num" style="font-weight:700;color:${gapColor}">${fmtDec(d.gap_kg)}</td>
+          <td class="num" style="font-weight:700;color:${d.pct >= 95 ? "#16a34a" : d.pct > 0 ? "#d97706" : "#dc2626"}">${d.pct}%</td>
         </tr>`;
       })
       .join("");
@@ -1463,13 +1463,13 @@
       .map((d, i) => {
         const rank = i + 1;
         return `<tr>
-        <td style="font-weight:700;color:${rank <= 3 ? "#dc2626" : rank <= 10 ? "#d97706" : "#64748b"}">${rank}</td>
+        <td class="num" style="font-weight:700;color:${rank <= 3 ? "#dc2626" : rank <= 10 ? "#d97706" : "#64748b"}">${rank}</td>
         <td style="font-weight:600">${esc(d.district)}</td>
         <td>${esc(d.province)}</td>
-        <td style="text-align:right">${fmtDec(d.planned_kg)}</td>
-        <td style="text-align:right">${fmtDec(d.delivered_kg)}</td>
-        <td style="text-align:right;font-weight:700;color:${d.pct >= 95 ? "#16a34a" : d.pct > 0 ? "#d97706" : "#dc2626"}">${d.pct}%</td>
-        <td>${pvdStatusBadge(d.status)}</td>
+        <td class="num">${fmtDec(d.planned_kg)}</td>
+        <td class="num">${fmtDec(d.delivered_kg)}</td>
+        <td class="num" style="font-weight:700;color:${d.pct >= 95 ? "#16a34a" : d.pct > 0 ? "#d97706" : "#dc2626"}">${d.pct}%</td>
+        <td class="num">${pvdStatusBadge(d.status)}</td>
       </tr>`;
       })
       .join("");
@@ -1758,15 +1758,15 @@
           <td>${esc(r.district)}</td>
           <td>${esc(r.province)}</td>
           <td>${esc(r.product)}</td>
-          <td style="text-align:right">${fmtDec(r.planned_kg)}</td>
-          <td style="text-align:right">${fmtDec(r.delivered_kg)}</td>
-          <td style="text-align:right;color:${r.diff < 0 ? "#dc2626" : r.diff > 0 ? "#16a34a" : "#64748b"};font-weight:600">
+          <td class="num">${fmtDec(r.planned_kg)}</td>
+          <td class="num">${fmtDec(r.delivered_kg)}</td>
+          <td class="num" style="color:${r.diff < 0 ? "#dc2626" : r.diff > 0 ? "#16a34a" : "#64748b"};font-weight:600">
             ${r.diff > 0 ? "+" : ""}${fmtDec(r.diff)}
           </td>
-          <td style="text-align:right;font-weight:700;color:${r.pct >= 95 ? "#16a34a" : r.pct > 0 ? "#d97706" : "#dc2626"}">
+          <td class="num" style="font-weight:700;color:${r.pct >= 95 ? "#16a34a" : r.pct > 0 ? "#d97706" : "#dc2626"}">
             ${r.pct}%
           </td>
-          <td>${pvdStatusBadge(r.status)}</td>
+          <td class="num">${pvdStatusBadge(r.status)}</td>
         </tr>`
       )
       .join("");
