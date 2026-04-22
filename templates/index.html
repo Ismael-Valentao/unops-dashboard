@@ -101,6 +101,7 @@
         <button class="updates-tab" data-tab="new">Novos Beneficiários <span id="upd-badge-new"></span></button>
         <button class="updates-tab" data-tab="kits">Composição dos Kits</button>
         <button class="updates-tab" data-tab="removed">Removidos — Já Receberam <span id="upd-badge-removed"></span></button>
+        <button class="updates-tab" data-tab="reduced">Reduzidos — Já Receberam <span id="upd-badge-reduced"></span></button>
       </div>
 
       <div class="updates-panel" id="upd-panel-provinces">
@@ -173,6 +174,37 @@
               <th>GTUs</th>
             </tr></thead>
             <tbody id="upd-removed-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="updates-panel" id="upd-panel-reduced" style="display:none">
+        <p class="updates-note">Beneficiários cuja meta foi <strong>reduzida</strong> (mantida acima de zero mas abaixo do original). Mostra apenas os que já receberam, destacando quem recebeu acima da nova meta.</p>
+
+        <div id="upd-reduced-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.5rem;margin-bottom:.75rem"></div>
+
+        <div style="display:flex;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap;align-items:center">
+          <input type="text" id="upd-red-search" placeholder="Pesquisar beneficiário, distrito..." style="flex:1;min-width:200px;padding:.45rem .7rem;border:1px solid #cbd5e1;border-radius:6px">
+          <select id="upd-red-prov" style="padding:.45rem;border:1px solid #cbd5e1;border-radius:6px"><option value="">Todas Províncias</option></select>
+          <select id="upd-red-prod" style="padding:.45rem;border:1px solid #cbd5e1;border-radius:6px"><option value="">Todos Produtos</option></select>
+          <label style="display:flex;align-items:center;gap:.3rem;font-size:.82rem;color:#475569">
+            <input type="checkbox" id="upd-red-only-over" checked> Só acima da nova meta
+          </label>
+        </div>
+
+        <div class="tbl-wrap" style="max-height:480px;overflow-y:auto">
+          <table class="mini-table">
+            <thead><tr>
+              <th>Beneficiário</th><th>Extensionista</th>
+              <th>Provincia</th><th>Distrito</th>
+              <th>Produto</th>
+              <th style="text-align:right">Plano Orig.</th>
+              <th style="text-align:right">Nova Meta</th>
+              <th style="text-align:right">Recebeu</th>
+              <th style="text-align:right">Excesso</th>
+              <th>Datas</th>
+            </tr></thead>
+            <tbody id="upd-reduced-body"></tbody>
           </table>
         </div>
       </div>

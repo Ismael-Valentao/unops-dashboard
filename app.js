@@ -504,32 +504,39 @@ app.get("/api/planning-updates-summary", (_req, res) => {
   res.json(extras);
 });
 
+// Shared helpers for cross-referencing planning revisions with deliveries
+function _normName(s) { return String(s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " "); }
+function _normDist(s) { return String(s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+function _canonProduct(raw) {
+  const l = String(raw || "").toLowerCase();
+  if (l.includes("milho") || l.includes("maize")) return "Milho";
+  if (l.includes("feij") || l.includes("bean")) return "Feijão";
+  if (l.includes("arroz") || l.includes("rice")) return "Arroz";
+  if (l.includes("emamectin")) return "Emamectin";
+  if (l.includes("imidaclop") || l.includes("imadoclop")) return "Imidacloprid";
+  if (l.includes("mcpa")) return "MCPA";
+  if (l.includes("saco") || l.includes("hermetic")) return "Sacos Hermeticos";
+  return String(raw || "").trim();
+}
+
+function _indexDeliveriesByKey() {
+  const idx = {};
+  for (const d of cache.data) {
+    const key = _normName(d.beneficiary_name) + "|" + _normDist(d.district) + "|" + _canonProduct(d.product);
+    if (!idx[key]) idx[key] = [];
+    idx[key].push(d);
+  }
+  return idx;
+}
+
 // Extensionistas removidos do plano (Qtd Actualizada = 0) que já tinham recebido algo
 app.get("/api/planning-removed-beneficiaries", (_req, res) => {
   const data = planningUpdated.getData();
   if (!data || !data.removedRows) return res.json({ list: [], summary: {} });
 
-  function normName(s) { return String(s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " "); }
-  function normDist(s) { return String(s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
-  function canonProduct(raw) {
-    const l = String(raw || "").toLowerCase();
-    if (l.includes("milho") || l.includes("maize")) return "Milho";
-    if (l.includes("feij") || l.includes("bean")) return "Feijão";
-    if (l.includes("arroz") || l.includes("rice")) return "Arroz";
-    if (l.includes("emamectin")) return "Emamectin";
-    if (l.includes("imidaclop") || l.includes("imadoclop")) return "Imidacloprid";
-    if (l.includes("mcpa")) return "MCPA";
-    if (l.includes("saco") || l.includes("hermetic")) return "Sacos Hermeticos";
-    return String(raw || "").trim();
-  }
+  const normName = _normName, normDist = _normDist, canonProduct = _canonProduct;
 
-  // Index delivery records by (beneficiary + district + canonical product)
-  const delIdx = {};
-  for (const d of cache.data) {
-    const key = normName(d.beneficiary_name) + "|" + normDist(d.district) + "|" + canonProduct(d.product);
-    if (!delIdx[key]) delIdx[key] = [];
-    delIdx[key].push(d);
-  }
+  const delIdx = _indexDeliveriesByKey();
 
   // For each removed planning row, find matching deliveries
   const out = [];
@@ -583,6 +590,77 @@ app.get("/api/planning-removed-beneficiaries", (_req, res) => {
       total_delivered_kg: +totalDeliveredKg.toFixed(2),
       by_province: byProv,
       by_product: byProd,
+    },
+  });
+});
+
+// Beneficiários cuja Qtd Actualizada foi REDUZIDA (> 0 mas < original) e que já receberam.
+// Foca-se em detectar quem recebeu mais do que a nova meta.
+app.get("/api/planning-reduced-beneficiaries", (_req, res) => {
+  const data = planningUpdated.getData();
+  if (!data || !data.reducedRows) return res.json({ list: [], summary: {} });
+
+  const delIdx = _indexDeliveriesByKey();
+  const out = [];
+  for (const r of data.reducedRows) {
+    const key = _normName(r.beneficiary) + "|" + _normDist(r.district) + "|" + _canonProduct(r.product_plan);
+    const delRows = delIdx[key] || [];
+    if (!delRows.length) continue; // only show those who already received something
+
+    const totalDeliv = delRows.reduce((s, d) => s + (Number(d.delivered_qty) || 0), 0);
+    const dates = [...new Set(delRows.map((d) => d.delivery_date).filter(Boolean))].sort();
+    const gtus = [...new Set(delRows.map((d) => d.delivery_note_number).filter(Boolean))];
+
+    const novaMeta = r.weight_updated;
+    const excesso = Math.max(0, totalDeliv - novaMeta);
+
+    out.push({
+      beneficiario: r.beneficiary,
+      extensionista: r.extensionista,
+      extensionist_id: r.extensionist_id,
+      supervisor: r.supervisor,
+      provincia: r.province,
+      distrito: r.district,
+      posto: r.posto,
+      produto: r.product_plan,
+      qtd_planeada_original: r.weight_original,
+      qtd_actualizada: novaMeta,
+      reducao: +(r.weight_original - novaMeta).toFixed(2),
+      qtd_entregue: +totalDeliv.toFixed(2),
+      excesso: +excesso.toFixed(2),
+      acima_da_nova_meta: totalDeliv > novaMeta + 0.001,
+      num_entregas: delRows.length,
+      datas: dates,
+      gtus,
+    });
+  }
+
+  // Split: acima da nova meta vs abaixo/igual
+  const acimaMeta = out.filter((r) => r.acima_da_nova_meta);
+  const abaixoMeta = out.filter((r) => !r.acima_da_nova_meta);
+
+  const byProv = {};
+  const byProd = {};
+  let totalExcesso = 0;
+  acimaMeta.forEach((r) => {
+    byProv[r.provincia] = (byProv[r.provincia] || 0) + r.excesso;
+    byProd[r.produto] = (byProd[r.produto] || 0) + r.excesso;
+    totalExcesso += r.excesso;
+  });
+  const uniqueBenefs = new Set(acimaMeta.map((r) => r.beneficiario + "|" + r.distrito)).size;
+
+  res.json({
+    list: out,
+    acima_da_nova_meta: acimaMeta,
+    dentro_da_nova_meta: abaixoMeta,
+    summary: {
+      total_rows: out.length,
+      rows_above: acimaMeta.length,
+      rows_within: abaixoMeta.length,
+      unique_beneficiaries_above: uniqueBenefs,
+      total_excesso_kg: +totalExcesso.toFixed(2),
+      by_province_excesso: byProv,
+      by_product_excesso: byProd,
     },
   });
 });

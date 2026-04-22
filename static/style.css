@@ -49,6 +49,9 @@ body.view-updated .header{
 .metric-mini{background:#fef2f2;border:1px solid #fee2e2;border-radius:8px;padding:.5rem .75rem}
 .metric-mini .mm-lbl{font-size:.65rem;text-transform:uppercase;color:#991b1b;letter-spacing:.04em;margin-bottom:.15rem}
 .metric-mini .mm-val{font-size:1.2rem;font-weight:800;color:#7f1d1d;font-variant-numeric:tabular-nums}
+.metric-mini.metric-mini-blue{background:#eff6ff;border-color:#bfdbfe}
+.metric-mini.metric-mini-blue .mm-lbl{color:#1e40af}
+.metric-mini.metric-mini-blue .mm-val{color:#1e3a8a}
 
 body.view-updated #updated-badge{
   display:inline-block;margin-left:.55rem;padding:.15rem .55rem;

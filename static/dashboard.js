@@ -147,8 +147,10 @@
   // ── Updates Summary (only shown on /updated) ─────────────────
   let updatesData = null;
   let removedData = null;
+  let reducedData = null;
   let updNewSearch = "", updNewProv = "", updNewKit = "";
   let updRemSearch = "", updRemProv = "", updRemProd = "";
+  let updRedSearch = "", updRedProv = "", updRedProd = "", updRedOnlyOver = true;
 
   function fmtSigned(n) {
     const v = Math.round(Number(n) || 0);
@@ -171,8 +173,9 @@
       renderKits();
       bindUpdatesTabs();
 
-      // Load removed beneficiaries in parallel
+      // Load removed + reduced beneficiaries in parallel
       loadRemovedBenefs();
+      loadReducedBenefs();
     } catch (e) { console.warn("Updates summary load error:", e); }
   }
 
@@ -238,6 +241,73 @@
       <td style="text-align:right;color:#dc2626;font-weight:700">${fmtDec(r.qtd_entregue)}</td>
       <td style="font-size:.78rem">${r.datas.length ? esc(r.datas.join(", ")) : "—"}</td>
       <td style="font-size:.72rem;font-family:monospace">${esc(r.gtus.join(", "))}</td>
+    </tr>`).join("");
+  }
+
+  async function loadReducedBenefs() {
+    try {
+      const r = await fetch("/api/planning-reduced-beneficiaries");
+      if (!r.ok) return;
+      reducedData = await r.json();
+      const br = document.getElementById("upd-badge-reduced");
+      if (br) br.textContent = reducedData.summary.rows_above;
+      renderReducedSummary();
+      renderReducedTable();
+    } catch (e) { console.warn("Reduced benefs load error:", e); }
+  }
+
+  function renderReducedSummary() {
+    const box = document.getElementById("upd-reduced-summary");
+    if (!box || !reducedData) return;
+    const s = reducedData.summary;
+    const fmt = (n) => Math.round(Number(n) || 0).toLocaleString("pt-PT");
+    box.innerHTML = `
+      <div class="metric-mini"><div class="mm-lbl">Acima da nova meta</div><div class="mm-val">${fmt(s.rows_above)}</div></div>
+      <div class="metric-mini metric-mini-blue"><div class="mm-lbl">Dentro da meta</div><div class="mm-val">${fmt(s.rows_within)}</div></div>
+      <div class="metric-mini"><div class="mm-lbl">Beneficiários com excesso</div><div class="mm-val">${fmt(s.unique_beneficiaries_above)}</div></div>
+      <div class="metric-mini"><div class="mm-lbl">Total Excesso (kg)</div><div class="mm-val">${fmt(s.total_excesso_kg)}</div></div>
+    `;
+    const provSel = document.getElementById("upd-red-prov");
+    if (provSel && provSel.options.length <= 1) {
+      [...new Set(reducedData.list.map((r) => r.provincia))].sort().forEach((p) => {
+        const o = document.createElement("option"); o.value = p; o.textContent = p; provSel.appendChild(o);
+      });
+    }
+    const prodSel = document.getElementById("upd-red-prod");
+    if (prodSel && prodSel.options.length <= 1) {
+      [...new Set(reducedData.list.map((r) => r.produto))].sort().forEach((p) => {
+        const o = document.createElement("option"); o.value = p; o.textContent = p; prodSel.appendChild(o);
+      });
+    }
+  }
+
+  function renderReducedTable() {
+    const body = document.getElementById("upd-reduced-body");
+    if (!body || !reducedData) return;
+    const q = updRedSearch.toLowerCase();
+    const list = reducedData.list.filter((r) => {
+      if (updRedOnlyOver && !r.acima_da_nova_meta) return false;
+      if (updRedProv && r.provincia !== updRedProv) return false;
+      if (updRedProd && r.produto !== updRedProd) return false;
+      if (q) {
+        const hay = (r.beneficiario + " " + r.extensionista + " " + r.distrito + " " + r.posto).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    }).sort((a, b) => b.excesso - a.excesso);
+    if (!list.length) { body.innerHTML = '<tr><td colspan="10" class="empty">Sem resultados</td></tr>'; return; }
+    const fmtDec = (n) => Number(n || 0).toLocaleString("pt-PT", { maximumFractionDigits: 1 });
+    body.innerHTML = list.map((r) => `<tr ${r.acima_da_nova_meta ? 'style="background:#fef2f2"' : ""}>
+      <td><strong>${esc(r.beneficiario)}</strong>${r.posto ? '<br><small style="color:#64748b">' + esc(r.posto) + '</small>' : ''}</td>
+      <td style="font-size:.82rem">${esc(r.extensionista || "—")}</td>
+      <td>${esc(r.provincia)}</td>
+      <td>${esc(r.distrito)}</td>
+      <td>${esc(r.produto)}</td>
+      <td style="text-align:right;color:#64748b">${fmtDec(r.qtd_planeada_original)}</td>
+      <td style="text-align:right;color:#d97706;font-weight:600">${fmtDec(r.qtd_actualizada)}</td>
+      <td style="text-align:right;color:${r.acima_da_nova_meta ? "#dc2626" : "#16a34a"};font-weight:700">${fmtDec(r.qtd_entregue)}</td>
+      <td style="text-align:right;color:${r.excesso > 0 ? "#dc2626" : "#94a3b8"};font-weight:700">${r.excesso > 0 ? "+" + fmtDec(r.excesso) : "—"}</td>
+      <td style="font-size:.78rem">${r.datas.length ? esc(r.datas.join(", ")) : "—"}</td>
     </tr>`).join("");
   }
 
@@ -352,6 +422,28 @@
     if (rpr && !rpr.dataset.bound) {
       rpr.dataset.bound = "1";
       rpr.addEventListener("change", (e) => { updRemProd = e.target.value; renderRemovedTable(); });
+    }
+
+    // Reduced filters
+    const rds = document.getElementById("upd-red-search");
+    if (rds && !rds.dataset.bound) {
+      rds.dataset.bound = "1";
+      rds.addEventListener("input", (e) => { updRedSearch = e.target.value.trim(); renderReducedTable(); });
+    }
+    const rdp = document.getElementById("upd-red-prov");
+    if (rdp && !rdp.dataset.bound) {
+      rdp.dataset.bound = "1";
+      rdp.addEventListener("change", (e) => { updRedProv = e.target.value; renderReducedTable(); });
+    }
+    const rdpr = document.getElementById("upd-red-prod");
+    if (rdpr && !rdpr.dataset.bound) {
+      rdpr.dataset.bound = "1";
+      rdpr.addEventListener("change", (e) => { updRedProd = e.target.value; renderReducedTable(); });
+    }
+    const rdov = document.getElementById("upd-red-only-over");
+    if (rdov && !rdov.dataset.bound) {
+      rdov.dataset.bound = "1";
+      rdov.addEventListener("change", (e) => { updRedOnlyOver = e.target.checked; renderReducedTable(); });
     }
   }
 
