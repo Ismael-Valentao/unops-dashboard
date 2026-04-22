@@ -868,8 +868,10 @@
         const col = getColDef(key);
         if (!col) return "";
         const sk = col.sortKey || key;
-        const active = sortCol === sk ? " sort-active" : "";
-        return `<th data-col="${sk}" class="${active}">${esc(col.label)} \u25B4\u25BE</th>`;
+        const classes = [];
+        if (sortCol === sk) classes.push("sort-active");
+        if (col.type === "number" || col.type === "badge" || col.type === "notes") classes.push("num");
+        return `<th data-col="${sk}" class="${classes.join(" ")}">${esc(col.label)} \u25B4\u25BE</th>`;
       })
       .join("");
 
@@ -2183,8 +2185,10 @@
       logThead.innerHTML = logVisibleCols.map((key) => {
         const col = getLogColDef(key);
         if (!col) return "";
-        const active = logSortCol === key ? " sort-active" : "";
-        return '<th data-col="' + key + '" class="' + active + '">' + esc(col.label) + ' \u25B4\u25BE</th>';
+        const classes = [];
+        if (logSortCol === key) classes.push("sort-active");
+        if (col.type === "number" || col.type === "badge_log" || col.type === "badge_verif") classes.push("num");
+        return '<th data-col="' + key + '" class="' + classes.join(" ") + '">' + esc(col.label) + ' \u25B4\u25BE</th>';
       }).join("");
     }
 

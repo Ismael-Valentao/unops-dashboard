@@ -166,6 +166,11 @@ body.view-updated::before{
 .mini-table tbody td{padding:.35rem .5rem;border-bottom:1px solid #f1f5f9}
 .mini-table tbody tr:hover{background:#f0f9ff}
 
+/* Numeric column alignment — header matches right-aligned data cells */
+th.num, #data-table th.num, .pvd-table th.num, .mini-table th.num, .verify-table th.num, .adm-table th.num{
+  text-align:right !important;
+}
+
 /* Supplier cards */
 .supplier-card{display:flex;align-items:center;gap:.75rem;padding:.65rem;
   background:#f8fafc;border-radius:8px;margin-bottom:.5rem;border:1px solid #e2e8f0}

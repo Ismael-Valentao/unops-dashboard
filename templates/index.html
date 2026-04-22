@@ -113,9 +113,9 @@
               <th colspan="3" class="grp-blue">Plano Actualizado (Famílias)</th>
               <th colspan="3" class="grp-amber">Variação</th>
             </tr><tr>
-              <th>Kit 1</th><th>Kit 2</th><th>Total</th>
-              <th>Kit 1</th><th>Kit 2</th><th>Total</th>
-              <th>Kit 1</th><th>Kit 2</th><th>Total</th>
+              <th class="num">Kit 1</th><th class="num">Kit 2</th><th class="num">Total</th>
+              <th class="num">Kit 1</th><th class="num">Kit 2</th><th class="num">Total</th>
+              <th class="num">Kit 1</th><th class="num">Kit 2</th><th class="num">Total</th>
             </tr></thead>
             <tbody id="upd-prov-body"></tbody>
           </table>
@@ -135,7 +135,7 @@
             <thead><tr>
               <th>ID</th><th>Extensionista</th><th>Contacto</th>
               <th>Supervisor</th><th>Província</th><th>Distrito</th><th>Localidade</th>
-              <th>Kit</th><th style="text-align:right">Qtd</th>
+              <th>Kit</th><th class="num">Qtd</th>
             </tr></thead>
             <tbody id="upd-new-body"></tbody>
           </table>
@@ -168,8 +168,8 @@
               <th>Beneficiário</th><th>Extensionista</th>
               <th>Provincia</th><th>Distrito</th>
               <th>Produto</th>
-              <th style="text-align:right">Planeado Orig.</th>
-              <th style="text-align:right">Recebeu</th>
+              <th class="num">Planeado Orig.</th>
+              <th class="num">Recebeu</th>
               <th>Datas Entrega</th>
               <th>GTUs</th>
             </tr></thead>
@@ -198,10 +198,10 @@
               <th>Beneficiário</th><th>Extensionista</th>
               <th>Provincia</th><th>Distrito</th>
               <th>Produto</th>
-              <th style="text-align:right">Plano Orig.</th>
-              <th style="text-align:right">Nova Meta</th>
-              <th style="text-align:right">Recebeu</th>
-              <th style="text-align:right">Excesso</th>
+              <th class="num">Plano Orig.</th>
+              <th class="num">Nova Meta</th>
+              <th class="num">Recebeu</th>
+              <th class="num">Excesso</th>
               <th>Datas</th>
             </tr></thead>
             <tbody id="upd-reduced-body"></tbody>
@@ -293,12 +293,12 @@
             <thead>
               <tr>
                 <th>GTU</th>
-                <th>Ocorr.</th>
+                <th class="num">Ocorr.</th>
                 <th>Delivery ID</th>
                 <th>Beneficiario</th>
                 <th>Distrito</th>
-                <th>Pacotes</th>
-                <th>Qtd.</th>
+                <th class="num">Pacotes</th>
+                <th class="num">Qtd.</th>
                 <th>Estado</th>
               </tr>
             </thead>
@@ -326,11 +326,11 @@
                   <th>Beneficiario</th>
                   <th>Distrito</th>
                   <th>Produto</th>
-                  <th>Pacotes</th>
-                  <th>Qtd. Entregue</th>
-                  <th>Unit. Prox.</th>
-                  <th>Esperado</th>
-                  <th>Diferenca</th>
+                  <th class="num">Pacotes</th>
+                  <th class="num">Qtd. Entregue</th>
+                  <th class="num">Unit. Prox.</th>
+                  <th class="num">Esperado</th>
+                  <th class="num">Diferenca</th>
                 </tr>
               </thead>
               <tbody id="weight-table-body"></tbody>
@@ -437,11 +437,11 @@
                 <th data-sort="district">Distrito</th>
                 <th data-sort="province">Provincia</th>
                 <th data-sort="product">Produto</th>
-                <th data-sort="planned_kg">Planeado (kg)</th>
-                <th data-sort="delivered_kg">Entregue (kg)</th>
-                <th data-sort="diff">Diferenca</th>
-                <th data-sort="pct">% Execucao</th>
-                <th data-sort="status">Status</th>
+                <th data-sort="planned_kg" class="num">Planeado (kg)</th>
+                <th data-sort="delivered_kg" class="num">Entregue (kg)</th>
+                <th data-sort="diff" class="num">Diferenca</th>
+                <th data-sort="pct" class="num">% Execucao</th>
+                <th data-sort="status" class="num">Status</th>
               </tr>
             </thead>
             <tbody id="pvd-table-body"></tbody>
@@ -543,8 +543,8 @@
         <div class="table-wrap" style="max-height:360px;overflow-y:auto">
           <table class="mini-table" id="urgency-table">
             <thead><tr id="urgency-thead">
-              <th data-col="rank">#</th><th data-col="district">Distrito</th><th data-col="province">Provincia</th>
-              <th data-col="planned_kg">Planeado</th><th data-col="delivered_kg">Entregue</th><th data-col="pct">%</th><th data-col="status">Status</th>
+              <th data-col="rank" class="num">#</th><th data-col="district">Distrito</th><th data-col="province">Provincia</th>
+              <th data-col="planned_kg" class="num">Planeado</th><th data-col="delivered_kg" class="num">Entregue</th><th data-col="pct" class="num">%</th><th data-col="status" class="num">Status</th>
             </tr></thead>
             <tbody id="urgency-body"></tbody>
           </table>
@@ -556,9 +556,9 @@
         <div class="table-wrap" style="max-height:360px;overflow-y:auto">
           <table class="mini-table" id="prov-rank-table">
             <thead><tr id="prov-rank-thead">
-              <th data-col="rank">#</th><th data-col="province">Província</th>
-              <th data-col="planned_kg">Planeado</th><th data-col="delivered_kg">Entregue</th>
-              <th data-col="gap_kg">Falta</th><th data-col="pct">%</th>
+              <th data-col="rank" class="num">#</th><th data-col="province">Província</th>
+              <th data-col="planned_kg" class="num">Planeado</th><th data-col="delivered_kg" class="num">Entregue</th>
+              <th data-col="gap_kg" class="num">Falta</th><th data-col="pct" class="num">%</th>
             </tr></thead>
             <tbody id="prov-rank-body"></tbody>
           </table>
