@@ -529,7 +529,35 @@ function _indexDeliveriesByKey() {
   return idx;
 }
 
-// Extensionistas removidos do plano (Qtd Actualizada = 0) que já tinham recebido algo
+// Helper: aggregates planning rows by (beneficiary + district + canonical product)
+// so multiple rows for the same person/product (different kits/volumes) are merged.
+function _aggregatePlanningRows(rows) {
+  const map = {};
+  for (const r of rows) {
+    const key = _normName(r.beneficiary) + "|" + _normDist(r.district) + "|" + _canonProduct(r.product_plan);
+    if (!map[key]) {
+      map[key] = {
+        key,
+        beneficiario: r.beneficiary,
+        extensionista: r.extensionista,
+        extensionist_id: r.extensionist_id,
+        supervisor: r.supervisor,
+        provincia: r.province,
+        distrito: r.district,
+        posto: r.posto,
+        produto: r.product_plan,
+        weight_original: 0,
+        weight_updated: 0,
+      };
+    }
+    map[key].weight_original += Number(r.weight_original) || 0;
+    map[key].weight_updated  += Number(r.weight_updated)  || 0;
+  }
+  return Object.values(map);
+}
+
+// Extensionistas removidos do plano (todas as linhas do produto com Qtd Actualizada = 0)
+// que já tinham recebido algo
 app.get("/api/planning-removed-beneficiaries", (_req, res) => {
   const data = planningUpdated.getData();
   if (!data || !data.removedRows) return res.json({ list: [], summary: {} });
@@ -538,12 +566,15 @@ app.get("/api/planning-removed-beneficiaries", (_req, res) => {
 
   const delIdx = _indexDeliveriesByKey();
 
-  // For each removed planning row, find matching deliveries
+  // Aggregate removed rows by (benef + district + product) — only include beneficiary/product
+  // where ALL planning lines were zeroed (sum of weight_updated ~= 0).
+  const allGroups = _aggregatePlanningRows(data.rows.concat(data.removedRows));
+  const removedGroups = allGroups.filter((g) => g.weight_updated <= 0.001 && g.weight_original > 0.001);
+
   const out = [];
-  for (const r of data.removedRows) {
-    const key = normName(r.beneficiary) + "|" + normDist(r.district) + "|" + canonProduct(r.product_plan);
-    const delRows = delIdx[key] || [];
-    if (!delRows.length) continue; // skip removed beneficiaries who haven't received anything
+  for (const g of removedGroups) {
+    const delRows = delIdx[g.key] || [];
+    if (!delRows.length) continue;
 
     const totalDeliv = delRows.reduce((s, d) => s + (Number(d.delivered_qty) || 0), 0);
     const dates = [...new Set(delRows.map((d) => d.delivery_date).filter(Boolean))].sort();
@@ -551,15 +582,15 @@ app.get("/api/planning-removed-beneficiaries", (_req, res) => {
     const statuses = [...new Set(delRows.map((d) => d.verification_status).filter(Boolean))];
 
     out.push({
-      beneficiario: r.beneficiary,
-      extensionista: r.extensionista,
-      extensionist_id: r.extensionist_id,
-      supervisor: r.supervisor,
-      provincia: r.province,
-      distrito: r.district,
-      posto: r.posto,
-      produto: r.product_plan,
-      qtd_planeada_original: r.weight_original,
+      beneficiario: g.beneficiario,
+      extensionista: g.extensionista,
+      extensionist_id: g.extensionist_id,
+      supervisor: g.supervisor,
+      provincia: g.provincia,
+      distrito: g.distrito,
+      posto: g.posto,
+      produto: g.produto,
+      qtd_planeada_original: +g.weight_original.toFixed(2),
       qtd_actualizada: 0,
       qtd_entregue: +totalDeliv.toFixed(2),
       num_entregas: delRows.length,
@@ -596,36 +627,45 @@ app.get("/api/planning-removed-beneficiaries", (_req, res) => {
 
 // Beneficiários cuja Qtd Actualizada foi REDUZIDA (> 0 mas < original) e que já receberam.
 // Foca-se em detectar quem recebeu mais do que a nova meta.
+// Agrega por (beneficiário + distrito + produto) para evitar contar entregas várias vezes
+// quando o mesmo beneficiário tem múltiplas linhas de planeamento para o mesmo produto.
 app.get("/api/planning-reduced-beneficiaries", (_req, res) => {
   const data = planningUpdated.getData();
-  if (!data || !data.reducedRows) return res.json({ list: [], summary: {} });
+  if (!data) return res.json({ list: [], summary: {} });
 
   const delIdx = _indexDeliveriesByKey();
+
+  // Combine active rows + reducedRows into a single list, then aggregate
+  // so we capture the full picture per (benef + prod).
+  const allPlanning = data.rows.concat(data.removedRows || []);
+  const groups = _aggregatePlanningRows(allPlanning);
+  // Reduced = group where updated > 0 AND updated < original
+  const reducedGroups = groups.filter((g) => g.weight_updated > 0.001 && g.weight_updated < g.weight_original - 0.001);
+
   const out = [];
-  for (const r of data.reducedRows) {
-    const key = _normName(r.beneficiary) + "|" + _normDist(r.district) + "|" + _canonProduct(r.product_plan);
-    const delRows = delIdx[key] || [];
-    if (!delRows.length) continue; // only show those who already received something
+  for (const g of reducedGroups) {
+    const delRows = delIdx[g.key] || [];
+    if (!delRows.length) continue;
 
     const totalDeliv = delRows.reduce((s, d) => s + (Number(d.delivered_qty) || 0), 0);
     const dates = [...new Set(delRows.map((d) => d.delivery_date).filter(Boolean))].sort();
     const gtus = [...new Set(delRows.map((d) => d.delivery_note_number).filter(Boolean))];
 
-    const novaMeta = r.weight_updated;
+    const novaMeta = g.weight_updated;
     const excesso = Math.max(0, totalDeliv - novaMeta);
 
     out.push({
-      beneficiario: r.beneficiary,
-      extensionista: r.extensionista,
-      extensionist_id: r.extensionist_id,
-      supervisor: r.supervisor,
-      provincia: r.province,
-      distrito: r.district,
-      posto: r.posto,
-      produto: r.product_plan,
-      qtd_planeada_original: r.weight_original,
-      qtd_actualizada: novaMeta,
-      reducao: +(r.weight_original - novaMeta).toFixed(2),
+      beneficiario: g.beneficiario,
+      extensionista: g.extensionista,
+      extensionist_id: g.extensionist_id,
+      supervisor: g.supervisor,
+      provincia: g.provincia,
+      distrito: g.distrito,
+      posto: g.posto,
+      produto: g.produto,
+      qtd_planeada_original: +g.weight_original.toFixed(2),
+      qtd_actualizada: +novaMeta.toFixed(2),
+      reducao: +(g.weight_original - novaMeta).toFixed(2),
       qtd_entregue: +totalDeliv.toFixed(2),
       excesso: +excesso.toFixed(2),
       acima_da_nova_meta: totalDeliv > novaMeta + 0.001,
