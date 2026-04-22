@@ -2020,6 +2020,18 @@
       arrow.classList.toggle("open", open);
     });
 
+    // Pattern (Malformed GTUs) section collapsible toggle
+    const patternToggle = $("#pattern-toggle");
+    if (patternToggle) patternToggle.addEventListener("click", (e) => {
+      if (e.target.closest(".btn-export-xs")) return;
+      const body = $("#pattern-body-wrap");
+      const arrow = $("#pattern-arrow");
+      if (!body || !arrow) return;
+      const open = body.style.display === "none";
+      body.style.display = open ? "block" : "none";
+      arrow.classList.toggle("open", open);
+    });
+
     // Public visitor view at "/" hides the error verification section
     const isPublic = location.pathname === "/" || location.pathname === "";
 

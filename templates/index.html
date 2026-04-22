@@ -339,25 +339,30 @@
         </div>
       </div>
 
-      <!-- Malformed GTUs -->
+      <!-- Malformed GTUs (collapsible) -->
       <div id="verify-pattern-wrap" style="display:none">
-        <div class="verify-sub-header">
-          <h4 class="verify-subtitle alert-purple">Delivery Notes Fora do Padrao (esperado: GTU98/ ou GTS98/ + 9 digitos)</h4>
+        <div class="verify-sub-header collapsible-header" id="pattern-toggle">
+          <h4 class="verify-subtitle alert-purple">
+            <span class="collapse-arrow" id="pattern-arrow">&#9654;</span>
+            Delivery Notes Fora do Padrao (esperado: GTU98/ ou GTS98/ + 9 digitos)
+          </h4>
           <button class="btn-export-xs" data-export="padrao" title="Exportar para Excel">Excel</button>
         </div>
-        <div class="table-wrap">
-          <table class="verify-table verify-table-pattern" id="pattern-table">
-            <thead>
-              <tr>
-                <th>GTU Actual</th>
-                <th>Delivery ID</th>
-                <th>Beneficiario</th>
-                <th>Distrito</th>
-                <th>Motivo</th>
-              </tr>
-            </thead>
-            <tbody id="pattern-table-body"></tbody>
-          </table>
+        <div class="collapsible-body" id="pattern-body-wrap" style="display:none">
+          <div class="table-wrap">
+            <table class="verify-table verify-table-pattern" id="pattern-table">
+              <thead>
+                <tr>
+                  <th>GTU Actual</th>
+                  <th>Delivery ID</th>
+                  <th>Beneficiario</th>
+                  <th>Distrito</th>
+                  <th>Motivo</th>
+                </tr>
+              </thead>
+              <tbody id="pattern-table-body"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>
