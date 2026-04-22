@@ -1859,7 +1859,7 @@
     const cardErrors = $("#card-errors");
     if (IS_UPDATED) {
       document.body.classList.add("view-updated");
-      if (subtitle) subtitle.textContent = "Plano Revisto — Qtd Actualizada pelos extensionistas";
+      if (subtitle) subtitle.textContent = "Plano Revisto — Quantidades Actualizadas";
       if (opsLink) opsLink.style.display = "none";
       if (cardErrors) cardErrors.style.display = "none";
       // Add navigation link back to original view
