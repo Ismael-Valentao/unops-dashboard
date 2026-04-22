@@ -146,7 +146,9 @@
 
   // ── Updates Summary (only shown on /updated) ─────────────────
   let updatesData = null;
+  let removedData = null;
   let updNewSearch = "", updNewProv = "", updNewKit = "";
+  let updRemSearch = "", updRemProv = "", updRemProd = "";
 
   function fmtSigned(n) {
     const v = Math.round(Number(n) || 0);
@@ -163,15 +165,80 @@
       document.getElementById("updates-summary").style.display = "";
       const bn = document.getElementById("upd-badge-new");
       if (bn) bn.textContent = updatesData.newBeneficiaries.length;
-      const bf = document.getElementById("upd-badge-flag");
-      if (bf) bf.textContent = updatesData.flaggedNames.length;
 
       renderProvinceSummary();
       renderNewBenefs();
       renderKits();
-      renderFlagged();
       bindUpdatesTabs();
+
+      // Load removed beneficiaries in parallel
+      loadRemovedBenefs();
     } catch (e) { console.warn("Updates summary load error:", e); }
+  }
+
+  async function loadRemovedBenefs() {
+    try {
+      const r = await fetch("/api/planning-removed-beneficiaries");
+      if (!r.ok) return;
+      removedData = await r.json();
+      const br = document.getElementById("upd-badge-removed");
+      if (br) br.textContent = removedData.list.length;
+      renderRemovedSummary();
+      renderRemovedTable();
+    } catch (e) { console.warn("Removed benefs load error:", e); }
+  }
+
+  function renderRemovedSummary() {
+    const box = document.getElementById("upd-removed-summary");
+    if (!box || !removedData) return;
+    const s = removedData.summary;
+    const fmt = (n) => Math.round(Number(n) || 0).toLocaleString("pt-PT");
+    box.innerHTML = `
+      <div class="metric-mini"><div class="mm-lbl">Beneficiários únicos</div><div class="mm-val">${fmt(s.unique_beneficiaries)}</div></div>
+      <div class="metric-mini"><div class="mm-lbl">Linhas removidas c/ entrega</div><div class="mm-val">${fmt(s.total_rows)}</div></div>
+      <div class="metric-mini"><div class="mm-lbl">Total já entregue (kg)</div><div class="mm-val" style="color:#dc2626">${fmt(s.total_delivered_kg)}</div></div>
+    `;
+    // Populate filter dropdowns
+    const provSel = document.getElementById("upd-rem-prov");
+    if (provSel && provSel.options.length <= 1) {
+      [...new Set(removedData.list.map((r) => r.provincia))].sort().forEach((p) => {
+        const o = document.createElement("option"); o.value = p; o.textContent = p; provSel.appendChild(o);
+      });
+    }
+    const prodSel = document.getElementById("upd-rem-prod");
+    if (prodSel && prodSel.options.length <= 1) {
+      [...new Set(removedData.list.map((r) => r.produto))].sort().forEach((p) => {
+        const o = document.createElement("option"); o.value = p; o.textContent = p; prodSel.appendChild(o);
+      });
+    }
+  }
+
+  function renderRemovedTable() {
+    const body = document.getElementById("upd-removed-body");
+    if (!body || !removedData) return;
+    const q = updRemSearch.toLowerCase();
+    const list = removedData.list.filter((r) => {
+      if (updRemProv && r.provincia !== updRemProv) return false;
+      if (updRemProd && r.produto !== updRemProd) return false;
+      if (q) {
+        const hay = (r.beneficiario + " " + r.extensionista + " " + r.distrito + " " + r.posto).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+    if (!list.length) { body.innerHTML = '<tr><td colspan="9" class="empty">Sem resultados</td></tr>'; return; }
+    const fmtDec = (n) => Number(n || 0).toLocaleString("pt-PT", { maximumFractionDigits: 1 });
+    body.innerHTML = list.map((r) => `<tr>
+      <td><strong>${esc(r.beneficiario)}</strong>${r.posto ? '<br><small style="color:#64748b">' + esc(r.posto) + '</small>' : ''}</td>
+      <td style="font-size:.82rem">${esc(r.extensionista || "—")}</td>
+      <td>${esc(r.provincia)}</td>
+      <td>${esc(r.distrito)}</td>
+      <td>${esc(r.produto)}</td>
+      <td style="text-align:right;color:#64748b">${fmtDec(r.qtd_planeada_original)}</td>
+      <td style="text-align:right;color:#dc2626;font-weight:700">${fmtDec(r.qtd_entregue)}</td>
+      <td style="font-size:.78rem">${r.datas.length ? esc(r.datas.join(", ")) : "—"}</td>
+      <td style="font-size:.72rem;font-family:monospace">${esc(r.gtus.join(", "))}</td>
+    </tr>`).join("");
   }
 
   function renderProvinceSummary() {
@@ -240,15 +307,7 @@
     </tr>`).join("");
   }
 
-  function renderFlagged() {
-    const body = document.getElementById("upd-flag-body");
-    if (!body || !updatesData) return;
-    const list = updatesData.flaggedNames.slice().sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-    body.innerHTML = list.map((d) => `<tr>
-      <td>${esc(d.name)}</td>
-      <td style="text-align:right"><span style="background:${d.count > 1 ? "#fee2e2;color:#991b1b" : "#f1f5f9;color:#475569"};padding:.12rem .5rem;border-radius:4px;font-weight:700">${d.count}</span></td>
-    </tr>`).join("");
-  }
+  // (renderFlagged removed — replaced by renderRemovedTable)
 
   function bindUpdatesTabs() {
     document.querySelectorAll(".updates-tab").forEach((btn) => {
@@ -276,6 +335,23 @@
     if (ks && !ks.dataset.bound) {
       ks.dataset.bound = "1";
       ks.addEventListener("change", (e) => { updNewKit = e.target.value; renderNewBenefs(); });
+    }
+
+    // Removed beneficiaries filters
+    const rs = document.getElementById("upd-rem-search");
+    if (rs && !rs.dataset.bound) {
+      rs.dataset.bound = "1";
+      rs.addEventListener("input", (e) => { updRemSearch = e.target.value.trim(); renderRemovedTable(); });
+    }
+    const rp = document.getElementById("upd-rem-prov");
+    if (rp && !rp.dataset.bound) {
+      rp.dataset.bound = "1";
+      rp.addEventListener("change", (e) => { updRemProv = e.target.value; renderRemovedTable(); });
+    }
+    const rpr = document.getElementById("upd-rem-prod");
+    if (rpr && !rpr.dataset.bound) {
+      rpr.dataset.bound = "1";
+      rpr.addEventListener("change", (e) => { updRemProd = e.target.value; renderRemovedTable(); });
     }
   }
 

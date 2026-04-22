@@ -103,7 +103,12 @@ function load() {
       extensionista:    String(r["Nome do Extensionista"] || "").trim(),
       supervisor:       String(r["Nome do Supervisor"] || "").trim(),
     };
-  }).filter((r) => r.weight_kg > 0); // exclude rows where the updated qty is 0 or empty
+  });
+  // Removed rows = beneficiários com Qtd Actualizada = 0 explicitamente (foram retirados do plano).
+  // Guardamos à parte antes de filtrar a lista activa.
+  const removedRows = rows.filter((r) => r.weight_was_updated && r.weight_updated <= 0.001 && r.weight_original > 0.001);
+  // Keep only active rows (weight_kg > 0) for aggregations
+  rows.splice(0, rows.length, ...rows.filter((r) => r.weight_kg > 0));
 
   // Aggregations
   const byDistrict = {}, byProduct = {}, byDistrictProduct = {}, byProvince = {};
@@ -128,6 +133,7 @@ function load() {
 
   planningData = {
     rows,
+    removedRows,
     byDistrict: Object.values(byDistrict),
     byProduct: Object.values(byProduct),
     byDistrictProduct: Object.values(byDistrictProduct),

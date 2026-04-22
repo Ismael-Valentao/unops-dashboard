@@ -504,6 +504,89 @@ app.get("/api/planning-updates-summary", (_req, res) => {
   res.json(extras);
 });
 
+// Extensionistas removidos do plano (Qtd Actualizada = 0) que já tinham recebido algo
+app.get("/api/planning-removed-beneficiaries", (_req, res) => {
+  const data = planningUpdated.getData();
+  if (!data || !data.removedRows) return res.json({ list: [], summary: {} });
+
+  function normName(s) { return String(s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " "); }
+  function normDist(s) { return String(s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+  function canonProduct(raw) {
+    const l = String(raw || "").toLowerCase();
+    if (l.includes("milho") || l.includes("maize")) return "Milho";
+    if (l.includes("feij") || l.includes("bean")) return "Feijão";
+    if (l.includes("arroz") || l.includes("rice")) return "Arroz";
+    if (l.includes("emamectin")) return "Emamectin";
+    if (l.includes("imidaclop") || l.includes("imadoclop")) return "Imidacloprid";
+    if (l.includes("mcpa")) return "MCPA";
+    if (l.includes("saco") || l.includes("hermetic")) return "Sacos Hermeticos";
+    return String(raw || "").trim();
+  }
+
+  // Index delivery records by (beneficiary + district + canonical product)
+  const delIdx = {};
+  for (const d of cache.data) {
+    const key = normName(d.beneficiary_name) + "|" + normDist(d.district) + "|" + canonProduct(d.product);
+    if (!delIdx[key]) delIdx[key] = [];
+    delIdx[key].push(d);
+  }
+
+  // For each removed planning row, find matching deliveries
+  const out = [];
+  for (const r of data.removedRows) {
+    const key = normName(r.beneficiary) + "|" + normDist(r.district) + "|" + canonProduct(r.product_plan);
+    const delRows = delIdx[key] || [];
+    if (!delRows.length) continue; // skip removed beneficiaries who haven't received anything
+
+    const totalDeliv = delRows.reduce((s, d) => s + (Number(d.delivered_qty) || 0), 0);
+    const dates = [...new Set(delRows.map((d) => d.delivery_date).filter(Boolean))].sort();
+    const gtus = [...new Set(delRows.map((d) => d.delivery_note_number).filter(Boolean))];
+    const statuses = [...new Set(delRows.map((d) => d.verification_status).filter(Boolean))];
+
+    out.push({
+      beneficiario: r.beneficiary,
+      extensionista: r.extensionista,
+      extensionist_id: r.extensionist_id,
+      supervisor: r.supervisor,
+      provincia: r.province,
+      distrito: r.district,
+      posto: r.posto,
+      produto: r.product_plan,
+      qtd_planeada_original: r.weight_original,
+      qtd_actualizada: 0,
+      qtd_entregue: +totalDeliv.toFixed(2),
+      num_entregas: delRows.length,
+      datas: dates,
+      primeira_entrega: dates[0] || null,
+      ultima_entrega: dates[dates.length - 1] || null,
+      gtus,
+      verificacao: statuses.join(", "),
+    });
+  }
+
+  // Summary
+  const byProv = {};
+  const byProd = {};
+  let totalDeliveredKg = 0;
+  out.forEach((r) => {
+    byProv[r.provincia] = (byProv[r.provincia] || 0) + r.qtd_entregue;
+    byProd[r.produto] = (byProd[r.produto] || 0) + r.qtd_entregue;
+    totalDeliveredKg += r.qtd_entregue;
+  });
+  const uniqueBenefs = new Set(out.map((r) => r.beneficiario + "|" + r.distrito)).size;
+
+  res.json({
+    list: out,
+    summary: {
+      total_rows: out.length,
+      unique_beneficiaries: uniqueBenefs,
+      total_delivered_kg: +totalDeliveredKg.toFixed(2),
+      by_province: byProv,
+      by_product: byProd,
+    },
+  });
+});
+
 app.get("/api/planned-vs-delivered", (req, res) => {
   const { province, district, product, seeds_only } = req.query;
   const SEED_NAMES = new Set(["Maize Seeds (kg)", "Common Bean Seeds (kg)", "Bean Seeds (kg)", "Rice Seeds (kg)"]);

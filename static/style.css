@@ -46,6 +46,9 @@ body.view-updated .header{
 #upd-prov-table td.grp-blue{background:#eff6ff}
 #upd-prov-table tr.upd-total-row{background:#fef9c3 !important;font-weight:700}
 #upd-prov-table tr.upd-total-row td{background:#fef9c3 !important;border-top:2px solid #ca8a04}
+.metric-mini{background:#fef2f2;border:1px solid #fee2e2;border-radius:8px;padding:.5rem .75rem}
+.metric-mini .mm-lbl{font-size:.65rem;text-transform:uppercase;color:#991b1b;letter-spacing:.04em;margin-bottom:.15rem}
+.metric-mini .mm-val{font-size:1.2rem;font-weight:800;color:#7f1d1d;font-variant-numeric:tabular-nums}
 
 body.view-updated #updated-badge{
   display:inline-block;margin-left:.55rem;padding:.15rem .55rem;
