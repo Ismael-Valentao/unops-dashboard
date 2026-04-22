@@ -98,7 +98,12 @@ function load() {
       weight_original:  pesoOrig,
       weight_updated:   qtdAct,
       weight_was_updated: hasUpdatedCol,
-      tipo_feijao:      String(r["Tipo de Feijão"] || r["Tipo de Feijao"] || "").trim(),
+      tipo_feijao:      (function() {
+        const raw = String(r["Tipo de Feijão"] || r["Tipo de Feijao"] || "").trim();
+        // Feijão sem tipo definido → assume Vulgar
+        if (prodPlan === "Feijão" && !raw) return "Vulgar";
+        return raw;
+      })(),
       extensionist_id:  String(r["Extensionist_ID"] || "").trim(),
       extensionista:    String(r["Nome do Extensionista"] || "").trim(),
       supervisor:       String(r["Nome do Supervisor"] || "").trim(),
@@ -169,20 +174,30 @@ function matchProduct(deliveryProductName) {
 
 function buildComparison(deliveryRows, filters) {
   if (!planningData) return null;
-  const { province, district, product, seedsOnly } = filters || {};
+  const { province, district, product, seedsOnly, feijaoType } = filters || {};
   let planProductFilter = product ? (matchProduct(product) || product) : null;
+  // Feijão type filter: "Vulgar", "Nhemba" → apply within Feijão rows only
+  function matchesFeijaoType(r) {
+    if (!feijaoType) return true;
+    if (r.product_plan !== "Feijão") return true; // only applies to Feijão rows
+    const t = String(r.tipo_feijao || "").toLowerCase();
+    if (feijaoType === "Vulgar") return t === "vulgar" || t === "" || t.includes("vulgar");
+    if (feijaoType === "Nhemba") return t === "nhemba" || t.includes("nhemba");
+    return true;
+  }
 
   let planByDistrict = planningData.byDistrict;
   let planByProduct = planningData.byProduct;
   let planByDistrictProduct = planningData.byDistrictProduct;
   let totalPlannedKg = planningData.totalPlannedKg;
 
-  if (province || district || planProductFilter || seedsOnly) {
+  if (province || district || planProductFilter || seedsOnly || feijaoType) {
     const filtered = planningData.rows.filter((r) => {
       if (province && r.province !== province) return false;
       if (district && normalizeDistrict(r.district_raw) !== district && r.district !== district) return false;
       if (planProductFilter && r.product_plan !== planProductFilter) return false;
       if (seedsOnly && !isSeedProduct(r.product_plan)) return false;
+      if (!matchesFeijaoType(r)) return false;
       return true;
     });
     const byD = {}, byP = {}, byDP = {};
