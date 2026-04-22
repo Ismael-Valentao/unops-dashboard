@@ -467,25 +467,12 @@
     const optS = document.createElement("option");
     optS.value = "__seeds__"; optS.textContent = "Só Sementes (Milho + Feijão + Arroz)";
     optS.style.fontWeight = "600"; fProduct.appendChild(optS);
-    // Bean sub-options (only meaningful on /updated where tipo_feijao exists)
-    if (IS_UPDATED) {
-      const optBV = document.createElement("option");
-      optBV.value = "__bean_vulgar__"; optBV.textContent = "Feijão Vulgar";
-      fProduct.appendChild(optBV);
-      const optBN = document.createElement("option");
-      optBN.value = "__bean_nhemba__"; optBN.textContent = "Feijão Nhemba";
-      fProduct.appendChild(optBN);
-      const optBA = document.createElement("option");
-      optBA.value = "__bean_ambos__"; optBA.textContent = "Feijão (Ambos)";
-      fProduct.appendChild(optBA);
-    }
     products.forEach((v) => {
       if (!v) return;
       const o = document.createElement("option");
       o.value = v; o.textContent = v; fProduct.appendChild(o);
     });
-    const specialValues = ["__seeds__", "__bean_vulgar__", "__bean_nhemba__", "__bean_ambos__"];
-    if (specialValues.includes(current) || products.includes(current)) fProduct.value = current;
+    if (current === "__seeds__" || products.includes(current)) fProduct.value = current;
 
     updateDistrictOptions();
   }
@@ -535,11 +522,6 @@
       if (status && r.verification_status !== status) return false;
       if (supplier && r.supplier !== supplier) return false;
       if (product === "__seeds__") { if (!SEED_PRODUCTS.has(r.product)) return false; }
-      else if (product === "__bean_vulgar__" || product === "__bean_nhemba__" || product === "__bean_ambos__") {
-        // Delivery doesn't distinguish bean types — show all bean deliveries
-        const l = String(r.product || "").toLowerCase();
-        if (!(l.includes("bean") || l.includes("feij"))) return false;
-      }
       else if (product && r.product !== product) return false;
       if (search) {
         const hay = (
@@ -1525,18 +1507,8 @@
       const prod = fProduct.value;
       if (prov) params.set("province", prov);
       if (dist) params.set("district", dist);
-      // Handle bean sub-filters → product=Feijão + feijao_type
-      const SPECIAL_BEAN = ["__bean_vulgar__", "__bean_nhemba__", "__bean_ambos__"];
-      if (SPECIAL_BEAN.includes(prod)) {
-        params.set("product", "Feijão");
-        if (prod === "__bean_vulgar__") params.set("feijao_type", "Vulgar");
-        else if (prod === "__bean_nhemba__") params.set("feijao_type", "Nhemba");
-        // __bean_ambos__: no feijao_type filter → all beans
-      } else if (prod === "__seeds__") {
-        params.set("seeds_only", "1");
-      } else if (prod) {
-        params.set("product", prod);
-      }
+      if (prod && prod !== "__seeds__") params.set("product", prod);
+      if (prod === "__seeds__") params.set("seeds_only", "1");
       if (IS_UPDATED) params.set("updated", "1");
       const qs = params.toString();
       const res = await fetch("/api/planned-vs-delivered" + (qs ? "?" + qs : ""));

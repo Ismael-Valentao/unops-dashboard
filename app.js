@@ -706,34 +706,19 @@ app.get("/api/planning-reduced-beneficiaries", (_req, res) => {
 });
 
 app.get("/api/planned-vs-delivered", (req, res) => {
-  const { province, district, product, seeds_only, feijao_type } = req.query;
+  const { province, district, product, seeds_only } = req.query;
   const SEED_NAMES = new Set(["Maize Seeds (kg)", "Common Bean Seeds (kg)", "Bean Seeds (kg)", "Rice Seeds (kg)"]);
-  const BEAN_NAMES = new Set(["Common Bean Seeds (kg)", "Bean Seeds (kg)"]);
   let rows = cache.data;
   if (province) rows = rows.filter((r) => r.province === province);
   if (district) rows = rows.filter((r) => r.district === district);
   // Keep a copy WITHOUT the product filter for the seeds-segment computation
   const rowsNoProduct = rows.slice();
   if (seeds_only === "1") rows = rows.filter((r) => SEED_NAMES.has(r.product));
-  else if (product === "Feijão") {
-    // Planning uses "Feijão" while delivery uses "Common Bean Seeds (kg)"/"Bean Seeds (kg)".
-    // Match any bean-like delivery product.
-    rows = rows.filter((r) => BEAN_NAMES.has(r.product) || /feij|bean/i.test(String(r.product || "")));
-  }
   else if (product) rows = rows.filter((r) => r.product === product);
-
-  // When filtering by Feijão type, the delivery side can't distinguish Vulgar/Nhemba
-  // — the Google Sheet just has "Common Bean Seeds (kg)". We keep all bean deliveries
-  // in scope so the execution % reflects total delivered vs planned-for-this-type.
 
   const seedsFilter = seeds_only === "1";
   const plan = pickPlanning(req);
-  const result = plan.buildComparison(rows, {
-    province, district,
-    product: seedsFilter ? undefined : product,
-    seedsOnly: seedsFilter,
-    feijaoType: feijao_type || null,
-  });
+  const result = plan.buildComparison(rows, { province, district, product: seedsFilter ? undefined : product, seedsOnly: seedsFilter });
   if (!result) return res.status(500).json({ error: "Planning data not loaded" });
   result.totals_seeds = plan.buildSeedsTotals(rowsNoProduct, { province, district });
   res.json(result);

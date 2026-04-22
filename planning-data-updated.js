@@ -174,30 +174,20 @@ function matchProduct(deliveryProductName) {
 
 function buildComparison(deliveryRows, filters) {
   if (!planningData) return null;
-  const { province, district, product, seedsOnly, feijaoType } = filters || {};
+  const { province, district, product, seedsOnly } = filters || {};
   let planProductFilter = product ? (matchProduct(product) || product) : null;
-  // Feijão type filter: "Vulgar", "Nhemba" → apply within Feijão rows only
-  function matchesFeijaoType(r) {
-    if (!feijaoType) return true;
-    if (r.product_plan !== "Feijão") return true; // only applies to Feijão rows
-    const t = String(r.tipo_feijao || "").toLowerCase();
-    if (feijaoType === "Vulgar") return t === "vulgar" || t === "" || t.includes("vulgar");
-    if (feijaoType === "Nhemba") return t === "nhemba" || t.includes("nhemba");
-    return true;
-  }
 
   let planByDistrict = planningData.byDistrict;
   let planByProduct = planningData.byProduct;
   let planByDistrictProduct = planningData.byDistrictProduct;
   let totalPlannedKg = planningData.totalPlannedKg;
 
-  if (province || district || planProductFilter || seedsOnly || feijaoType) {
+  if (province || district || planProductFilter || seedsOnly) {
     const filtered = planningData.rows.filter((r) => {
       if (province && r.province !== province) return false;
       if (district && normalizeDistrict(r.district_raw) !== district && r.district !== district) return false;
       if (planProductFilter && r.product_plan !== planProductFilter) return false;
       if (seedsOnly && !isSeedProduct(r.product_plan)) return false;
-      if (!matchesFeijaoType(r)) return false;
       return true;
     });
     const byD = {}, byP = {}, byDP = {};
