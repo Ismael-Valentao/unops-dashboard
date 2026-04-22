@@ -8,7 +8,8 @@ const excel = require("./excel-engine");
 const snapDb = require("./snapshot-db");
 const planning = require("./planning-data");
 const planningUpdated = require("./planning-data-updated");
-function pickPlanning(req) { return req.query.updated === "1" ? planningUpdated : planning; }
+// Default = UPDATED plan. Only use the old plan when the request explicitly opts-in via ?old=1.
+function pickPlanning(req) { return req.query.old === "1" ? planning : planningUpdated; }
 const mysqlDb = require("./db/mysql");
 const auth = require("./auth");
 const adminRouter = require("./routes/admin");
@@ -153,8 +154,11 @@ app.get("/operations/dashboard", (_req, res) => {
   res.sendFile(path.join(__dirname, "templates", "index.html"));
 });
 
-// Dashboard usando o planeamento ACTUALIZADO (Qtd Actualizada)
-app.get("/updated", (_req, res) => {
+// Legacy URL: /updated redirects to / (updated is now the default)
+app.get("/updated", (_req, res) => res.redirect(301, "/"));
+
+// Old/deprecated planning view (previous planeamento_wilson_.xlsx)
+app.get("/anterior", (_req, res) => {
   res.sendFile(path.join(__dirname, "templates", "index.html"));
 });
 

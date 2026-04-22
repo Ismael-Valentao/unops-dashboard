@@ -129,9 +129,11 @@
   // Planning geography (provinces + districts)
   let planGeo = { provinces: [], districtsByProvince: {} };
 
-  // Detect /updated route → use "Qtd Actualizada" planning data
-  const IS_UPDATED = location.pathname === "/updated" || location.pathname.startsWith("/updated/");
-  const PLAN_PARAM = IS_UPDATED ? "updated=1" : "";
+  // Default = UPDATED plan on "/" and "/operations/dashboard".
+  // The legacy/old plan is only used on "/anterior".
+  const IS_OLD = location.pathname === "/anterior" || location.pathname.startsWith("/anterior/");
+  const IS_UPDATED = !IS_OLD; // kept for backward compat in render code
+  const PLAN_PARAM = IS_OLD ? "old=1" : "";
   const addPlanParam = (url) => {
     if (!PLAN_PARAM) return url;
     return url + (url.includes("?") ? "&" : "?") + PLAN_PARAM;
@@ -1509,7 +1511,7 @@
       if (dist) params.set("district", dist);
       if (prod && prod !== "__seeds__") params.set("product", prod);
       if (prod === "__seeds__") params.set("seeds_only", "1");
-      if (IS_UPDATED) params.set("updated", "1");
+      if (IS_OLD) params.set("old", "1");
       const qs = params.toString();
       const res = await fetch("/api/planned-vs-delivered" + (qs ? "?" + qs : ""));
       if (!res.ok) return;
@@ -2039,50 +2041,48 @@
     const subtitle = $("#header-subtitle");
     const opsLink = $("#ops-link");
     const cardErrors = $("#card-errors");
-    if (IS_UPDATED) {
-      document.body.classList.add("view-updated");
-      if (subtitle) subtitle.textContent = "Plano Revisto — Quantidades Actualizadas";
+    if (IS_OLD) {
+      // Deprecated view — grey/amber style + banner warning user
+      document.body.classList.add("view-old");
+      if (subtitle) subtitle.textContent = "Plano Anterior (desactualizado)";
       if (opsLink) opsLink.style.display = "none";
       if (cardErrors) cardErrors.style.display = "none";
-      // Add navigation link back to original view
       const hl = document.querySelector(".header-left");
-      if (hl && !document.getElementById("orig-link")) {
+      if (hl && !document.getElementById("back-current-link")) {
         const a = document.createElement("a");
-        a.id = "orig-link";
+        a.id = "back-current-link";
         a.href = "/";
         a.className = "header-nav-link";
-        a.textContent = "← Vista Original";
+        a.textContent = "← Plano Actual";
         hl.appendChild(a);
       }
-      // Update page title
       const t = document.querySelector("h1.logo");
-      if (t && !t.dataset.updatedAdded) {
+      if (t && !t.dataset.oldAdded) {
         const badge = document.createElement("span");
-        badge.id = "updated-badge";
-        badge.textContent = "ACTUALIZADO";
+        badge.id = "old-badge";
+        badge.textContent = "ANTERIOR";
         t.appendChild(badge);
-        t.dataset.updatedAdded = "1";
+        t.dataset.oldAdded = "1";
       }
-      document.title = "AQI Control File — Plano Actualizado";
+      document.title = "AQI Control File — Plano Anterior";
     } else if (isPublic) {
+      // Default view — uses the UPDATED plan
       if (subtitle) subtitle.textContent = "Delivery Monitoring Dashboard";
-      // Show "Operations View" link for internal team
       if (opsLink) opsLink.style.display = "inline-block";
-      // Hide error count card from public visitors
       if (cardErrors) cardErrors.style.display = "none";
-      // Add link to updated view
+      // Link to old/deprecated view
       const hl = document.querySelector(".header-left");
-      if (hl && !document.getElementById("upd-link")) {
+      if (hl && !document.getElementById("old-link")) {
         const a = document.createElement("a");
-        a.id = "upd-link";
-        a.href = "/updated";
-        a.className = "header-nav-link header-nav-updated";
-        a.textContent = "📝 Vista Actualizada";
+        a.id = "old-link";
+        a.href = "/anterior";
+        a.className = "header-nav-link header-nav-old";
+        a.title = "Ver o plano anterior (desactualizado)";
+        a.textContent = "📄 Plano Anterior";
         hl.appendChild(a);
       }
     } else {
       if (subtitle) subtitle.textContent = "Operacoes - Monitoria Interna";
-      // Hide "Operations View" since we're already there
       if (opsLink) opsLink.style.display = "none";
       if (cardErrors) cardErrors.style.display = "";
     }
