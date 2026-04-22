@@ -497,6 +497,13 @@ app.get("/api/planning-geography", (req, res) => {
   res.json(pickPlanning(req).getGeography());
 });
 
+// Extras from the updated planning file (Antes/Depois, Novos Benef., Kits, Duplicados)
+app.get("/api/planning-updates-summary", (_req, res) => {
+  const extras = planningUpdated.getExtras();
+  if (!extras) return res.status(404).json({ error: "Extras não disponíveis" });
+  res.json(extras);
+});
+
 app.get("/api/planned-vs-delivered", (req, res) => {
   const { province, district, product, seeds_only } = req.query;
   const SEED_NAMES = new Set(["Maize Seeds (kg)", "Common Bean Seeds (kg)", "Bean Seeds (kg)", "Rice Seeds (kg)"]);
@@ -742,6 +749,7 @@ async function main() {
   snapDb.init();
   planning.load();
   planningUpdated.load();
+  planningUpdated.loadExtras();
 
   // Try MySQL — but don't crash the app if it's not available (admin will be disabled)
   try {

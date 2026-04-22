@@ -144,6 +144,141 @@
     } catch (e) { console.warn("Geography load error:", e); }
   }
 
+  // ── Updates Summary (only shown on /updated) ─────────────────
+  let updatesData = null;
+  let updNewSearch = "", updNewProv = "", updNewKit = "";
+
+  function fmtSigned(n) {
+    const v = Math.round(Number(n) || 0);
+    if (v === 0) return "0";
+    return (v > 0 ? "+" : "") + v.toLocaleString("pt-PT");
+  }
+
+  async function loadUpdatesSummary() {
+    if (!IS_UPDATED) return;
+    try {
+      const r = await fetch("/api/planning-updates-summary");
+      if (!r.ok) return;
+      updatesData = await r.json();
+      document.getElementById("updates-summary").style.display = "";
+      const bn = document.getElementById("upd-badge-new");
+      if (bn) bn.textContent = updatesData.newBeneficiaries.length;
+      const bf = document.getElementById("upd-badge-flag");
+      if (bf) bf.textContent = updatesData.flaggedNames.length;
+
+      renderProvinceSummary();
+      renderNewBenefs();
+      renderKits();
+      renderFlagged();
+      bindUpdatesTabs();
+    } catch (e) { console.warn("Updates summary load error:", e); }
+  }
+
+  function renderProvinceSummary() {
+    const body = document.getElementById("upd-prov-body");
+    if (!body || !updatesData) return;
+    const fmt = (n) => Math.round(Number(n) || 0).toLocaleString("pt-PT");
+    body.innerHTML = updatesData.provinceSummary.map((p) => {
+      const varColor = (v) => v > 0 ? "#16a34a" : v < 0 ? "#dc2626" : "#64748b";
+      const tr = [
+        `<td><strong>${esc(p.province)}</strong></td>`,
+        `<td class="grp-grey">${fmt(p.antes.kit1)}</td>`,
+        `<td class="grp-grey">${fmt(p.antes.kit2)}</td>`,
+        `<td class="grp-grey"><strong>${fmt(p.antes.total)}</strong></td>`,
+        `<td class="grp-blue">${fmt(p.depois.kit1)}</td>`,
+        `<td class="grp-blue">${fmt(p.depois.kit2)}</td>`,
+        `<td class="grp-blue"><strong>${fmt(p.depois.total)}</strong></td>`,
+        `<td style="color:${varColor(p.variacao.kit1)};font-weight:600">${fmtSigned(p.variacao.kit1)}</td>`,
+        `<td style="color:${varColor(p.variacao.kit2)};font-weight:600">${fmtSigned(p.variacao.kit2)}</td>`,
+        `<td style="color:${varColor(p.variacao.total)};font-weight:700">${fmtSigned(p.variacao.total)}</td>`,
+      ].join("");
+      return `<tr class="${p.isTotal ? "upd-total-row" : ""}">${tr}</tr>`;
+    }).join("");
+  }
+
+  function renderNewBenefs() {
+    if (!updatesData) return;
+    // Populate filter dropdown
+    const provSel = document.getElementById("upd-new-prov");
+    const provs = [...new Set(updatesData.newBeneficiaries.map((n) => n.provincia))].sort();
+    if (provSel && provSel.options.length <= 1) {
+      provs.forEach((p) => { const o = document.createElement("option"); o.value = p; o.textContent = p; provSel.appendChild(o); });
+    }
+
+    const q = updNewSearch.toLowerCase();
+    const list = updatesData.newBeneficiaries.filter((n) => {
+      if (updNewProv && n.provincia !== updNewProv) return false;
+      if (updNewKit && n.kit !== updNewKit) return false;
+      if (q && !(n.extensionista.toLowerCase().includes(q) || n.distrito.toLowerCase().includes(q) || n.localidade.toLowerCase().includes(q) || n.extensionist_id.toLowerCase().includes(q))) return false;
+      return true;
+    });
+
+    const body = document.getElementById("upd-new-body");
+    if (!list.length) { body.innerHTML = '<tr><td colspan="9" class="empty">Sem resultados</td></tr>'; return; }
+    body.innerHTML = list.map((n) => `<tr>
+      <td><code style="font-size:.72rem">${esc(n.extensionist_id)}</code></td>
+      <td>${esc(n.extensionista)}</td>
+      <td style="font-size:.78rem">${esc(n.contacto)}</td>
+      <td style="font-size:.78rem">${esc(n.supervisor)}</td>
+      <td>${esc(n.provincia)}</td>
+      <td>${esc(n.distrito)}</td>
+      <td>${esc(n.localidade)}</td>
+      <td><span style="font-size:.72rem;padding:.12rem .45rem;border-radius:4px;background:${n.kit === "Kit 1" ? "#dbeafe;color:#1e40af" : "#fef3c7;color:#92400e"}">${esc(n.kit)}</span></td>
+      <td style="text-align:right;font-weight:700">${n.qtd_actualizada}</td>
+    </tr>`).join("");
+  }
+
+  function renderKits() {
+    const body = document.getElementById("upd-kits-body");
+    if (!body || !updatesData) return;
+    body.innerHTML = updatesData.kits.map((k) => `<tr>
+      <td><strong>${esc(k.insumo)}</strong></td>
+      <td>${esc(k.unidade)}</td>
+      <td style="text-align:center">${k.kit1 && k.kit1 !== "-" ? '<strong>' + esc(k.kit1) + '</strong>' : '<span style="color:#94a3b8">—</span>'}</td>
+      <td style="text-align:center">${k.kit2 && k.kit2 !== "-" ? '<strong>' + esc(k.kit2) + '</strong>' : '<span style="color:#94a3b8">—</span>'}</td>
+      <td style="font-size:.8rem;color:#64748b">${esc(k.observacao)}</td>
+    </tr>`).join("");
+  }
+
+  function renderFlagged() {
+    const body = document.getElementById("upd-flag-body");
+    if (!body || !updatesData) return;
+    const list = updatesData.flaggedNames.slice().sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    body.innerHTML = list.map((d) => `<tr>
+      <td>${esc(d.name)}</td>
+      <td style="text-align:right"><span style="background:${d.count > 1 ? "#fee2e2;color:#991b1b" : "#f1f5f9;color:#475569"};padding:.12rem .5rem;border-radius:4px;font-weight:700">${d.count}</span></td>
+    </tr>`).join("");
+  }
+
+  function bindUpdatesTabs() {
+    document.querySelectorAll(".updates-tab").forEach((btn) => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".updates-tab").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        document.querySelectorAll(".updates-panel").forEach((p) => p.style.display = "none");
+        const pane = document.getElementById("upd-panel-" + btn.dataset.tab);
+        if (pane) pane.style.display = "";
+      });
+    });
+    const s = document.getElementById("upd-new-search");
+    if (s && !s.dataset.bound) {
+      s.dataset.bound = "1";
+      s.addEventListener("input", (e) => { updNewSearch = e.target.value.trim(); renderNewBenefs(); });
+    }
+    const ps = document.getElementById("upd-new-prov");
+    if (ps && !ps.dataset.bound) {
+      ps.dataset.bound = "1";
+      ps.addEventListener("change", (e) => { updNewProv = e.target.value; renderNewBenefs(); });
+    }
+    const ks = document.getElementById("upd-new-kit");
+    if (ks && !ks.dataset.bound) {
+      ks.dataset.bound = "1";
+      ks.addEventListener("change", (e) => { updNewKit = e.target.value; renderNewBenefs(); });
+    }
+  }
+
   const SEED_PRODUCTS = new Set(["Maize Seeds (kg)", "Common Bean Seeds (kg)", "Bean Seeds (kg)", "Rice Seeds (kg)"]);
 
   function populateFilters() {
@@ -2020,6 +2155,7 @@
       loadPvD();
       loadAnalytics();
       loadLogistics();
+      loadUpdatesSummary();
     });
   }
 

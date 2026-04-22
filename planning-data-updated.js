@@ -290,6 +290,102 @@ function buildSeedsTotals(deliveryRowsNoProductFilter, filters) {
   };
 }
 
+// ── Extras: Províncias Antes/Depois, Novos Beneficiários, Kits, Duplicados ──
+let extras = null;
+
+function loadExtras() {
+  if (!fs.existsSync(PLANNING_FILE)) return null;
+  const wb = XLSX.readFile(PLANNING_FILE);
+
+  function sheetAsArrays(name) {
+    const ws = wb.Sheets[name];
+    if (!ws) return [];
+    return XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+  }
+
+  // ── Totais por Província (Antes/Depois/Variação por Kit 1/Kit 2/Total) ──
+  // Header at row 1: [Província, Kit1, Kit2, Total, Kit1, Kit2, Total, Kit1, Kit2, Total]
+  const provRaw = sheetAsArrays("Totais por Província");
+  const provSummary = [];
+  for (let i = 2; i < provRaw.length; i++) {
+    const r = provRaw[i] || [];
+    const name = String(r[0] || "").trim();
+    if (!name || /^notas?:|•/i.test(name) || name === "") break;
+    if (/^total/i.test(name)) { provSummary.push({ province: name, isTotal: true, ...parseKitRow(r) }); continue; }
+    provSummary.push({ province: name, isTotal: false, ...parseKitRow(r) });
+  }
+
+  // ── Novos Beneficiários ──
+  const novosRaw = XLSX.utils.sheet_to_json(wb.Sheets["Novos Beneficiários"] || {}, { defval: "" });
+  const novos = novosRaw.map((r) => ({
+    extensionist_id: String(r["Extensionist ID"] || "").trim(),
+    extensionista: String(r["Extensionista"] || "").trim(),
+    contacto: String(r["Contacto Extensionista"] || "").trim(),
+    supervisor: String(r["Supervisor"] || "").trim(),
+    provincia: String(r["Província"] || "").trim(),
+    distrito: String(r["Distrito"] || "").trim(),
+    localidade: String(r["Localidade"] || "").trim(),
+    kit: String(r["Kit"] || "").trim(),
+    qtd_anterior: Number(r["Qtd Anterior"]) || 0,
+    qtd_actualizada: Number(r["Qtd Actualizada"]) || 0,
+    variacao: Number(r["Variação"]) || 0,
+  })).filter((r) => r.extensionista);
+
+  // ── Composição dos Kits ──
+  const kitsRaw = sheetAsArrays("Composição dos Kits");
+  const kits = [];
+  let kitsHeaderIdx = kitsRaw.findIndex((r) => /insumo/i.test(String(r[0] || "")));
+  if (kitsHeaderIdx >= 0) {
+    for (let i = kitsHeaderIdx + 1; i < kitsRaw.length; i++) {
+      const r = kitsRaw[i] || [];
+      const insumo = String(r[0] || "").trim();
+      if (!insumo) continue;
+      kits.push({
+        insumo,
+        unidade: String(r[1] || "").trim(),
+        kit1: String(r[2] || "").trim(),
+        kit2: String(r[3] || "").trim(),
+        observacao: String(r[4] || "").trim(),
+      });
+    }
+  }
+
+  // ── Sheet4: Nomes potencialmente duplicados ──
+  const dupRaw = sheetAsArrays("Sheet4");
+  const dupCounts = {};
+  dupRaw.forEach((r) => {
+    const n = String(r[0] || "").trim();
+    if (n) dupCounts[n] = (dupCounts[n] || 0) + 1;
+  });
+  const duplicates = Object.entries(dupCounts).map(([name, count]) => ({ name, count }));
+
+  extras = {
+    provinceSummary: provSummary,
+    newBeneficiaries: novos,
+    kits,
+    flaggedNames: duplicates,
+  };
+
+  console.log(`[PLANNING-UPDATED] Extras: ${provSummary.length} provs, ${novos.length} novos benef., ${kits.length} kits, ${duplicates.length} nomes marcados`);
+  return extras;
+}
+
+function parseKitRow(r) {
+  const num = (v) => {
+    const s = String(v || "").trim().replace(/\s/g, "").replace(/,/g, "");
+    if (/^\(.*\)$/.test(s)) return -Number(s.slice(1, -1)) || 0; // (839) → -839
+    const n = Number(s);
+    return isNaN(n) ? 0 : n;
+  };
+  return {
+    antes: { kit1: num(r[1]), kit2: num(r[2]), total: num(r[3]) },
+    depois: { kit1: num(r[4]), kit2: num(r[5]), total: num(r[6]) },
+    variacao: { kit1: num(r[7]), kit2: num(r[8]), total: num(r[9]) },
+  };
+}
+
+function getExtras() { return extras; }
+
 function getGeography() {
   if (!planningData) return { provinces: [], districtsByProvince: {} };
   const map = {};
@@ -306,4 +402,4 @@ function getGeography() {
   return { provinces, districtsByProvince };
 }
 
-module.exports = { load, getData, buildComparison, buildSeedsTotals, normalizeDistrict, matchProduct, isSeedProduct, getGeography };
+module.exports = { load, loadExtras, getData, getExtras, buildComparison, buildSeedsTotals, normalizeDistrict, matchProduct, isSeedProduct, getGeography };

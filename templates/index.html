@@ -89,6 +89,75 @@
       </div>
     </section>
 
+    <!-- RESUMO DAS ALTERAÇÕES (só na vista /updated) -->
+    <section id="updates-summary" class="updates-section" style="display:none">
+      <div class="updates-header">
+        <h3>📊 Resumo das Alterações ao Plano</h3>
+        <span class="updates-sub">Comparação Plano Anterior vs Plano Actualizado (UNOPS)</span>
+      </div>
+
+      <div class="updates-tabs" role="tablist">
+        <button class="updates-tab active" data-tab="provinces">Por Província</button>
+        <button class="updates-tab" data-tab="new">Novos Beneficiários <span id="upd-badge-new"></span></button>
+        <button class="updates-tab" data-tab="kits">Composição dos Kits</button>
+        <button class="updates-tab" data-tab="flagged">Nomes Marcados <span id="upd-badge-flag"></span></button>
+      </div>
+
+      <div class="updates-panel" id="upd-panel-provinces">
+        <div class="tbl-wrap">
+          <table class="mini-table" id="upd-prov-table">
+            <thead><tr>
+              <th rowspan="2">Província</th>
+              <th colspan="3" class="grp-grey">Plano Anterior (famílias)</th>
+              <th colspan="3" class="grp-blue">Plano Actualizado (famílias)</th>
+              <th colspan="3" class="grp-amber">Variação</th>
+            </tr><tr>
+              <th>Kit 1</th><th>Kit 2</th><th>Total</th>
+              <th>Kit 1</th><th>Kit 2</th><th>Total</th>
+              <th>Kit 1</th><th>Kit 2</th><th>Total</th>
+            </tr></thead>
+            <tbody id="upd-prov-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="updates-panel" id="upd-panel-new" style="display:none">
+        <div style="display:flex;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
+          <input type="text" id="upd-new-search" placeholder="Pesquisar extensionista, distrito..." style="flex:1;min-width:200px;padding:.45rem .7rem;border:1px solid #cbd5e1;border-radius:6px">
+          <select id="upd-new-prov" style="padding:.45rem;border:1px solid #cbd5e1;border-radius:6px"><option value="">Todas Províncias</option></select>
+          <select id="upd-new-kit" style="padding:.45rem;border:1px solid #cbd5e1;border-radius:6px">
+            <option value="">Todos Kits</option><option value="Kit 1">Kit 1</option><option value="Kit 2">Kit 2</option>
+          </select>
+        </div>
+        <div class="tbl-wrap" style="max-height:440px;overflow-y:auto">
+          <table class="mini-table">
+            <thead><tr>
+              <th>ID</th><th>Extensionista</th><th>Contacto</th>
+              <th>Supervisor</th><th>Província</th><th>Distrito</th><th>Localidade</th>
+              <th>Kit</th><th style="text-align:right">Qtd</th>
+            </tr></thead>
+            <tbody id="upd-new-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="updates-panel" id="upd-panel-kits" style="display:none">
+        <div class="tbl-wrap">
+          <table class="mini-table" id="upd-kits-table">
+            <thead><tr><th>Insumo</th><th>Unidade</th><th>Kit 1 (por família)</th><th>Kit 2 (por família)</th><th>Observação</th></tr></thead>
+            <tbody id="upd-kits-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="updates-panel" id="upd-panel-flagged" style="display:none">
+        <p class="updates-note">Nomes que foram marcados pela UNOPS para revisão (possíveis duplicados, erros de input, ou casos que precisam verificação).</p>
+        <div class="tbl-wrap">
+          <table class="mini-table"><thead><tr><th>Nome</th><th style="text-align:right">Ocorrências</th></tr></thead><tbody id="upd-flag-body"></tbody></table>
+        </div>
+      </div>
+    </section>
+
     <!-- EXECUTIVE SUMMARY -->
     <section class="exec-section" id="exec-section">
       <div class="exec-row">
