@@ -606,7 +606,13 @@
     if (bdq) {
       const entries = Object.entries(cats).filter(([, v]) => v > 0.5);
       bdq.innerHTML = entries.length
-        ? entries.map(([k, v]) => `<div class="bd-row"><span class="bd-k">${k}</span><span class="bd-v bd-v-blue">${fmtDec(v)}</span></div>`).join("")
+        ? entries.map(([k, v]) => {
+            const isSacos = k.startsWith("Sacos");
+            const valueHtml = isSacos
+              ? `${fmtDec(v)} <span class="bd-unit">(${fmt(Math.round(v / 0.3))} un)</span>`
+              : fmtDec(v);
+            return `<div class="bd-row"><span class="bd-k">${k}</span><span class="bd-v bd-v-blue">${valueHtml}</span></div>`;
+          }).join("")
         : "";
     }
   }
@@ -1605,7 +1611,13 @@
     if (bd) {
       const entries = Object.entries(categories).filter(([, v]) => v > 0.5);
       bd.innerHTML = entries.length
-        ? entries.map(([k, v]) => `<div class="bd-row"><span class="bd-k">${k}</span><span class="bd-v">${fmtDec(v)}</span></div>`).join("")
+        ? entries.map(([k, v]) => {
+            const isSacos = k.startsWith("Sacos");
+            const valueHtml = isSacos
+              ? `${fmtDec(v)} <span class="bd-unit">(${fmt(Math.round(v / 0.3))} un)</span>`
+              : fmtDec(v);
+            return `<div class="bd-row"><span class="bd-k">${k}</span><span class="bd-v">${valueHtml}</span></div>`;
+          }).join("")
         : "";
     }
 
@@ -1755,22 +1767,29 @@
     const page = rows.slice(start, start + PVD_PAGE_SIZE);
 
     $("#pvd-table-body").innerHTML = page
-      .map(
-        (r) => `<tr>
+      .map((r) => {
+        const isSacos = /saco|hermetic/i.test(String(r.product || ""));
+        const withUn = (kg) => isSacos
+          ? `${fmtDec(kg)} <span class="bd-unit">(${fmt(Math.round(kg / 0.3))} un)</span>`
+          : fmtDec(kg);
+        const diffSign = r.diff > 0 ? "+" : r.diff < 0 ? "-" : "";
+        const diffAbs = Math.abs(r.diff);
+        const diffHtml = isSacos
+          ? `${diffSign}${fmtDec(diffAbs)} <span class="bd-unit">(${diffSign}${fmt(Math.round(diffAbs / 0.3))} un)</span>`
+          : `${diffSign}${fmtDec(diffAbs)}`;
+        return `<tr>
           <td>${esc(r.district)}</td>
           <td>${esc(r.province)}</td>
           <td>${esc(r.product)}</td>
-          <td class="num">${fmtDec(r.planned_kg)}</td>
-          <td class="num">${fmtDec(r.delivered_kg)}</td>
-          <td class="num" style="color:${r.diff < 0 ? "#dc2626" : r.diff > 0 ? "#16a34a" : "#64748b"};font-weight:600">
-            ${r.diff > 0 ? "+" : ""}${fmtDec(r.diff)}
-          </td>
+          <td class="num">${withUn(r.planned_kg)}</td>
+          <td class="num">${withUn(r.delivered_kg)}</td>
+          <td class="num" style="color:${r.diff < 0 ? "#dc2626" : r.diff > 0 ? "#16a34a" : "#64748b"};font-weight:600">${diffHtml}</td>
           <td class="num" style="font-weight:700;color:${r.pct >= 95 ? "#16a34a" : r.pct > 0 ? "#d97706" : "#dc2626"}">
             ${r.pct}%
           </td>
           <td class="num">${pvdStatusBadge(r.status)}</td>
-        </tr>`
-      )
+        </tr>`;
+      })
       .join("");
 
     // Pagination

@@ -339,6 +339,7 @@ th.num, td.num,
 .card-breakdown .bd-k{font-weight:500}
 .card-breakdown .bd-v{font-weight:700;color:#7c3aed;font-variant-numeric:tabular-nums}
 .card-breakdown .bd-v-blue{color:#0f4c75}
+.bd-unit{font-size:.85em;color:#64748b;font-weight:500}
 
 /* ── Filters ─────────────────────────────────────────────── */
 .filters{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
