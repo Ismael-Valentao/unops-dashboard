@@ -582,7 +582,8 @@
 
     $("#m-total").textContent = fmt(total);
     $("#m-qty").textContent = fmtDec(qty);
-    $("#m-packages").textContent = fmt(pkgs);
+    const packagesEl = $("#m-packages");
+    if (packagesEl) packagesEl.textContent = fmt(pkgs);
     // Gap will be updated when PvD loads
     $("#m-verified-pct").textContent = pct + "%";
     const partEl = $("#m-partial"); if (partEl) partEl.textContent = fmt(partial);
