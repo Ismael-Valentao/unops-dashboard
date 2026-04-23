@@ -590,16 +590,16 @@
     const unrEl = $("#m-unreachable"); if (unrEl) unrEl.textContent = fmt(unreachable);
     $("#m-errors").textContent = fmt(errors);
 
-    // Breakdown da quantidade entregue por categoria — tudo em kg
-    // (sacos herméticos já convertidos no backend: 0.3 kg/un)
-    const cats = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (kg)": 0, "Outros (kg)": 0 };
+    // Breakdown da quantidade entregue por categoria.
+    // Sementes/Químicos/Outros em kg. Sacos em unidades (kg interno / 0.3).
+    const cats = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (un)": 0, "Outros (kg)": 0 };
     rows.forEach((r) => {
       const q = Number(r.delivered_qty) || 0;
       if (q <= 0) return;
       const name = String(r.product || "").toLowerCase();
       if (/milho|feij|arroz|maize|bean|rice|seed/.test(name)) cats["Sementes (kg)"] += q;
       else if (/emamectin|imidaclop|mcpa/.test(name)) cats["Químicos (kg)"] += q;
-      else if (/saco|hermetic/.test(name)) cats["Sacos (kg)"] += q;
+      else if (/saco|hermetic/.test(name)) cats["Sacos (un)"] += q / 0.3; // kg stored → back to units
       else cats["Outros (kg)"] += q;
     });
     const bdq = $("#m-qty-breakdown");
@@ -608,10 +608,8 @@
       bdq.innerHTML = entries.length
         ? entries.map(([k, v]) => {
             const isSacos = k.startsWith("Sacos");
-            const valueHtml = isSacos
-              ? `${fmtDec(v)} <span class="bd-unit">(${fmt(Math.round(v / 0.3))} un)</span>`
-              : fmtDec(v);
-            return `<div class="bd-row"><span class="bd-k">${k}</span><span class="bd-v bd-v-blue">${valueHtml}</span></div>`;
+            const value = isSacos ? fmt(Math.round(v)) : fmtDec(v);
+            return `<div class="bd-row"><span class="bd-k">${k}</span><span class="bd-v bd-v-blue">${value}</span></div>`;
           }).join("")
         : "";
     }
@@ -1597,14 +1595,14 @@
     const gap = Math.max(0, t.planned_kg - t.delivered_kg);
     $("#m-gap").textContent = fmtDec(gap);
 
-    const categories = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (kg)": 0, "Outros (kg)": 0 };
+    const categories = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (un)": 0, "Outros (kg)": 0 };
     (pvdData.by_product || []).forEach((p) => {
       const g = Math.max(0, (p.planned_kg || 0) - (p.delivered_kg || 0));
       if (g <= 0.5) return;
       const name = String(p.product || p.product_plan || "").toLowerCase();
       if (/milho|feij|arroz|maize|bean|rice|sementes?|seed/.test(name)) categories["Sementes (kg)"] += g;
       else if (/emamectin|imidaclop|mcpa|qu[ií]m|chem/.test(name)) categories["Químicos (kg)"] += g;
-      else if (/saco|hermetic/.test(name)) categories["Sacos (kg)"] += g;
+      else if (/saco|hermetic/.test(name)) categories["Sacos (un)"] += g / 0.3; // back to units for display
       else categories["Outros (kg)"] += g;
     });
     const bd = $("#m-gap-breakdown");
@@ -1613,10 +1611,8 @@
       bd.innerHTML = entries.length
         ? entries.map(([k, v]) => {
             const isSacos = k.startsWith("Sacos");
-            const valueHtml = isSacos
-              ? `${fmtDec(v)} <span class="bd-unit">(${fmt(Math.round(v / 0.3))} un)</span>`
-              : fmtDec(v);
-            return `<div class="bd-row"><span class="bd-k">${k}</span><span class="bd-v">${valueHtml}</span></div>`;
+            const value = isSacos ? fmt(Math.round(v)) : fmtDec(v);
+            return `<div class="bd-row"><span class="bd-k">${k}</span><span class="bd-v">${value}</span></div>`;
           }).join("")
         : "";
     }
@@ -1769,20 +1765,21 @@
     $("#pvd-table-body").innerHTML = page
       .map((r) => {
         const isSacos = /saco|hermetic/i.test(String(r.product || ""));
-        const withUn = (kg) => isSacos
-          ? `${fmtDec(kg)} <span class="bd-unit">(${fmt(Math.round(kg / 0.3))} un)</span>`
+        // For sacos, display in units (kg / 0.3). For everything else, kg.
+        const displayVal = (kg) => isSacos
+          ? `${fmt(Math.round(kg / 0.3))} <span class="bd-unit">un</span>`
           : fmtDec(kg);
         const diffSign = r.diff > 0 ? "+" : r.diff < 0 ? "-" : "";
         const diffAbs = Math.abs(r.diff);
         const diffHtml = isSacos
-          ? `${diffSign}${fmtDec(diffAbs)} <span class="bd-unit">(${diffSign}${fmt(Math.round(diffAbs / 0.3))} un)</span>`
+          ? `${diffSign}${fmt(Math.round(diffAbs / 0.3))} <span class="bd-unit">un</span>`
           : `${diffSign}${fmtDec(diffAbs)}`;
         return `<tr>
           <td>${esc(r.district)}</td>
           <td>${esc(r.province)}</td>
           <td>${esc(r.product)}</td>
-          <td class="num">${withUn(r.planned_kg)}</td>
-          <td class="num">${withUn(r.delivered_kg)}</td>
+          <td class="num">${displayVal(r.planned_kg)}</td>
+          <td class="num">${displayVal(r.delivered_kg)}</td>
           <td class="num" style="color:${r.diff < 0 ? "#dc2626" : r.diff > 0 ? "#16a34a" : "#64748b"};font-weight:600">${diffHtml}</td>
           <td class="num" style="font-weight:700;color:${r.pct >= 95 ? "#16a34a" : r.pct > 0 ? "#d97706" : "#dc2626"}">
             ${r.pct}%
