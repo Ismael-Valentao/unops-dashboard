@@ -581,7 +581,17 @@
     const pct = total > 0 ? ((verified / total) * 100).toFixed(1) : "0";
 
     $("#m-total").textContent = fmt(total);
-    $("#m-qty").textContent = fmtDec(qty);
+    // If the product filter is a saco/hermetic bag, flip card to units
+    const productFilter = fProduct.value;
+    const filterIsSacos = /saco|hermetic/i.test(String(productFilter || ""));
+    const qtyLabel = $("#m-qty-label");
+    if (filterIsSacos) {
+      if (qtyLabel) qtyLabel.textContent = "Qtd. Entregue (un)";
+      $("#m-qty").textContent = fmt(Math.round(qty / 0.3));
+    } else {
+      if (qtyLabel) qtyLabel.textContent = "Qtd. Entregue (kg)";
+      $("#m-qty").textContent = fmtDec(qty);
+    }
     const packagesEl = $("#m-packages");
     if (packagesEl) packagesEl.textContent = fmt(pkgs);
     // Gap will be updated when PvD loads
@@ -1592,9 +1602,19 @@
       provs.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
     if (provs.includes(curProv)) provSel.value = curProv;
 
-    // Update top gap card — tudo em kg (sacos já convertidos 0.3 kg/un)
+    // Update top gap card — tudo em kg (sacos já convertidos 0.3 kg/un).
+    // Se o filtro activo for sacos, mostrar o card em unidades para coerência.
     const gap = Math.max(0, t.planned_kg - t.delivered_kg);
-    $("#m-gap").textContent = fmtDec(gap);
+    const productFilterG = fProduct.value;
+    const filterIsSacosG = /saco|hermetic/i.test(String(productFilterG || ""));
+    const gapLabel = $("#m-gap-label");
+    if (filterIsSacosG) {
+      if (gapLabel) gapLabel.textContent = "Falta Entregar (un)";
+      $("#m-gap").textContent = fmt(Math.round(gap / 0.3));
+    } else {
+      if (gapLabel) gapLabel.textContent = "Falta Entregar (kg)";
+      $("#m-gap").textContent = fmtDec(gap);
+    }
 
     const categories = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (un)": 0, "Outros (kg)": 0 };
     (pvdData.by_product || []).forEach((p) => {
