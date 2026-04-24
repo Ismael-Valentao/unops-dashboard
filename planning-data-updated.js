@@ -412,6 +412,9 @@ function loadRealocacao() {
   const num = (v) => Number(v) || 0;
 
   // Province × Artigo summary (Realocação sheet)
+  // The sheet mixes the prov×artigo summary on top with per-beneficiary detail rows below.
+  // Only keep rows whose Artigo is one of the recognised product names.
+  const VALID_ARTIGOS = new Set(["Arroz", "Milho", "Feijão", "Emamectin", "Imadocloprid", "Imidacloprid", "MCPA", "Sacos Hermeticos", "Sacos Herméticos"]);
   const provArtigo = rows("Realocação")
     .map((r) => ({
       provincia: String(r["Província"] || "").trim(),
@@ -429,7 +432,7 @@ function loadRealocacao() {
       inter_prov_env: num(r["Inter-Prov Env"]),
       falta_entregar: num(r["Falta Entregar"]),
     }))
-    .filter((r) => r.provincia && r.artigo);
+    .filter((r) => r.provincia && VALID_ARTIGOS.has(r.artigo));
 
   // Detail Origem → Destino
   const transferencias = rows("Dados Realocação").map((r) => ({
