@@ -162,6 +162,11 @@ app.get("/anterior", (_req, res) => {
   res.sendFile(path.join(__dirname, "templates", "index.html"));
 });
 
+// Realocação — operational view (excessos → défices)
+app.get("/realocacao", (_req, res) => {
+  res.sendFile(path.join(__dirname, "templates", "realocacao.html"));
+});
+
 app.get("/dashboard", (_req, res) => {
   res.sendFile(path.join(__dirname, "templates", "ceo-dashboard.html"));
 });
@@ -506,6 +511,13 @@ app.get("/api/planning-updates-summary", (_req, res) => {
   const extras = planningUpdated.getExtras();
   if (!extras) return res.status(404).json({ error: "Extras não disponíveis" });
   res.json(extras);
+});
+
+// Realocação data (excessos → défices)
+app.get("/api/realocacao", (_req, res) => {
+  const r = planningUpdated.getRealocacao();
+  if (!r) return res.status(404).json({ error: "Dados de realocação não disponíveis" });
+  res.json(r);
 });
 
 // Shared helpers for cross-referencing planning revisions with deliveries
@@ -955,6 +967,7 @@ async function main() {
   planning.load();
   planningUpdated.load();
   planningUpdated.loadExtras();
+  planningUpdated.loadRealocacao();
 
   // Try MySQL — but don't crash the app if it's not available (admin will be disabled)
   try {

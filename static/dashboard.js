@@ -178,7 +178,26 @@
       // Load removed + reduced beneficiaries in parallel
       loadRemovedBenefs();
       loadReducedBenefs();
+      loadRealocSummary();
     } catch (e) { console.warn("Updates summary load error:", e); }
+  }
+
+  async function loadRealocSummary() {
+    if (!IS_UPDATED) return;
+    try {
+      const r = await fetch("/api/realocacao");
+      if (!r.ok) return;
+      const d = await r.json();
+      const s = d.summary;
+      const banner = document.getElementById("realoc-summary");
+      const stats = document.getElementById("realoc-home-stats");
+      if (banner && stats) {
+        banner.style.display = "";
+        const fmtN = (n) => Math.round(Number(n) || 0).toLocaleString("pt-PT");
+        const realocPct = s.total_excesso > 0 ? (s.total_realocado_kg / s.total_excesso * 100).toFixed(1) : "0";
+        stats.innerHTML = `<strong>${fmtN(s.total_realocado_kg)} kg</strong> realocados (${realocPct}% dos excessos) · <strong>${s.transferencias}</strong> transferências (${s.intra_distrito} mesmo distrito · ${s.intra_provincial} mesma prov · ${s.inter_provincial} inter-prov) · <strong>${s.destinatarios_cobertos}/${s.destinatarios_total}</strong> destinatários cobertos · <strong>${fmtN(s.falta_entregar)} kg</strong> a entregar fisicamente`;
+      }
+    } catch (e) { console.warn("Realoc summary load error:", e); }
   }
 
   async function loadRemovedBenefs() {

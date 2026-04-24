@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Realocação — AQI Control File</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body.realoc-body{background:#f4f6f9}
+    .realoc-header{background:linear-gradient(135deg,#0e7490 0%,#0891b2 100%);color:#fff;padding:.75rem 1.5rem;
+      display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;
+      position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+    .realoc-header h1{font-size:1.35rem;font-weight:700;letter-spacing:-.02em;margin:0}
+    .realoc-header .sub{font-size:.85rem;opacity:.9;margin-left:.6rem}
+    .realoc-header .nav-link{margin-left:.5rem;color:#fff;background:rgba(255,255,255,.15);padding:.25rem .7rem;border-radius:6px;font-size:.75rem;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,.3);white-space:nowrap}
+    .realoc-header .nav-link:hover{background:rgba(255,255,255,.25)}
+    .realoc-container{max-width:1500px;margin:0 auto;padding:1.25rem}
+
+    .realoc-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin-bottom:1.25rem}
+    .realoc-card{background:#fff;border-radius:10px;padding:.85rem 1.1rem;box-shadow:0 1px 4px rgba(0,0,0,.06);border-left:4px solid #0891b2}
+    .realoc-card-lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:.2rem}
+    .realoc-card-val{font-size:1.6rem;font-weight:800;color:#0e7490;font-variant-numeric:tabular-nums;line-height:1.1}
+    .realoc-card-sub{font-size:.7rem;color:#94a3b8;margin-top:.15rem}
+    .realoc-card.amber{border-left-color:#d97706}.realoc-card.amber .realoc-card-val{color:#92400e}
+    .realoc-card.green{border-left-color:#16a34a}.realoc-card.green .realoc-card-val{color:#15803d}
+    .realoc-card.red{border-left-color:#dc2626}.realoc-card.red .realoc-card-val{color:#991b1b}
+
+    .realoc-section{background:#fff;border-radius:12px;padding:1.25rem;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:1.25rem}
+    .realoc-tabs{display:flex;gap:.25rem;margin-bottom:1rem;border-bottom:1px solid #e5e7eb;flex-wrap:wrap}
+    .realoc-tab{background:none;border:none;padding:.6rem 1.1rem;font-size:.85rem;font-weight:600;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .12s}
+    .realoc-tab:hover{color:#0e7490}
+    .realoc-tab.active{color:#0e7490;border-bottom-color:#0891b2}
+    .realoc-tab span{margin-left:.3rem;background:#cffafe;color:#155e75;padding:.05rem .45rem;border-radius:99px;font-size:.7rem;font-weight:700}
+    .realoc-panel{animation:fadeIn .15s ease-in}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+    .filters-row{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.75rem;align-items:center}
+    .filters-row input[type=text],.filters-row select{padding:.45rem .7rem;border:1px solid #cbd5e1;border-radius:6px;font-size:.85rem}
+    .filters-row input[type=text]{flex:1;min-width:200px}
+    .pill{padding:.1rem .55rem;border-radius:99px;font-size:.7rem;font-weight:700;letter-spacing:.02em}
+    .pill-blue{background:#dbeafe;color:#1e40af}
+    .pill-green{background:#dcfce7;color:#166534}
+    .pill-amber{background:#fef3c7;color:#92400e}
+    .pill-grey{background:#f1f5f9;color:#475569}
+    .pill-red{background:#fee2e2;color:#991b1b}
+
+    .realoc-table-wrap{max-height:560px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px}
+    .pct-bar{display:inline-block;width:60px;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;vertical-align:middle;margin-right:.4rem}
+    .pct-fill{height:100%;background:linear-gradient(90deg,#0891b2,#22d3ee);transition:width .2s}
+    .empty-msg{text-align:center;color:#94a3b8;padding:2rem;font-style:italic}
+  </style>
+</head>
+<body class="realoc-body">
+  <header class="realoc-header">
+    <div>
+      <h1>🔄 Realocação de Excessos</h1>
+      <span class="sub">Plano operacional — onde mover o que foi recebido a mais</span>
+    </div>
+    <div>
+      <a href="/" class="nav-link">← Dashboard</a>
+    </div>
+  </header>
+
+  <main class="realoc-container">
+    <!-- Summary cards -->
+    <section class="realoc-cards" id="summary-cards"></section>
+
+    <!-- Tabs section -->
+    <section class="realoc-section">
+      <div class="realoc-tabs" role="tablist">
+        <button class="realoc-tab active" data-tab="provincias">Por Província × Artigo</button>
+        <button class="realoc-tab" data-tab="transferencias">Transferências <span id="badge-transf"></span></button>
+        <button class="realoc-tab" data-tab="destinatarios">Destinatários <span id="badge-dest"></span></button>
+        <button class="realoc-tab" data-tab="entregas">A Entregar Fisicamente <span id="badge-entreg"></span></button>
+      </div>
+
+      <!-- TAB 1: Por Província × Artigo -->
+      <div class="realoc-panel" id="panel-provincias">
+        <p class="updates-note">Saldo por Província × Artigo — quanto foi planeado, entregue, em excesso, em défice e quanto resta entregar fisicamente.</p>
+        <div class="filters-row">
+          <input type="text" id="f-pa-search" placeholder="Pesquisar província ou artigo...">
+          <select id="f-pa-prov"><option value="">Todas Províncias</option></select>
+        </div>
+        <div class="realoc-table-wrap">
+          <table class="mini-table" id="pa-table">
+            <thead><tr>
+              <th>Província</th><th>Artigo</th>
+              <th class="num">Plano Novo</th><th class="num">Já Entregue</th>
+              <th class="num">Excesso</th><th class="num">Défice</th>
+              <th class="num">Realoc Env</th><th class="num">Realoc Rec</th>
+              <th class="num">Inter-Prov</th><th class="num">Falta Entregar</th>
+            </tr></thead>
+            <tbody id="pa-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 2: Transferências (Origem → Destino) -->
+      <div class="realoc-panel" id="panel-transferencias" style="display:none">
+        <p class="updates-note">Mapeamento <strong>Origem → Destino</strong>. Quem cedeu mercadoria a quem, com flags de mesmo distrito / mesma província / inter-provincial.</p>
+        <div class="filters-row">
+          <input type="text" id="f-t-search" placeholder="Pesquisar origem, destino, distrito...">
+          <select id="f-t-tipo">
+            <option value="">Todos os tipos</option>
+            <option value="intra-distrito">Mesmo Distrito</option>
+            <option value="intra-provincial">Mesma Província (outro distrito)</option>
+            <option value="inter-provincial">Inter-Provincial</option>
+          </select>
+          <select id="f-t-artigo"><option value="">Todos Artigos</option></select>
+        </div>
+        <div class="realoc-table-wrap">
+          <table class="mini-table" id="t-table">
+            <thead><tr>
+              <th>Tipo</th><th>Artigo</th>
+              <th>Origem</th><th>Distrito Origem</th>
+              <th>Destino</th><th>Distrito Destino</th>
+              <th class="num">Qtd Alocada</th>
+            </tr></thead>
+            <tbody id="t-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 3: Destinatários -->
+      <div class="realoc-panel" id="panel-destinatarios" style="display:none">
+        <p class="updates-note">Cada destinatário com défice e o quanto foi coberto por realocação.</p>
+        <div class="filters-row">
+          <input type="text" id="f-d-search" placeholder="Pesquisar nome, distrito...">
+          <select id="f-d-prov"><option value="">Todas Províncias</option></select>
+          <select id="f-d-artigo"><option value="">Todos Artigos</option></select>
+          <label style="display:flex;align-items:center;gap:.3rem;font-size:.82rem;color:#475569">
+            <input type="checkbox" id="f-d-uncovered"> Só não-cobertos (&lt;100%)
+          </label>
+        </div>
+        <div class="realoc-table-wrap">
+          <table class="mini-table" id="d-table">
+            <thead><tr>
+              <th>Província</th><th>Distrito</th>
+              <th>Destinatário</th><th>Artigo</th>
+              <th class="num">Plano Novo</th><th class="num">Já Entregue</th>
+              <th class="num">Défice</th><th class="num">Realocado</th>
+              <th class="num">Falta Receber</th><th class="num">% Coberto</th>
+              <th>Origens</th>
+            </tr></thead>
+            <tbody id="d-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 4: A Entregar Fisicamente -->
+      <div class="realoc-panel" id="panel-entregas" style="display:none">
+        <p class="updates-note">Items que <strong>ainda precisam ser despachados fisicamente</strong> (depois de subtrair tudo o que foi realocado de excessos no campo).</p>
+        <div class="filters-row">
+          <input type="text" id="f-e-search" placeholder="Pesquisar nome, distrito, supervisor...">
+          <select id="f-e-prov"><option value="">Todas Províncias</option></select>
+          <select id="f-e-artigo"><option value="">Todos Artigos</option></select>
+        </div>
+        <div class="realoc-table-wrap">
+          <table class="mini-table" id="e-table">
+            <thead><tr>
+              <th>Província</th><th>Distrito</th>
+              <th>Beneficiário</th><th>Contacto</th>
+              <th>Supervisor</th><th>Artigo</th>
+              <th class="num">Plano Novo</th><th class="num">Já Entregue</th>
+              <th class="num">Realocado</th><th class="num">A Entregar</th>
+            </tr></thead>
+            <tbody id="e-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // ── Helpers ─────────────────────────────────────────────────
+    const $ = (s) => document.querySelector(s);
+    const $$ = (s) => document.querySelectorAll(s);
+    function esc(s) {
+      if (s == null) return "";
+      const d = document.createElement("div"); d.textContent = String(s); return d.innerHTML;
+    }
+    function fmt(n) {
+      const v = Number(n) || 0;
+      return Math.round(v).toLocaleString("pt-PT");
+    }
+    function fmtDec(n) {
+      const v = Number(n) || 0;
+      return v.toLocaleString("pt-PT", { maximumFractionDigits: 1 });
+    }
+    function fmtPct(p) {
+      const v = (Number(p) || 0) * 100;
+      return v.toFixed(1) + "%";
+    }
+    function pctColor(p) {
+      const v = (Number(p) || 0) * 100;
+      if (v >= 100) return "#16a34a";
+      if (v >= 50) return "#d97706";
+      return "#dc2626";
+    }
+
+    let data = null;
+
+    async function load() {
+      try {
+        const r = await fetch("/api/realocacao");
+        if (!r.ok) throw new Error("Sem dados");
+        data = await r.json();
+        renderSummary();
+        populateFilters();
+        renderProvArtigo();
+        renderTransferencias();
+        renderDestinatarios();
+        renderEntregas();
+        bindFilters();
+        bindTabs();
+      } catch (e) {
+        document.querySelector("main").innerHTML = '<p class="empty-msg">Erro a carregar dados de realocação: ' + esc(e.message) + '</p>';
+      }
+    }
+
+    function renderSummary() {
+      const s = data.summary;
+      const realocPct = s.total_excesso > 0 ? (s.total_realocado_kg / s.total_excesso * 100).toFixed(1) : "0";
+      $("#summary-cards").innerHTML = `
+        <div class="realoc-card amber"><div class="realoc-card-lbl">Excesso Total</div><div class="realoc-card-val">${fmt(s.total_excesso)}</div><div class="realoc-card-sub">kg recebidos a mais</div></div>
+        <div class="realoc-card red"><div class="realoc-card-lbl">Défice Total</div><div class="realoc-card-val">${fmt(s.total_defice)}</div><div class="realoc-card-sub">kg a entregar</div></div>
+        <div class="realoc-card"><div class="realoc-card-lbl">Total Realocado</div><div class="realoc-card-val">${fmt(s.total_realocado_kg)}</div><div class="realoc-card-sub">${realocPct}% do excesso</div></div>
+        <div class="realoc-card"><div class="realoc-card-lbl">Transferências</div><div class="realoc-card-val">${fmt(s.transferencias)}</div><div class="realoc-card-sub">${s.intra_distrito} mesmo distrito · ${s.intra_provincial} mesma prov · ${s.inter_provincial} inter-prov</div></div>
+        <div class="realoc-card green"><div class="realoc-card-lbl">Destinatários</div><div class="realoc-card-val">${fmt(s.destinatarios_total)}</div><div class="realoc-card-sub">${fmt(s.destinatarios_cobertos)} totalmente cobertos</div></div>
+        <div class="realoc-card red"><div class="realoc-card-lbl">Falta Entregar</div><div class="realoc-card-val">${fmt(s.falta_entregar)}</div><div class="realoc-card-sub">kg físicos pendentes</div></div>
+      `;
+      $("#badge-transf").textContent = s.transferencias;
+      $("#badge-dest").textContent = s.destinatarios_total;
+      $("#badge-entreg").textContent = s.a_entregar_total;
+    }
+
+    function populateFilters() {
+      const provincias = [...new Set(data.provArtigo.map((r) => r.provincia))].sort();
+      const artigosT = [...new Set(data.transferencias.map((r) => r.artigo))].sort();
+      const provincaisD = [...new Set(data.destinatarios.map((r) => r.provincia))].sort();
+      const artigosD = [...new Set(data.destinatarios.map((r) => r.artigo))].sort();
+      const provincaisE = [...new Set(data.kits.map((r) => r.provincia))].sort();
+      const artigosE = [...new Set(data.kits.map((r) => r.artigo))].sort();
+      const fill = (sel, list) => list.forEach((v) => { if (!v) return; const o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o); });
+      fill($("#f-pa-prov"), provincias);
+      fill($("#f-t-artigo"), artigosT);
+      fill($("#f-d-prov"), provincaisD);
+      fill($("#f-d-artigo"), artigosD);
+      fill($("#f-e-prov"), provincaisE);
+      fill($("#f-e-artigo"), artigosE);
+    }
+
+    // ── TAB 1: Província × Artigo ──
+    let paFilters = { search: "", prov: "" };
+    function renderProvArtigo() {
+      const q = paFilters.search.toLowerCase();
+      const list = data.provArtigo.filter((r) => {
+        if (paFilters.prov && r.provincia !== paFilters.prov) return false;
+        if (q && !(r.provincia.toLowerCase().includes(q) || r.artigo.toLowerCase().includes(q))) return false;
+        return true;
+      }).sort((a, b) => b.falta_entregar - a.falta_entregar);
+      const body = $("#pa-body");
+      if (!list.length) { body.innerHTML = '<tr><td colspan="10" class="empty-msg">Sem resultados</td></tr>'; return; }
+      body.innerHTML = list.map((r) => `<tr>
+        <td><strong>${esc(r.provincia)}</strong></td>
+        <td>${esc(r.artigo)}</td>
+        <td class="num">${fmtDec(r.plano_novo)}</td>
+        <td class="num">${fmtDec(r.ja_entregue)}</td>
+        <td class="num" style="color:${r.total_excesso > 0 ? "#92400e" : "#94a3b8"}">${fmtDec(r.total_excesso)}</td>
+        <td class="num" style="color:${r.total_defice > 0 ? "#dc2626" : "#94a3b8"}">${fmtDec(r.total_defice)}</td>
+        <td class="num" style="color:${r.realoc_enviada > 0 ? "#0e7490" : "#94a3b8"}">${fmtDec(r.realoc_enviada)}</td>
+        <td class="num" style="color:${r.realoc_recebida > 0 ? "#0e7490" : "#94a3b8"}">${fmtDec(r.realoc_recebida)}</td>
+        <td class="num">${r.inter_prov_env > 0 ? '<span class="pill pill-amber">' + fmtDec(r.inter_prov_env) + '</span>' : '—'}</td>
+        <td class="num" style="color:${r.falta_entregar > 0 ? "#dc2626" : "#16a34a"};font-weight:700">${fmtDec(r.falta_entregar)}</td>
+      </tr>`).join("");
+    }
+
+    // ── TAB 2: Transferências ──
+    let tFilters = { search: "", tipo: "", artigo: "" };
+    function classifyTipo(r) {
+      if (r.mesmo_distrito) return "intra-distrito";
+      if (r.mesma_provincia) return "intra-provincial";
+      return "inter-provincial";
+    }
+    function renderTransferencias() {
+      const q = tFilters.search.toLowerCase();
+      const list = data.transferencias.filter((r) => {
+        if (tFilters.tipo && classifyTipo(r) !== tFilters.tipo) return false;
+        if (tFilters.artigo && r.artigo !== tFilters.artigo) return false;
+        if (q) {
+          const hay = (r.origem_nome + " " + r.destino_nome + " " + r.origem_distrito + " " + r.destino_distrito + " " + r.origem_provincia + " " + r.destino_provincia).toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      }).sort((a, b) => b.quantidade_alocada - a.quantidade_alocada);
+      const body = $("#t-body");
+      if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="empty-msg">Sem resultados</td></tr>'; return; }
+      body.innerHTML = list.map((r) => {
+        const tipo = classifyTipo(r);
+        const tipoPill = tipo === "intra-distrito" ? '<span class="pill pill-green">Mesmo distrito</span>'
+          : tipo === "intra-provincial" ? '<span class="pill pill-blue">Mesma província</span>'
+          : '<span class="pill pill-amber">Inter-Provincial</span>';
+        return `<tr>
+          <td>${tipoPill}</td>
+          <td>${esc(r.artigo)}</td>
+          <td><strong>${esc(r.origem_nome)}</strong>${r.origem_id ? '<br><small style="color:#64748b;font-family:monospace">' + esc(r.origem_id) + '</small>' : ''}</td>
+          <td>${esc(r.origem_distrito)}<br><small style="color:#64748b">${esc(r.origem_provincia)}</small></td>
+          <td><strong>${esc(r.destino_nome)}</strong>${r.destino_novo ? ' <span class="pill pill-blue">NOVO</span>' : ''}${r.destino_id ? '<br><small style="color:#64748b;font-family:monospace">' + esc(r.destino_id) + '</small>' : ''}</td>
+          <td>${esc(r.destino_distrito)}<br><small style="color:#64748b">${esc(r.destino_provincia)}</small></td>
+          <td class="num"><strong>${fmtDec(r.quantidade_alocada)}</strong></td>
+        </tr>`;
+      }).join("");
+    }
+
+    // ── TAB 3: Destinatários ──
+    let dFilters = { search: "", prov: "", artigo: "", uncovered: false };
+    function renderDestinatarios() {
+      const q = dFilters.search.toLowerCase();
+      const list = data.destinatarios.filter((r) => {
+        if (dFilters.prov && r.provincia !== dFilters.prov) return false;
+        if (dFilters.artigo && r.artigo !== dFilters.artigo) return false;
+        if (dFilters.uncovered && r.pct_coberto >= 0.999) return false;
+        if (q) {
+          const hay = (r.nome + " " + r.distrito + " " + r.detalhe_origens).toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      }).sort((a, b) => a.pct_coberto - b.pct_coberto);
+      const body = $("#d-body");
+      if (!list.length) { body.innerHTML = '<tr><td colspan="11" class="empty-msg">Sem resultados</td></tr>'; return; }
+      body.innerHTML = list.map((r) => {
+        const pctW = Math.min(100, r.pct_coberto * 100).toFixed(0);
+        return `<tr>
+          <td>${esc(r.provincia)}</td>
+          <td>${esc(r.distrito)}</td>
+          <td><strong>${esc(r.nome)}</strong>${r.novo ? ' <span class="pill pill-blue">NOVO</span>' : ''}${r.inter_prov ? ' <span class="pill pill-amber">Inter-Prov</span>' : ''}</td>
+          <td>${esc(r.artigo)}</td>
+          <td class="num">${fmtDec(r.plano_novo)}</td>
+          <td class="num">${fmtDec(r.ja_entregue)}</td>
+          <td class="num" style="color:#dc2626">${fmtDec(r.defice_total)}</td>
+          <td class="num" style="color:#0e7490">${fmtDec(r.realocado_recebido)}</td>
+          <td class="num" style="color:${r.quantidade_a_receber > 0 ? "#dc2626" : "#16a34a"};font-weight:700">${fmtDec(r.quantidade_a_receber)}</td>
+          <td class="num" style="color:${pctColor(r.pct_coberto)};font-weight:700">
+            <span class="pct-bar"><span class="pct-fill" style="width:${pctW}%"></span></span>${fmtPct(r.pct_coberto)}
+          </td>
+          <td style="font-size:.75rem;color:#475569;max-width:280px">${esc(r.detalhe_origens)}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    // ── TAB 4: A Entregar Fisicamente ──
+    let eFilters = { search: "", prov: "", artigo: "" };
+    function renderEntregas() {
+      const q = eFilters.search.toLowerCase();
+      const list = data.kits.filter((r) => {
+        if (r.a_entregar <= 0) return false; // only items still pending physical delivery
+        if (eFilters.prov && r.provincia !== eFilters.prov) return false;
+        if (eFilters.artigo && r.artigo !== eFilters.artigo) return false;
+        if (q) {
+          const hay = (r.nome + " " + r.distrito + " " + r.supervisor + " " + r.contacto).toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      }).sort((a, b) => b.a_entregar - a.a_entregar);
+      const body = $("#e-body");
+      if (!list.length) { body.innerHTML = '<tr><td colspan="10" class="empty-msg">Sem resultados</td></tr>'; return; }
+      body.innerHTML = list.map((r) => `<tr>
+        <td>${esc(r.provincia)}</td>
+        <td>${esc(r.distrito)}</td>
+        <td><strong>${esc(r.nome)}</strong>${r.extensionist_id ? '<br><small style="color:#64748b;font-family:monospace">' + esc(r.extensionist_id) + '</small>' : ''}</td>
+        <td style="font-size:.78rem">${esc(r.contacto)}</td>
+        <td style="font-size:.78rem">${esc(r.supervisor)}</td>
+        <td>${esc(r.artigo)}</td>
+        <td class="num">${fmtDec(r.plano_novo)}</td>
+        <td class="num">${fmtDec(r.ja_entregue)}</td>
+        <td class="num" style="color:#0e7490">${fmtDec(r.realocado_recebido)}</td>
+        <td class="num" style="color:#dc2626;font-weight:700">${fmtDec(r.a_entregar)} ${esc(r.unidade)}</td>
+      </tr>`).join("");
+    }
+
+    function bindTabs() {
+      $$(".realoc-tab").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          $$(".realoc-tab").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          $$(".realoc-panel").forEach((p) => p.style.display = "none");
+          $("#panel-" + btn.dataset.tab).style.display = "";
+        });
+      });
+    }
+
+    function bindFilters() {
+      $("#f-pa-search").addEventListener("input", (e) => { paFilters.search = e.target.value.trim(); renderProvArtigo(); });
+      $("#f-pa-prov").addEventListener("change", (e) => { paFilters.prov = e.target.value; renderProvArtigo(); });
+
+      $("#f-t-search").addEventListener("input", (e) => { tFilters.search = e.target.value.trim(); renderTransferencias(); });
+      $("#f-t-tipo").addEventListener("change", (e) => { tFilters.tipo = e.target.value; renderTransferencias(); });
+      $("#f-t-artigo").addEventListener("change", (e) => { tFilters.artigo = e.target.value; renderTransferencias(); });
+
+      $("#f-d-search").addEventListener("input", (e) => { dFilters.search = e.target.value.trim(); renderDestinatarios(); });
+      $("#f-d-prov").addEventListener("change", (e) => { dFilters.prov = e.target.value; renderDestinatarios(); });
+      $("#f-d-artigo").addEventListener("change", (e) => { dFilters.artigo = e.target.value; renderDestinatarios(); });
+      $("#f-d-uncovered").addEventListener("change", (e) => { dFilters.uncovered = e.target.checked; renderDestinatarios(); });
+
+      $("#f-e-search").addEventListener("input", (e) => { eFilters.search = e.target.value.trim(); renderEntregas(); });
+      $("#f-e-prov").addEventListener("change", (e) => { eFilters.prov = e.target.value; renderEntregas(); });
+      $("#f-e-artigo").addEventListener("change", (e) => { eFilters.artigo = e.target.value; renderEntregas(); });
+    }
+
+    load();
+  </script>
+</body>
+</html>

@@ -399,6 +399,149 @@ function parseKitRow(r) {
 
 function getExtras() { return extras; }
 
+// ── Realocação (excessos → défices) ─────────────────────────
+let realocacao = null;
+
+function loadRealocacao() {
+  if (!fs.existsSync(PLANNING_FILE)) return null;
+  const wb = XLSX.readFile(PLANNING_FILE);
+  function rows(sheet) {
+    const ws = wb.Sheets[sheet];
+    return ws ? XLSX.utils.sheet_to_json(ws, { defval: "" }) : [];
+  }
+  const num = (v) => Number(v) || 0;
+
+  // Province × Artigo summary (Realocação sheet)
+  const provArtigo = rows("Realocação")
+    .map((r) => ({
+      provincia: String(r["Província"] || "").trim(),
+      artigo: String(r["Artigo"] || "").trim(),
+      plano_novo: num(r["Plano Novo"]),
+      ja_entregue: num(r["Já Entregue"]),
+      n_orfas: num(r["Nº Órfãs"]),
+      entregue_orfas: num(r["Entregue a Órfãs"]),
+      n_excesso: num(r["Nº Excesso"]),
+      total_excesso: num(r["Total Excesso"]),
+      n_defice: num(r["Nº Défice"]),
+      total_defice: num(r["Total Défice"]),
+      realoc_enviada: num(r["Realoc. Enviada"]),
+      realoc_recebida: num(r["Realoc. Recebida"]),
+      inter_prov_env: num(r["Inter-Prov Env"]),
+      falta_entregar: num(r["Falta Entregar"]),
+    }))
+    .filter((r) => r.provincia && r.artigo);
+
+  // Detail Origem → Destino
+  const transferencias = rows("Dados Realocação").map((r) => ({
+    tipo: String(r["Tipo"] || "").trim(),
+    artigo: String(r["Artigo"] || "").trim(),
+    origem_provincia: String(r["Origem: Província"] || "").trim(),
+    origem_distrito: String(r["Origem: Distrito"] || "").trim(),
+    origem_id: String(r["Origem: Extensionist_ID"] || "").trim(),
+    origem_nome: String(r["Origem: Nome"] || "").trim(),
+    origem_plano_antigo: num(r["Origem: Plano Antigo"]),
+    origem_plano_novo: num(r["Origem: Plano Novo"]),
+    origem_entregue: num(r["Origem: Já Entregue"]),
+    origem_excesso: num(r["Origem: Excesso Total"]),
+    destino_provincia: String(r["Destino: Província"] || "").trim(),
+    destino_distrito: String(r["Destino: Distrito"] || "").trim(),
+    destino_id: String(r["Destino: Extensionist_ID"] || "").trim(),
+    destino_nome: String(r["Destino: Nome"] || "").trim(),
+    destino_plano_novo: num(r["Destino: Plano Novo"]),
+    destino_entregue: num(r["Destino: Já Entregue"]),
+    destino_defice: num(r["Destino: Défice Total"]),
+    destino_novo: String(r["Destino: Novo?"] || "").trim() === "SIM",
+    mesmo_distrito: String(r["Mesmo Distrito?"] || "").trim() === "SIM",
+    mesma_provincia: String(r["Mesma Província?"] || "").trim() === "SIM",
+    quantidade_alocada: num(r["Quantidade Alocada"]),
+    quantidade_a_receber: num(r["QUANTIDADE A RECEBER"]),
+  })).filter((r) => r.origem_nome || r.destino_nome);
+
+  // Per destinatário summary
+  const destinatarios = rows("Resumo Destinatários").map((r) => ({
+    provincia: String(r["Província"] || "").trim(),
+    distrito: String(r["Distrito"] || "").trim(),
+    extensionist_id: String(r["Extensionist_ID"] || "").trim(),
+    nome: String(r["Nome Destino"] || "").trim(),
+    artigo: String(r["Artigo"] || "").trim(),
+    novo: String(r["Novo?"] || "").trim() === "SIM",
+    plano_novo: num(r["Plano Novo"]),
+    ja_entregue: num(r["Já Entregue"]),
+    defice_total: num(r["Défice Total"]),
+    n_origens: num(r["Nº Origens"]),
+    realocado_recebido: num(r["Realocado Recebido"]),
+    quantidade_a_receber: num(r["QUANTIDADE A RECEBER"]),
+    pct_coberto: num(r["% Coberto"]),
+    inter_prov: String(r["Recebe de outra Província?"] || "").trim() === "SIM",
+    detalhe_origens: String(r["Detalhe das Origens"] || "").trim(),
+  })).filter((r) => r.nome);
+
+  // Kit Pós Realocação — physical items still to deliver
+  const kits = rows("Kit Pós Realocação").map((r) => ({
+    provincia: String(r["Província"] || "").trim(),
+    distrito: String(r["Distrito"] || "").trim(),
+    extensionist_id: String(r["Extensionist_ID"] || "").trim(),
+    nome: String(r["Nome"] || "").trim(),
+    contacto: String(r["Contacto"] || "").trim(),
+    supervisor: String(r["Supervisor"] || "").trim(),
+    kit: String(r["Kit"] || "").trim(),
+    k1_fam: num(r["K1 (fam)"]),
+    k2_fam: num(r["K2 (fam)"]),
+    artigo: String(r["Artigo"] || "").trim(),
+    plano_novo: num(r["Plano Novo"]),
+    ja_entregue: num(r["Já Entregue"]),
+    realocado_recebido: num(r["Realocado Recebido"]),
+    qtd_pos_realocacao: num(r["Qtd Pós Realocação"]),
+    a_entregar: num(r["A Entregar Fisicamente"]),
+    unidade: String(r["Unidade"] || "kg").trim(),
+  })).filter((r) => r.nome);
+
+  // ── High-level summary (used for the home card and the page header) ──
+  const totals = provArtigo.reduce((acc, r) => {
+    acc.plano_novo += r.plano_novo;
+    acc.ja_entregue += r.ja_entregue;
+    acc.total_excesso += r.total_excesso;
+    acc.total_defice += r.total_defice;
+    acc.realoc_enviada += r.realoc_enviada;
+    acc.realoc_recebida += r.realoc_recebida;
+    acc.inter_prov_env += r.inter_prov_env;
+    acc.falta_entregar += r.falta_entregar;
+    return acc;
+  }, { plano_novo: 0, ja_entregue: 0, total_excesso: 0, total_defice: 0, realoc_enviada: 0, realoc_recebida: 0, inter_prov_env: 0, falta_entregar: 0 });
+
+  const interProvCount = transferencias.filter((t) => !t.mesma_provincia).length;
+  const intraProvCount = transferencias.filter((t) => t.mesma_provincia && !t.mesmo_distrito).length;
+  const intraDistCount = transferencias.filter((t) => t.mesmo_distrito).length;
+  const totalRealocadoKg = transferencias.reduce((s, t) => s + t.quantidade_alocada, 0);
+  const uniqueOrigens = new Set(transferencias.map((t) => t.origem_id + "|" + t.origem_nome)).size;
+  const uniqueDestinos = new Set(transferencias.map((t) => t.destino_id + "|" + t.destino_nome)).size;
+
+  realocacao = {
+    summary: {
+      ...totals,
+      transferencias: transferencias.length,
+      inter_provincial: interProvCount,
+      intra_provincial: intraProvCount,
+      intra_distrito: intraDistCount,
+      total_realocado_kg: totalRealocadoKg,
+      origens_unicas: uniqueOrigens,
+      destinos_unicos: uniqueDestinos,
+      destinatarios_total: destinatarios.length,
+      destinatarios_cobertos: destinatarios.filter((d) => d.pct_coberto >= 0.999).length,
+      a_entregar_total: kits.filter((k) => k.a_entregar > 0).length,
+    },
+    provArtigo,
+    transferencias,
+    destinatarios,
+    kits,
+  };
+
+  console.log(`[PLANNING-UPDATED] Realocação: ${transferencias.length} transferências, ${destinatarios.length} destinatários, ${kits.filter(k=>k.a_entregar>0).length} items a entregar fisicamente`);
+  return realocacao;
+}
+
+function getRealocacao() { return realocacao; }
+
 function getGeography() {
   if (!planningData) return { provinces: [], districtsByProvince: {} };
   const map = {};
@@ -415,4 +558,4 @@ function getGeography() {
   return { provinces, districtsByProvince };
 }
 
-module.exports = { load, loadExtras, getData, getExtras, buildComparison, buildSeedsTotals, normalizeDistrict, matchProduct, isSeedProduct, getGeography };
+module.exports = { load, loadExtras, loadRealocacao, getData, getExtras, getRealocacao, buildComparison, buildSeedsTotals, normalizeDistrict, matchProduct, isSeedProduct, getGeography };
