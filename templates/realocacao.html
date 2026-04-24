@@ -15,6 +15,9 @@
     .realoc-header .nav-link{margin-left:.5rem;color:#fff;background:rgba(255,255,255,.15);padding:.25rem .7rem;border-radius:6px;font-size:.75rem;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,.3);white-space:nowrap}
     .realoc-header .nav-link:hover{background:rgba(255,255,255,.25)}
     .realoc-container{max-width:1500px;margin:0 auto;padding:1.25rem}
+    .realoc-explainer{background:#fffbeb;border-left:4px solid #f59e0b;border-radius:8px;padding:.85rem 1.1rem;margin-bottom:1.25rem;font-size:.85rem;color:#78350f;line-height:1.6}
+    .realoc-explainer strong{color:#451a03;display:block;margin-bottom:.2rem}
+    .realoc-explainer em{color:#92400e;font-style:italic;font-weight:600}
 
     .realoc-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin-bottom:1.25rem}
     .realoc-card{background:#fff;border-radius:10px;padding:.85rem 1.1rem;box-shadow:0 1px 4px rgba(0,0,0,.06);border-left:4px solid #0891b2}
@@ -62,6 +65,13 @@
   </header>
 
   <main class="realoc-container">
+    <!-- Explainer -->
+    <section class="realoc-explainer">
+      <strong>Como ler esta página?</strong>
+      Alguns beneficiários receberam <em>mais</em> do que o seu plano revisto (excesso) e outros precisam de receber <em>mais</em> do que já receberam (défice).
+      A UNOPS preparou um plano que <strong>realoca esses excessos no campo</strong> para cobrir parte dos défices, evitando despachos físicos novos. O que sobrar como défice ainda terá de ser entregue fisicamente.
+    </section>
+
     <!-- Summary cards -->
     <section class="realoc-cards" id="summary-cards"></section>
 
@@ -221,13 +231,38 @@
     function renderSummary() {
       const s = data.summary;
       const realocPct = s.total_excesso > 0 ? (s.total_realocado_kg / s.total_excesso * 100).toFixed(1) : "0";
+      const cobertosPct = s.destinatarios_total > 0 ? Math.round(s.destinatarios_cobertos / s.destinatarios_total * 100) : 0;
       $("#summary-cards").innerHTML = `
-        <div class="realoc-card amber"><div class="realoc-card-lbl">Excesso Total</div><div class="realoc-card-val">${fmt(s.total_excesso)}</div><div class="realoc-card-sub">kg recebidos a mais</div></div>
-        <div class="realoc-card red"><div class="realoc-card-lbl">Défice Total</div><div class="realoc-card-val">${fmt(s.total_defice)}</div><div class="realoc-card-sub">kg a entregar</div></div>
-        <div class="realoc-card"><div class="realoc-card-lbl">Total Realocado</div><div class="realoc-card-val">${fmt(s.total_realocado_kg)}</div><div class="realoc-card-sub">${realocPct}% do excesso</div></div>
-        <div class="realoc-card"><div class="realoc-card-lbl">Transferências</div><div class="realoc-card-val">${fmt(s.transferencias)}</div><div class="realoc-card-sub">${s.intra_distrito} mesmo distrito · ${s.intra_provincial} mesma prov · ${s.inter_provincial} inter-prov</div></div>
-        <div class="realoc-card green"><div class="realoc-card-lbl">Destinatários</div><div class="realoc-card-val">${fmt(s.destinatarios_total)}</div><div class="realoc-card-sub">${fmt(s.destinatarios_cobertos)} totalmente cobertos</div></div>
-        <div class="realoc-card red"><div class="realoc-card-lbl">Falta Entregar</div><div class="realoc-card-val">${fmt(s.falta_entregar)}</div><div class="realoc-card-sub">kg físicos pendentes</div></div>
+        <div class="realoc-card amber" title="Beneficiários que receberam mais do que o plano revisto. Soma do excesso de cada um.">
+          <div class="realoc-card-lbl">Excessos no Campo</div>
+          <div class="realoc-card-val">${fmt(s.total_excesso)} kg</div>
+          <div class="realoc-card-sub">recebidos acima do plano revisto</div>
+        </div>
+        <div class="realoc-card red" title="Beneficiários que ainda precisam de receber. Soma do défice de cada um.">
+          <div class="realoc-card-lbl">Défice em Aberto</div>
+          <div class="realoc-card-val">${fmt(s.total_defice)} kg</div>
+          <div class="realoc-card-sub">ainda por entregar a beneficiários</div>
+        </div>
+        <div class="realoc-card" title="Quanto desses excessos a UNOPS conseguiu redirigir no campo para cobrir défices, sem precisar de novo despacho.">
+          <div class="realoc-card-lbl">Realocado de Excessos</div>
+          <div class="realoc-card-val">${fmt(s.total_realocado_kg)} kg</div>
+          <div class="realoc-card-sub">${realocPct}% dos excessos aproveitados</div>
+        </div>
+        <div class="realoc-card" title="Operações origem→destino: quem cede a quem.">
+          <div class="realoc-card-lbl">Operações de Realocação</div>
+          <div class="realoc-card-val">${fmt(s.transferencias)}</div>
+          <div class="realoc-card-sub">${s.intra_distrito} mesmo distrito · ${s.intra_provincial} mesma prov · ${s.inter_provincial} inter-prov</div>
+        </div>
+        <div class="realoc-card green" title="Beneficiários cujo défice ficou totalmente coberto via realocação.">
+          <div class="realoc-card-lbl">Destinatários Cobertos</div>
+          <div class="realoc-card-val">${fmt(s.destinatarios_cobertos)}/${fmt(s.destinatarios_total)}</div>
+          <div class="realoc-card-sub">${cobertosPct}% têm défice resolvido</div>
+        </div>
+        <div class="realoc-card red" title="O que ainda precisa ser despachado fisicamente, depois de aproveitar os excessos.">
+          <div class="realoc-card-lbl">A Despachar Fisicamente</div>
+          <div class="realoc-card-val">${fmt(s.falta_entregar)} kg</div>
+          <div class="realoc-card-sub">despacho novo necessário</div>
+        </div>
       `;
       $("#badge-transf").textContent = s.transferencias;
       $("#badge-dest").textContent = s.destinatarios_total;
