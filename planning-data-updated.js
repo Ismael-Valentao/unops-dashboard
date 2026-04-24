@@ -500,6 +500,36 @@ function loadRealocacao() {
   })).filter((r) => r.nome);
 
   // ── High-level summary (used for the home card and the page header) ──
+  // Split totals by unit family because mixing Milho/Feijão/Arroz (kg) with
+  // Emamectin/Imidacloprid/MCPA (L) and Sacos Hermeticos (un) is meaningless.
+  const UNIT_BY_ARTIGO = {
+    "Milho": "kg", "Feijão": "kg", "Arroz": "kg",
+    "Emamectin": "L", "Imadocloprid": "L", "Imidacloprid": "L", "MCPA": "L",
+    "Sacos Hermeticos": "un", "Sacos Herméticos": "un",
+  };
+  const emptyByUnit = () => ({ kg: 0, L: 0, un: 0 });
+  const byUnit = {
+    plano_novo: emptyByUnit(),
+    ja_entregue: emptyByUnit(),
+    total_excesso: emptyByUnit(),
+    total_defice: emptyByUnit(),
+    realoc_enviada: emptyByUnit(),
+    realoc_recebida: emptyByUnit(),
+    inter_prov_env: emptyByUnit(),
+    falta_entregar: emptyByUnit(),
+  };
+  provArtigo.forEach((r) => {
+    const u = UNIT_BY_ARTIGO[r.artigo] || "kg";
+    byUnit.plano_novo[u]      += r.plano_novo;
+    byUnit.ja_entregue[u]     += r.ja_entregue;
+    byUnit.total_excesso[u]   += r.total_excesso;
+    byUnit.total_defice[u]    += r.total_defice;
+    byUnit.realoc_enviada[u]  += r.realoc_enviada;
+    byUnit.realoc_recebida[u] += r.realoc_recebida;
+    byUnit.inter_prov_env[u]  += r.inter_prov_env;
+    byUnit.falta_entregar[u]  += r.falta_entregar;
+  });
+
   const totals = provArtigo.reduce((acc, r) => {
     acc.plano_novo += r.plano_novo;
     acc.ja_entregue += r.ja_entregue;
@@ -522,6 +552,7 @@ function loadRealocacao() {
   realocacao = {
     summary: {
       ...totals,
+      byUnit,
       transferencias: transferencias.length,
       inter_provincial: interProvCount,
       intra_provincial: intraProvCount,

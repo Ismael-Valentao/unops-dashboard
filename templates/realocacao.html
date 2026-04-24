@@ -27,6 +27,13 @@
     .realoc-card.amber{border-left-color:#d97706}.realoc-card.amber .realoc-card-val{color:#92400e}
     .realoc-card.green{border-left-color:#16a34a}.realoc-card.green .realoc-card-val{color:#15803d}
     .realoc-card.red{border-left-color:#dc2626}.realoc-card.red .realoc-card-val{color:#991b1b}
+    .multi-unit{display:flex;flex-direction:column;gap:.15rem;margin:.1rem 0 .25rem}
+    .multi-unit .mu-num{font-size:1.2rem;font-weight:800;color:#0e7490;font-variant-numeric:tabular-nums}
+    .realoc-card.amber .multi-unit .mu-num{color:#92400e}
+    .realoc-card.red   .multi-unit .mu-num{color:#991b1b}
+    .multi-unit .mu-unit{font-size:.85rem;color:#475569;font-weight:600;margin-left:.15rem}
+    .multi-unit .mu-tag{font-size:.7rem;color:#94a3b8;font-style:italic;margin-left:.4rem}
+    .multi-unit .mu-zero{color:#94a3b8;font-style:italic;font-size:.85rem}
 
     .realoc-section{background:#fff;border-radius:12px;padding:1.25rem;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:1.25rem}
     .realoc-tabs{display:flex;gap:.25rem;margin-bottom:1rem;border-bottom:1px solid #e5e7eb;flex-wrap:wrap}
@@ -230,23 +237,26 @@
 
     function renderSummary() {
       const s = data.summary;
-      const realocPct = s.total_excesso > 0 ? (s.total_realocado_kg / s.total_excesso * 100).toFixed(1) : "0";
+      const u = s.byUnit || { total_excesso: {}, total_defice: {}, falta_entregar: {} };
       const cobertosPct = s.destinatarios_total > 0 ? Math.round(s.destinatarios_cobertos / s.destinatarios_total * 100) : 0;
+      // Multi-unit breakdown helper: show each unit on its own line, skipping zeros.
+      function multiUnit(obj) {
+        const lines = [];
+        if (obj.kg > 0.5)  lines.push(`<div><span class="mu-num">${fmt(obj.kg)}</span> <span class="mu-unit">kg</span> <span class="mu-tag">sementes</span></div>`);
+        if (obj.L  > 0.5)  lines.push(`<div><span class="mu-num">${fmt(obj.L)}</span> <span class="mu-unit">L</span> <span class="mu-tag">químicos</span></div>`);
+        if (obj.un > 0.5)  lines.push(`<div><span class="mu-num">${fmt(obj.un)}</span> <span class="mu-unit">un</span> <span class="mu-tag">sacos</span></div>`);
+        return lines.length ? lines.join("") : '<div class="mu-zero">— nenhum —</div>';
+      }
       $("#summary-cards").innerHTML = `
         <div class="realoc-card amber" title="Beneficiários que receberam mais do que o plano revisto. Soma do excesso de cada um.">
           <div class="realoc-card-lbl">Excessos no Campo</div>
-          <div class="realoc-card-val">${fmt(s.total_excesso)} kg</div>
-          <div class="realoc-card-sub">recebidos acima do plano revisto</div>
+          <div class="multi-unit">${multiUnit(u.total_excesso)}</div>
+          <div class="realoc-card-sub">recebido acima do plano revisto</div>
         </div>
         <div class="realoc-card red" title="Beneficiários que ainda precisam de receber. Soma do défice de cada um.">
           <div class="realoc-card-lbl">Défice em Aberto</div>
-          <div class="realoc-card-val">${fmt(s.total_defice)} kg</div>
-          <div class="realoc-card-sub">ainda por entregar a beneficiários</div>
-        </div>
-        <div class="realoc-card" title="Quanto desses excessos a UNOPS conseguiu redirigir no campo para cobrir défices, sem precisar de novo despacho.">
-          <div class="realoc-card-lbl">Realocado de Excessos</div>
-          <div class="realoc-card-val">${fmt(s.total_realocado_kg)} kg</div>
-          <div class="realoc-card-sub">${realocPct}% dos excessos aproveitados</div>
+          <div class="multi-unit">${multiUnit(u.total_defice)}</div>
+          <div class="realoc-card-sub">ainda por entregar</div>
         </div>
         <div class="realoc-card" title="Operações origem→destino: quem cede a quem.">
           <div class="realoc-card-lbl">Operações de Realocação</div>
@@ -260,7 +270,7 @@
         </div>
         <div class="realoc-card red" title="O que ainda precisa ser despachado fisicamente, depois de aproveitar os excessos.">
           <div class="realoc-card-lbl">A Despachar Fisicamente</div>
-          <div class="realoc-card-val">${fmt(s.falta_entregar)} kg</div>
+          <div class="multi-unit">${multiUnit(u.falta_entregar)}</div>
           <div class="realoc-card-sub">despacho novo necessário</div>
         </div>
       `;

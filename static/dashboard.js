@@ -193,9 +193,7 @@
       const stats = document.getElementById("realoc-home-stats");
       if (banner && stats) {
         banner.style.display = "";
-        const fmtN = (n) => Math.round(Number(n) || 0).toLocaleString("pt-PT");
-        const realocPct = s.total_excesso > 0 ? (s.total_realocado_kg / s.total_excesso * 100).toFixed(1) : "0";
-        stats.innerHTML = `<strong>${fmtN(s.total_realocado_kg)} kg</strong> realocados (${realocPct}% dos excessos) · <strong>${s.transferencias}</strong> transferências (${s.intra_distrito} mesmo distrito · ${s.intra_provincial} mesma prov · ${s.inter_provincial} inter-prov) · <strong>${s.destinatarios_cobertos}/${s.destinatarios_total}</strong> destinatários cobertos · <strong>${fmtN(s.falta_entregar)} kg</strong> a entregar fisicamente`;
+        stats.innerHTML = `<strong>${s.transferencias}</strong> operações de realocação (${s.intra_distrito} mesmo distrito · ${s.intra_provincial} mesma prov · ${s.inter_provincial} inter-prov) · <strong>${s.destinatarios_cobertos}/${s.destinatarios_total}</strong> destinatários cobertos`;
       }
     } catch (e) { console.warn("Realoc summary load error:", e); }
   }
