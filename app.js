@@ -59,6 +59,35 @@ function fetchCSV(url) {
   });
 }
 
+// District name normalization — fixes uppercase variants and known typos
+// in the delivery sheet so the same district doesn't appear twice.
+const DISTRICT_ALIASES = {
+  "chongoene": "Chonguene",
+  "manhica": "Manhiça",
+  "magude": "Magude",
+  "moamba": "Moamba",
+  "marracuene": "Marracuene",
+  "matola": "Matola",
+  "boane": "Boane",
+  "namaacha": "Namaacha",
+  "matutuine": "Matutuíne",
+  "matutuíne": "Matutuíne",
+  "chokwe": "Chókwè",
+  "chókwè": "Chókwè",
+  "xai-xai": "Xai-Xai",
+  "xai xai": "Xai-Xai",
+};
+function normalizeDeliveryDistrict(d) {
+  if (!d) return "";
+  const trimmed = String(d).trim();
+  if (!trimmed) return "";
+  // Lowercase for lookup, strip diacritics for matching only
+  const key = trimmed.toLowerCase();
+  if (DISTRICT_ALIASES[key]) return DISTRICT_ALIASES[key];
+  // Default: Title Case (first letter upper, rest lower)
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+}
+
 // ── Parse CSV into structured rows ────────────────────────────
 function parseCSV(text) {
   const records = parse(text, {
@@ -76,6 +105,10 @@ function parseCSV(text) {
       COLUMN_KEYS.forEach((key, i) => {
         row[key] = (cells[i] || "").trim();
       });
+
+      // Normalise district name (fixes uppercase + Chongoene/Chonguene typo)
+      row.district_raw = row.district;
+      row.district = normalizeDeliveryDistrict(row.district);
 
       // Numeric conversions
       row.packages = parseFloat(row.packages) || 0;

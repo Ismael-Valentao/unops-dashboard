@@ -36,18 +36,31 @@ function isSeedProduct(planName) { return SEED_PRODUCTS.has((planName || "").tri
 const PRODUCT_MAP_REV = {};
 for (const [k, v] of Object.entries(PRODUCT_MAP)) PRODUCT_MAP_REV[v.toLowerCase()] = k;
 
+// Canonical district names — must match planning-data.js + app.js DISTRICT_ALIASES
+const DISTRICT_ALIASES = {
+  "chongoene": "Chonguene",
+  "manhica": "Manhiça",
+  "magude": "Magude",
+  "moamba": "Moamba",
+  "marracuene": "Marracuene",
+  "matola": "Matola",
+  "boane": "Boane",
+  "namaacha": "Namaacha",
+  "matutuine": "Matutuíne",
+  "matutuíne": "Matutuíne",
+  "chokwe": "Chókwè",
+  "chókwè": "Chókwè",
+  "xai-xai": "Xai-Xai",
+  "xai xai": "Xai-Xai",
+  "chigubo": "Chigubo",
+};
 function normalizeDistrict(d) {
   if (!d) return "";
-  const s = d.trim();
-  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
-    .replace(/\bmoamba\b/i, "Moamba")
-    .replace(/\bmanhiça\b/i, "Manhica")
-    .replace(/\bnamaacha\b/i, "Namaacha")
-    .replace(/\bmagude\b/i, "Magude")
-    .replace(/\bboane\b/i, "Boane")
-    .replace(/\bmarracuene\b/i, "Marracuene")
-    .replace(/\bchókwè\b/i, "Chokwe")
-    .replace(/\bchigubo\b/i, "Chigubo");
+  const s = String(d).trim();
+  if (!s) return "";
+  const key = s.toLowerCase();
+  if (DISTRICT_ALIASES[key]) return DISTRICT_ALIASES[key];
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
 let planningData = null;
