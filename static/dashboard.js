@@ -580,24 +580,22 @@
     const total = rows.length;
     const qty = rows.reduce((s, r) => s + (Number(r.delivered_qty) || 0), 0);
     const pkgs = rows.reduce((s, r) => s + (Number(r.packages) || 0), 0);
-    const verified = rows.filter(
-      (r) => r.verification_status === "Verified"
-    ).length;
-    const partial = rows.filter(
-      (r) => r.verification_status === "Partially Verified"
-    ).length;
-    const pending = rows.filter(
-      (r) => r.verification_status === "Pending Verification"
-    ).length;
-    const unreachable = rows.filter(
-      (r) => r.verification_status === "Not Reachable"
-    ).length;
-    const errors = rows.filter(
-      (r) => r.verification_status === "#ERROR!"
-    ).length;
+    // Counts + kg sums per status
+    const byStatus = {};
+    rows.forEach((r) => {
+      const s = r.verification_status || "";
+      if (!byStatus[s]) byStatus[s] = { count: 0, kg: 0 };
+      byStatus[s].count++;
+      byStatus[s].kg += Number(r.delivered_qty) || 0;
+    });
+    const get = (s) => byStatus[s] || { count: 0, kg: 0 };
+    const verified = get("Verified").count;
+    const partial = get("Partially Verified");
+    const review = get("Under Review");
+    const pending = get("Pending Verification");
+    const unreachable = get("Not Reachable");
+    const errors = get("#ERROR!").count;
     const pct = total > 0 ? ((verified / total) * 100).toFixed(1) : "0";
-
-    $("#m-total").textContent = fmt(total);
     // If the product filter is a saco/hermetic bag, flip card to units
     const productFilter = fProduct.value;
     const filterIsSacos = /saco|hermetic/i.test(String(productFilter || ""));
@@ -613,9 +611,19 @@
     if (packagesEl) packagesEl.textContent = fmt(pkgs);
     // Gap will be updated when PvD loads
     $("#m-verified-pct").textContent = pct + "%";
-    const partEl = $("#m-partial"); if (partEl) partEl.textContent = fmt(partial);
-    $("#m-pending").textContent = fmt(pending);
-    const unrEl = $("#m-unreachable"); if (unrEl) unrEl.textContent = fmt(unreachable);
+    // Per-status weight subtitle. Flip to "un" if the saco filter is active
+    // (saco delivered_qty is stored in kg = units × 0.3, see parseCSV in app.js).
+    const fmtWeight = filterIsSacos
+      ? (n) => fmt(Math.round(n / 0.3)) + " un"
+      : (n) => fmtDec(n) + " kg";
+    const partEl = $("#m-partial"); if (partEl) partEl.textContent = fmt(partial.count);
+    const partKg = $("#m-partial-kg"); if (partKg) partKg.textContent = fmtWeight(partial.kg);
+    const revEl = $("#m-review"); if (revEl) revEl.textContent = fmt(review.count);
+    const revKg = $("#m-review-kg"); if (revKg) revKg.textContent = fmtWeight(review.kg);
+    $("#m-pending").textContent = fmt(pending.count);
+    const pendKg = $("#m-pending-kg"); if (pendKg) pendKg.textContent = fmtWeight(pending.kg);
+    const unrEl = $("#m-unreachable"); if (unrEl) unrEl.textContent = fmt(unreachable.count);
+    const unrKg = $("#m-unreachable-kg"); if (unrKg) unrKg.textContent = fmtWeight(unreachable.kg);
     $("#m-errors").textContent = fmt(errors);
 
     // Breakdown da quantidade entregue por categoria.
@@ -1105,6 +1113,8 @@
       return '<span class="badge badge-verified">Verified</span>';
     if (s === "Partially Verified")
       return '<span class="badge badge-partial">Partially Verified</span>';
+    if (s === "Under Review")
+      return '<span class="badge badge-review">Under Review</span>';
     if (s === "Pending Verification")
       return '<span class="badge badge-pending">Pending</span>';
     if (s === "Not Reachable")

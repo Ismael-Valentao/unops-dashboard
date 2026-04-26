@@ -50,10 +50,6 @@
     <!-- METRICS CARDS -->
     <section class="metrics" id="metrics">
       <div class="card">
-        <div class="card-label">Total Entregas</div>
-        <div class="card-value" id="m-total">—</div>
-      </div>
-      <div class="card">
         <div class="card-label" id="m-qty-label">Qtd. Entregue (kg)</div>
         <div class="card-value" id="m-qty">—</div>
         <div class="card-breakdown" id="m-qty-breakdown"></div>
@@ -70,14 +66,22 @@
       <div class="card card-partial">
         <div class="card-label">Parcialmente Verificadas</div>
         <div class="card-value" id="m-partial">—</div>
+        <div class="card-sub" id="m-partial-kg">—</div>
+      </div>
+      <div class="card card-review">
+        <div class="card-label">Sob Revisão</div>
+        <div class="card-value" id="m-review">—</div>
+        <div class="card-sub" id="m-review-kg">—</div>
       </div>
       <div class="card card-warn">
         <div class="card-label">Por Verificar</div>
         <div class="card-value" id="m-pending">—</div>
+        <div class="card-sub" id="m-pending-kg">—</div>
       </div>
       <div class="card card-unreachable">
         <div class="card-label">Não Alcançáveis</div>
         <div class="card-value" id="m-unreachable">—</div>
+        <div class="card-sub" id="m-unreachable-kg">—</div>
       </div>
       <div class="card card-error" id="card-errors">
         <div class="card-label">Em Erro</div>
@@ -266,6 +270,7 @@
         <option value="">Todos Estados</option>
         <option value="Verified">Verified</option>
         <option value="Partially Verified">Partially Verified</option>
+        <option value="Under Review">Under Review</option>
         <option value="Pending Verification">Pending Verification</option>
         <option value="Not Reachable">Not Reachable</option>
         <option value="#ERROR!">#ERROR!</option>
