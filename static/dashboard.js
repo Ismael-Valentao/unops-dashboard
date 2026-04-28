@@ -580,15 +580,26 @@
     const total = rows.length;
     const qty = rows.reduce((s, r) => s + (Number(r.delivered_qty) || 0), 0);
     const pkgs = rows.reduce((s, r) => s + (Number(r.packages) || 0), 0);
-    // Counts + kg sums per status
+    // Counts + kg sums per status, with seed breakdown (Milho/Feijão/Arroz).
+    // We classify each row by product name → one of the 3 seed buckets, or "other".
+    function seedKey(productName) {
+      const p = String(productName || "").toLowerCase();
+      if (p.includes("maize") || p.includes("milho")) return "milho";
+      if (p.includes("bean")  || p.includes("feij"))  return "feijao";
+      if (p.includes("rice")  || p.includes("arroz")) return "arroz";
+      return null;
+    }
     const byStatus = {};
     rows.forEach((r) => {
       const s = r.verification_status || "";
-      if (!byStatus[s]) byStatus[s] = { count: 0, kg: 0 };
+      if (!byStatus[s]) byStatus[s] = { count: 0, kg: 0, milho: 0, feijao: 0, arroz: 0 };
       byStatus[s].count++;
-      byStatus[s].kg += Number(r.delivered_qty) || 0;
+      const qty = Number(r.delivered_qty) || 0;
+      byStatus[s].kg += qty;
+      const sk = seedKey(r.product);
+      if (sk) byStatus[s][sk] += qty;
     });
-    const get = (s) => byStatus[s] || { count: 0, kg: 0 };
+    const get = (s) => byStatus[s] || { count: 0, kg: 0, milho: 0, feijao: 0, arroz: 0 };
     const verified = get("Verified").count;
     const partial = get("Partially Verified");
     const review = get("Under Review");
@@ -616,14 +627,29 @@
     const fmtWeight = filterIsSacos
       ? (n) => fmt(Math.round(n / 0.3)) + " un"
       : (n) => fmtDec(n) + " kg";
-    const partEl = $("#m-partial"); if (partEl) partEl.textContent = fmt(partial.count);
-    const partKg = $("#m-partial-kg"); if (partKg) partKg.textContent = fmtWeight(partial.kg);
-    const revEl = $("#m-review"); if (revEl) revEl.textContent = fmt(review.count);
-    const revKg = $("#m-review-kg"); if (revKg) revKg.textContent = fmtWeight(review.kg);
-    $("#m-pending").textContent = fmt(pending.count);
-    const pendKg = $("#m-pending-kg"); if (pendKg) pendKg.textContent = fmtWeight(pending.kg);
-    const unrEl = $("#m-unreachable"); if (unrEl) unrEl.textContent = fmt(unreachable.count);
-    const unrKg = $("#m-unreachable-kg"); if (unrKg) unrKg.textContent = fmtWeight(unreachable.kg);
+    // Seeds are always in kg (sacos are not seeds, so no unit flip needed here).
+    const fmtSeedKg = (n) => fmtDec(n) + " kg";
+    // Helper: paint the count + total kg + seed breakdown for one card group.
+    function paintStatusCard(prefix, bucket) {
+      const cEl = $("#m-" + prefix);          if (cEl) cEl.textContent = fmt(bucket.count);
+      const kEl = $("#m-" + prefix + "-kg");   if (kEl) kEl.textContent = fmtWeight(bucket.kg);
+      const mEl = $("#m-" + prefix + "-milho");  if (mEl) mEl.textContent = fmtSeedKg(bucket.milho);
+      const fEl = $("#m-" + prefix + "-feijao"); if (fEl) fEl.textContent = fmtSeedKg(bucket.feijao);
+      const aEl = $("#m-" + prefix + "-arroz");  if (aEl) aEl.textContent = fmtSeedKg(bucket.arroz);
+    }
+    paintStatusCard("partial",     partial);
+    paintStatusCard("review",      review);
+    paintStatusCard("pending",     pending);
+    paintStatusCard("unreachable", unreachable);
+    // If the user filtered by a non-seed product (sacos, MCPA, Emamectin, etc.)
+    // there are no seeds to break down — hide the breakdown blocks instead of
+    // showing "0 kg / 0 kg / 0 kg" everywhere.
+    const seedSum = [partial, review, pending, unreachable]
+      .reduce((s, b) => s + b.milho + b.feijao + b.arroz, 0);
+    ["m-partial-bd","m-review-bd","m-pending-bd","m-unreachable-bd"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = seedSum > 0 ? "" : "none";
+    });
     $("#m-errors").textContent = fmt(errors);
 
     // Breakdown da quantidade entregue por categoria.
