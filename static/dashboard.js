@@ -616,6 +616,7 @@
     const review = get("Under Review");
     const pending = get("Pending Verification");
     const unreachable = get("Not Reachable");
+    const rejected = get("Rejected");
     const errors = get("#ERROR!").count;
     const pct = total > 0 ? ((verified.count / total) * 100).toFixed(1) : "0";
     // If the product filter is a saco/hermetic bag, flip card to units
@@ -652,6 +653,7 @@
     paintStatusCard("review",      review);
     paintStatusCard("pending",     pending);
     paintStatusCard("unreachable", unreachable);
+    paintStatusCard("rejected",    rejected);
     // Taxa Verificação — same breakdown shape as the other cards, but the
     // big number is a percentage (already set above to #m-verified-pct), so
     // we only paint the kg subtitle + 3 seed rows here.
@@ -662,9 +664,9 @@
     // If the user filtered by a non-seed product (sacos, MCPA, Emamectin, etc.)
     // there are no seeds to break down — hide the breakdown blocks instead of
     // showing "0 kg / 0 kg / 0 kg" everywhere.
-    const seedSum = [verified, partial, review, pending, unreachable]
+    const seedSum = [verified, partial, review, pending, unreachable, rejected]
       .reduce((s, b) => s + b.milho + b.feijao + b.arroz, 0);
-    ["m-verified-bd","m-partial-bd","m-review-bd","m-pending-bd","m-unreachable-bd"].forEach((id) => {
+    ["m-verified-bd","m-partial-bd","m-review-bd","m-pending-bd","m-unreachable-bd","m-rejected-bd"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.style.display = seedSum > 0 ? "" : "none";
     });
@@ -1163,6 +1165,8 @@
       return '<span class="badge badge-pending">Pending</span>';
     if (s === "Not Reachable")
       return '<span class="badge badge-unreachable">Not Reachable</span>';
+    if (s === "Rejected")
+      return '<span class="badge badge-rejected">Rejected</span>';
     if (s === "#ERROR!")
       return '<span class="badge badge-error">#ERROR!</span>';
     return esc(s || "—");

@@ -352,6 +352,8 @@ th.num, td.num,
 .card-unreachable .card-value{color:#475569}
 .card-review{border-left-color:#0891b2}
 .card-review .card-value{color:#0e7490}
+.card-rejected{border-left-color:#e11d48}
+.card-rejected .card-value{color:#be123c}
 .card-sub{font-size:.7rem;color:#94a3b8;margin-top:.2rem;font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:.01em}
 .card-breakdown{margin-top:.5rem;border-top:1px dashed #e2e8f0;padding-top:.4rem;display:flex;flex-direction:column;gap:.15rem}
 .card-breakdown .bd-row{display:flex;justify-content:space-between;font-size:.72rem;color:#64748b}
@@ -362,6 +364,7 @@ th.num, td.num,
 .card-breakdown .bd-v-amber{color:#b45309}
 .card-breakdown .bd-v-slate{color:#475569}
 .card-breakdown .bd-v-green{color:#16a34a}
+.card-breakdown .bd-v-rose{color:#be123c}
 .bd-unit{font-size:.85em;color:#64748b;font-weight:500}
 
 /* ── Filters ─────────────────────────────────────────────── */
@@ -472,6 +475,7 @@ mark.search-hl{background:#fef08a;color:#1e293b;border-radius:2px;padding:0 1px}
 .badge-pending{background:#fef3c7;color:#92400e;box-shadow:inset 0 0 0 1px rgba(146,64,14,.12)}
 .badge-unreachable{background:#f1f5f9;color:#475569;box-shadow:inset 0 0 0 1px rgba(71,85,105,.15)}
 .badge-review{background:#cffafe;color:#155e75;box-shadow:inset 0 0 0 1px rgba(21,94,117,.18)}
+.badge-rejected{background:#ffe4e6;color:#9f1239;box-shadow:inset 0 0 0 1px rgba(159,18,57,.18)}
 .badge-error{background:#fef2f2;color:#dc2626;box-shadow:inset 0 0 0 1px rgba(220,38,38,.15)}
 
 /* ── Pagination ──────────────────────────────────────────── */
