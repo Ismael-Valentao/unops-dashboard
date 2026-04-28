@@ -579,6 +579,10 @@
     fSearch.value = "";
     updateDistrictOptions();
     fDistrict.value = "";
+    // Also wipe per-column filters and the table search box
+    colFilters = {};
+    tableSearchTerm = "";
+    const ts = $("#table-search"); if (ts) ts.value = "";
     applyFilters();
   }
 
@@ -925,19 +929,70 @@
 
   // ── Table search ────────────────────────────────────────────
   let tableSearchTerm = "";
+  // Per-column filters: { colKey: filterValue }. Set by the in-table filter
+  // row directly under the headers. Combine (AND) with global filters and
+  // the free-text search box.
+  let colFilters = {};
+
+  // Categorical columns get a <select> dropdown (exact-match). Everything
+  // else with type=text|date gets a free-text input (substring, ci).
+  const SELECT_FILTER_KEYS = new Set([
+    "verification_status", "province", "district", "product",
+    "product_unit", "supplier", "submitted_by", "is_locked",
+  ]);
+  // Columns that can't be usefully filtered (URLs, photos, signatures, etc.)
+  const SKIP_FILTER_KEYS = new Set([
+    "delivery_note_link", "delivery_note_link2", "delivery_note_link3",
+    "beneficiary_signature", "delivery_notes_view",
+  ]);
+  function colFilterType(col) {
+    if (!col) return null;
+    if (SKIP_FILTER_KEYS.has(col.key)) return null;
+    if (SELECT_FILTER_KEYS.has(col.key)) return "select";
+    if (col.type === "number" || col.type === "notes") return null;
+    return "text";
+  }
+  function getColUniqueValues(key) {
+    // Use filteredRows (after global filters, before col filters) so the
+    // dropdown options reflect the user's current scope.
+    const set = new Set();
+    filteredRows.forEach((r) => {
+      const v = String(r[key] ?? "").trim();
+      if (v) set.add(v);
+    });
+    return [...set].sort((a, b) => a.localeCompare(b, "pt"));
+  }
 
   function getTableSearchRows() {
-    if (!tableSearchTerm) return filteredRows;
-    const q = tableSearchTerm.toLowerCase();
-    return filteredRows.filter((r) => {
-      const hay = [
-        r.delivery_id, r.beneficiary_name, r.province, r.district,
-        r.product, r.delivery_note_number, r.submitted_by,
-        r.verification_status, r.delivery_date,
-        String(r.delivered_qty), String(r.packages),
-      ].join(" ").toLowerCase();
-      return hay.includes(q);
-    });
+    let rows = filteredRows;
+    // Apply per-column filters first (cheap loop bail-out)
+    const activeColFilters = Object.entries(colFilters).filter(([, v]) => v);
+    if (activeColFilters.length) {
+      rows = rows.filter((r) => {
+        for (const [key, val] of activeColFilters) {
+          if (SELECT_FILTER_KEYS.has(key)) {
+            if (String(r[key] ?? "") !== val) return false;
+          } else {
+            if (!String(r[key] ?? "").toLowerCase().includes(val.toLowerCase())) return false;
+          }
+        }
+        return true;
+      });
+    }
+    // Then the free-text search box
+    if (tableSearchTerm) {
+      const q = tableSearchTerm.toLowerCase();
+      rows = rows.filter((r) => {
+        const hay = [
+          r.delivery_id, r.beneficiary_name, r.province, r.district,
+          r.product, r.delivery_note_number, r.submitted_by,
+          r.verification_status, r.delivery_date,
+          String(r.delivered_qty), String(r.packages),
+        ].join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+    }
+    return rows;
   }
 
   function highlightMatch(text, term) {
@@ -976,8 +1031,64 @@
     });
   }
 
+  // ── Render per-column filter row ─────────────────────────────
+  // Re-rendered on full table renders (column visibility, global filters,
+  // sort). Text input changes only re-render the body to keep focus.
+  let colFilterDebounce = null;
+  function renderColFilterRow() {
+    const row = $("#table-filter-row");
+    if (!row) return;
+    row.innerHTML = visibleCols
+      .map((key) => {
+        const col = getColDef(key);
+        if (!col) return "<th></th>";
+        const ftype = colFilterType(col);
+        if (!ftype) return '<th class="col-filter-empty"></th>';
+        const cur = colFilters[key] || "";
+        const hasVal = cur ? " has-value" : "";
+        if (ftype === "select") {
+          const values = getColUniqueValues(key);
+          const opts = ['<option value="">— Todos —</option>']
+            .concat(values.map((v) =>
+              `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(v)}</option>`))
+            .join("");
+          return `<th><select class="col-filter-input${hasVal}" data-col-filter="${key}">${opts}</select></th>`;
+        }
+        return `<th><input type="text" class="col-filter-input${hasVal}" data-col-filter="${key}" placeholder="Filtrar…" value="${esc(cur)}"></th>`;
+      })
+      .join("");
+
+    // Bind events. Text inputs debounce; selects are immediate.
+    row.querySelectorAll(".col-filter-input").forEach((el) => {
+      const isSelect = el.tagName === "SELECT";
+      const handler = () => {
+        const k = el.dataset.colFilter;
+        const v = el.value.trim();
+        if (v) colFilters[k] = v;
+        else delete colFilters[k];
+        el.classList.toggle("has-value", !!v);
+        currentPage = 1;
+        // Body-only render preserves focus on text inputs
+        renderTableBody();
+      };
+      if (isSelect) {
+        el.addEventListener("change", handler);
+      } else {
+        el.addEventListener("input", () => {
+          clearTimeout(colFilterDebounce);
+          colFilterDebounce = setTimeout(handler, 200);
+        });
+      }
+    });
+  }
+
   function renderTable() {
     renderTableHeader();
+    renderColFilterRow();
+    renderTableBody();
+  }
+
+  function renderTableBody() {
     const searchRows = getTableSearchRows();
     const start = (currentPage - 1) * PAGE_SIZE;
     const page = searchRows.slice(start, start + PAGE_SIZE);
