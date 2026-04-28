@@ -611,13 +611,13 @@
       if (sk) byStatus[s][sk] += qty;
     });
     const get = (s) => byStatus[s] || emptyBucket();
-    const verified = get("Verified").count;
+    const verified = get("Verified");
     const partial = get("Partially Verified");
     const review = get("Under Review");
     const pending = get("Pending Verification");
     const unreachable = get("Not Reachable");
     const errors = get("#ERROR!").count;
-    const pct = total > 0 ? ((verified / total) * 100).toFixed(1) : "0";
+    const pct = total > 0 ? ((verified.count / total) * 100).toFixed(1) : "0";
     // If the product filter is a saco/hermetic bag, flip card to units
     const productFilter = fProduct.value;
     const filterIsSacos = /saco|hermetic/i.test(String(productFilter || ""));
@@ -652,12 +652,19 @@
     paintStatusCard("review",      review);
     paintStatusCard("pending",     pending);
     paintStatusCard("unreachable", unreachable);
+    // Taxa Verificação — same breakdown shape as the other cards, but the
+    // big number is a percentage (already set above to #m-verified-pct), so
+    // we only paint the kg subtitle + 3 seed rows here.
+    const verKg = $("#m-verified-kg");    if (verKg) verKg.textContent = fmtWeight(verified.kg);
+    const verM  = $("#m-verified-milho"); if (verM)  verM.textContent  = fmtSeedKg(verified.milho);
+    const verF  = $("#m-verified-feijao"); if (verF)  verF.textContent  = fmtSeedKg(verified.feijao);
+    const verA  = $("#m-verified-arroz");  if (verA)  verA.textContent  = fmtSeedKg(verified.arroz);
     // If the user filtered by a non-seed product (sacos, MCPA, Emamectin, etc.)
     // there are no seeds to break down — hide the breakdown blocks instead of
     // showing "0 kg / 0 kg / 0 kg" everywhere.
-    const seedSum = [partial, review, pending, unreachable]
+    const seedSum = [verified, partial, review, pending, unreachable]
       .reduce((s, b) => s + b.milho + b.feijao + b.arroz, 0);
-    ["m-partial-bd","m-review-bd","m-pending-bd","m-unreachable-bd"].forEach((id) => {
+    ["m-verified-bd","m-partial-bd","m-review-bd","m-pending-bd","m-unreachable-bd"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.style.display = seedSum > 0 ? "" : "none";
     });
