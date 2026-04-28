@@ -115,7 +115,12 @@
       if (historyMode) return;
       countdown--;
       if (countdown <= 0) {
-        fetchData(true).then(() => { runVerification(); loadSnapshotList(); });
+        fetchData(true).then(() => {
+          // Only run operational checks on /operations/dashboard. On the
+          // public home, refreshing should NOT pop the GTU/weight section.
+          if (!IS_PUBLIC) runVerification();
+          loadSnapshotList();
+        });
         return;
       }
       const m = Math.floor(countdown / 60);
@@ -133,6 +138,11 @@
   // The legacy/old plan is only used on "/anterior".
   const IS_OLD = location.pathname === "/anterior" || location.pathname.startsWith("/anterior/");
   const IS_UPDATED = !IS_OLD; // kept for backward compat in render code
+  // The public homepage hides operational checks (GTU duplicates, weight
+  // discrepancies, malformed GTU patterns). Those only show on
+  // /operations/dashboard. Module-scoped so the auto-refresh timer can
+  // reach it — init() defines a local `isPublic` with the same logic.
+  const IS_PUBLIC = location.pathname === "/" || location.pathname === "";
   const PLAN_PARAM = IS_OLD ? "old=1" : "";
   const addPlanParam = (url) => {
     if (!PLAN_PARAM) return url;
@@ -1919,7 +1929,7 @@
 
       populateFilters();
       applyFilters();
-      runVerification();
+      if (!IS_PUBLIC) runVerification();
     } catch (e) {
       console.error("Snapshot load error:", e);
     } finally {
@@ -1934,13 +1944,15 @@
     $("#btn-refresh").disabled = false;
     $("#btn-refresh").style.opacity = "1";
     await fetchData(true);
-    runVerification();
+    if (!IS_PUBLIC) runVerification();
   }
 
   // ── Event Listeners ─────────────────────────────────────────
   function init() {
     // Refresh button
-    $("#btn-refresh").addEventListener("click", () => fetchData(true).then(() => runVerification()));
+    $("#btn-refresh").addEventListener("click", () => fetchData(true).then(() => {
+      if (!IS_PUBLIC) runVerification();
+    }));
 
     // Save snapshot
     $("#btn-save-snapshot").addEventListener("click", async () => {
@@ -2124,8 +2136,10 @@
       arrow.classList.toggle("open", open);
     });
 
-    // Public visitor view at "/" hides the error verification section
-    const isPublic = location.pathname === "/" || location.pathname === "";
+    // Public visitor view at "/" hides the error verification section.
+    // Mirror of IS_PUBLIC defined at module scope (used by the auto-refresh
+    // timer); kept locally for readability of the init() flow.
+    const isPublic = IS_PUBLIC;
 
     // Adjust header subtitle + nav links based on current view
     const subtitle = $("#header-subtitle");
