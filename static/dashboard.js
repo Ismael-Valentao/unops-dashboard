@@ -590,20 +590,16 @@
     const total = rows.length;
     const qty = rows.reduce((s, r) => s + (Number(r.delivered_qty) || 0), 0);
     const pkgs = rows.reduce((s, r) => s + (Number(r.packages) || 0), 0);
-    // Counts + per-status product breakdown.
-    //   • Sementes (Milho/Feijão/Arroz)  → kg
-    //   • Químicos (Emamectin/Imidaclop/MCPA) → L (delivered_qty já está em L)
-    //   • Sacos Hermeticos → un (delivered_qty está em kg, dividir por 0.3)
-    function classifyProduct(productName) {
+    // Counts + kg sums per status, with seed breakdown (Milho/Feijão/Arroz).
+    // We classify each row by product name → one of the 3 seed buckets, or "other".
+    function seedKey(productName) {
       const p = String(productName || "").toLowerCase();
       if (p.includes("maize") || p.includes("milho")) return "milho";
       if (p.includes("bean")  || p.includes("feij"))  return "feijao";
       if (p.includes("rice")  || p.includes("arroz")) return "arroz";
-      if (p.includes("emamectin") || p.includes("imidaclop") || p.includes("imadoclop") || p.includes("mcpa")) return "quimicos";
-      if (p.includes("saco") || p.includes("hermetic")) return "sacos";
       return null;
     }
-    const emptyBucket = () => ({ count: 0, kg: 0, milho: 0, feijao: 0, arroz: 0, quimicos: 0, sacos: 0 });
+    const emptyBucket = () => ({ count: 0, kg: 0, milho: 0, feijao: 0, arroz: 0 });
     const byStatus = {};
     rows.forEach((r) => {
       const s = r.verification_status || "";
@@ -611,13 +607,8 @@
       byStatus[s].count++;
       const qty = Number(r.delivered_qty) || 0;
       byStatus[s].kg += qty;
-      const cls = classifyProduct(r.product);
-      if (cls === "sacos") {
-        // qty está em kg (parseCSV converteu un × 0.3); guardamos em unidades.
-        byStatus[s].sacos += qty / 0.3;
-      } else if (cls) {
-        byStatus[s][cls] += qty;
-      }
+      const sk = seedKey(r.product);
+      if (sk) byStatus[s][sk] += qty;
     });
     const get = (s) => byStatus[s] || emptyBucket();
     const verified = get("Verified").count;
@@ -647,39 +638,28 @@
     const fmtWeight = filterIsSacos
       ? (n) => fmt(Math.round(n / 0.3)) + " un"
       : (n) => fmtDec(n) + " kg";
-    // Per-product formatters — sementes em kg, químicos em L, sacos em un.
-    const fmtKg  = (n) => fmtDec(n) + " kg";
-    const fmtL   = (n) => fmtDec(n) + " L";
-    const fmtUn  = (n) => fmt(Math.round(n)) + " un";
-    // Helper: paint the count + total + product breakdown for one card group.
+    // Seeds are always in kg (sacos are not seeds, so no unit flip needed here).
+    const fmtSeedKg = (n) => fmtDec(n) + " kg";
+    // Helper: paint the count + total kg + seed breakdown for one card group.
     function paintStatusCard(prefix, bucket) {
       const cEl = $("#m-" + prefix);          if (cEl) cEl.textContent = fmt(bucket.count);
       const kEl = $("#m-" + prefix + "-kg");   if (kEl) kEl.textContent = fmtWeight(bucket.kg);
-      const mEl = $("#m-" + prefix + "-milho");    if (mEl) mEl.textContent = fmtKg(bucket.milho);
-      const fEl = $("#m-" + prefix + "-feijao");   if (fEl) fEl.textContent = fmtKg(bucket.feijao);
-      const aEl = $("#m-" + prefix + "-arroz");    if (aEl) aEl.textContent = fmtKg(bucket.arroz);
-      const qEl = $("#m-" + prefix + "-quimicos"); if (qEl) qEl.textContent = fmtL(bucket.quimicos);
-      const sEl = $("#m-" + prefix + "-sacos");    if (sEl) sEl.textContent = fmtUn(bucket.sacos);
-      // Hide individual rows whose value is 0 — keeps the card uncluttered
-      // when a filter narrows the data to one product family.
-      const rowMap = { milho: mEl, feijao: fEl, arroz: aEl, quimicos: qEl, sacos: sEl };
-      Object.entries(rowMap).forEach(([k, valEl]) => {
-        if (!valEl) return;
-        const row = valEl.parentElement;
-        if (row) row.style.display = bucket[k] > 0 ? "" : "none";
-      });
+      const mEl = $("#m-" + prefix + "-milho");  if (mEl) mEl.textContent = fmtSeedKg(bucket.milho);
+      const fEl = $("#m-" + prefix + "-feijao"); if (fEl) fEl.textContent = fmtSeedKg(bucket.feijao);
+      const aEl = $("#m-" + prefix + "-arroz");  if (aEl) aEl.textContent = fmtSeedKg(bucket.arroz);
     }
     paintStatusCard("partial",     partial);
     paintStatusCard("review",      review);
     paintStatusCard("pending",     pending);
     paintStatusCard("unreachable", unreachable);
-    // Hide the whole breakdown block if every bucket is empty (e.g. filter
-    // matches no products at all).
-    const totalSum = [partial, review, pending, unreachable]
-      .reduce((s, b) => s + b.milho + b.feijao + b.arroz + b.quimicos + b.sacos, 0);
+    // If the user filtered by a non-seed product (sacos, MCPA, Emamectin, etc.)
+    // there are no seeds to break down — hide the breakdown blocks instead of
+    // showing "0 kg / 0 kg / 0 kg" everywhere.
+    const seedSum = [partial, review, pending, unreachable]
+      .reduce((s, b) => s + b.milho + b.feijao + b.arroz, 0);
     ["m-partial-bd","m-review-bd","m-pending-bd","m-unreachable-bd"].forEach((id) => {
       const el = document.getElementById(id);
-      if (el) el.style.display = totalSum > 0 ? "" : "none";
+      if (el) el.style.display = seedSum > 0 ? "" : "none";
     });
     $("#m-errors").textContent = fmt(errors);
 
