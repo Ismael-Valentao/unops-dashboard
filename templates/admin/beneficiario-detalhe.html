@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Beneficiário</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Beneficiário</h1>
+      <span class="admin-sub" id="ben-id">…</span>
+    </header>
+    <section class="admin-section">
+      <p style="color:#64748b;font-size:.9rem">Página de detalhe em construção (Fase 2).</p>
+      <p style="color:#94a3b8;font-size:.82rem;margin-top:.5rem">Vai mostrar perfil, saldo por produto e histórico de entregas.</p>
+      <p style="margin-top:1rem"><a href="/admin/beneficiarios" class="btn">Voltar à lista</a></p>
+    </section>
+  </main>
+  <script src="/static/admin.js"></script>
+  <script>
+    document.getElementById("ben-id").textContent = decodeURIComponent(location.pathname.split("/").pop());
+    AdminUI.renderLayout("beneficiarios");
+  </script>
+</body>
+</html>

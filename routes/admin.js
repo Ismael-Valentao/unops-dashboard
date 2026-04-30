@@ -1218,10 +1218,18 @@ router.get("/distribuicao",        (_req, res) => send(res, "distribuicao.html")
 router.get("/servicos",            (_req, res) => send(res, "servicos.html"));
 router.get("/servicos/:id",        (_req, res) => send(res, "servico-detalhe.html"));
 router.get("/camioes",             (_req, res) => send(res, "camioes.html"));
+router.get("/beneficiarios",       (_req, res) => send(res, "beneficiarios.html"));
+router.get("/beneficiarios/:id",   (_req, res) => send(res, "beneficiario-detalhe.html"));
 
 // ── API ─────────────────────────────────────────────────────
 router.get("/api/distribution/geography", ah(async (_req, res) => {
   res.json(await Beneficiaries.geography());
+}));
+
+router.get("/api/distribution/beneficiaries", ah(async (req, res) => {
+  const { province, district, search, kind } = req.query;
+  const rows = await Beneficiaries.list({ province, district, search, kind });
+  res.json({ rows });
 }));
 
 router.get("/api/distribution/balances", ah(async (req, res) => {

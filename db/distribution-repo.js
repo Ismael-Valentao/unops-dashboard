@@ -27,10 +27,47 @@ const Beneficiaries = {
   async list(opts = {}) {
     const where = [];
     const params = [];
-    if (opts.province) { where.push("province = ?"); params.push(opts.province); }
-    if (opts.district) { where.push("district = ?"); params.push(opts.district); }
+    if (opts.province) { where.push("b.province = ?"); params.push(opts.province); }
+    if (opts.district) { where.push("b.district = ?"); params.push(opts.district); }
+    if (opts.search) {
+      where.push("(b.name LIKE ? OR b.nuit LIKE ? OR b.extensionist_id LIKE ?)");
+      const s = "%" + opts.search + "%";
+      params.push(s, s, s);
+    }
+    if (opts.kind === "extra") where.push("b.extensionist_id LIKE 'EXT-%'");
+    if (opts.kind === "plan")  where.push("b.extensionist_id NOT LIKE 'EXT-%'");
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
-    return query(`SELECT * FROM beneficiaries ${w} ORDER BY name LIMIT 5000`, params);
+    // Cada benef mostra: totais agregados de saldo (planeado, entregue, falta)
+    // + nº de produtos no plano. Permite ordenar por estes campos.
+    return query(
+      `SELECT b.extensionist_id, b.nuit, b.name, b.province, b.district, b.posto,
+              b.contact, b.supervisor_name, b.supervisor_phone,
+              CASE WHEN b.extensionist_id LIKE 'EXT-%' THEN 1 ELSE 0 END AS is_extra,
+              COALESCE(s.n_products, 0)        AS n_products,
+              COALESCE(s.planned_total, 0)     AS planned_total,
+              COALESCE(s.committed_total, 0)   AS committed_total,
+              COALESCE(s.available_total, 0)   AS available_total,
+              COALESCE(svc.n_services, 0)      AS n_services
+       FROM beneficiaries b
+       LEFT JOIN (
+         SELECT extensionist_id,
+                COUNT(*) AS n_products,
+                SUM(planned_qty) AS planned_total,
+                SUM(committed_qty) AS committed_total,
+                SUM(GREATEST(0, planned_qty - committed_qty)) AS available_total
+         FROM delivery_balances
+         GROUP BY extensionist_id
+       ) s ON s.extensionist_id = b.extensionist_id
+       LEFT JOIN (
+         SELECT extensionist_id, COUNT(DISTINCT service_id) AS n_services
+         FROM delivery_service_items
+         GROUP BY extensionist_id
+       ) svc ON svc.extensionist_id = b.extensionist_id
+       ${w}
+       ORDER BY b.name
+       LIMIT 5000`,
+      params
+    );
   },
   async byId(extId) {
     return queryOne("SELECT * FROM beneficiaries WHERE extensionist_id = ?", [extId]);

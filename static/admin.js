@@ -25,6 +25,7 @@ window.AdminUI = (function () {
     { key: "dashboard",       label: "Dashboard",         icon: ICO.dashboard,  href: "/admin" },
     { section: "Distribuição" },
     { key: "distribuicao",    label: "Saldo & Despachar", icon: ICO.target,     href: "/admin/distribuicao" },
+    { key: "beneficiarios",   label: "Beneficiários",     icon: ICO.users,      href: "/admin/beneficiarios" },
     { key: "servicos",        label: "Serviços",          icon: ICO.list,       href: "/admin/servicos" },
     { key: "camioes",         label: "Camiões",           icon: ICO.truck,      href: "/admin/camioes" },
     { section: "Compras" },

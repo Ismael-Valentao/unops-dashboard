@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Beneficiários</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    .ben-filters{display:grid;grid-template-columns:repeat(5,1fr);gap:.6rem;align-items:end}
+    .ben-filters label{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;
+      color:#64748b;font-weight:700;margin-bottom:.25rem}
+    .ben-filters input,.ben-filters select{width:100%;padding:.45rem .6rem;border:1px solid #cbd5e1;
+      border-radius:6px;font-size:.82rem;font-family:inherit;background:#fff;box-sizing:border-box}
+    .ben-filters input:focus,.ben-filters select:focus{outline:none;border-color:#0f4c75;
+      box-shadow:0 0 0 2px rgba(15,76,117,.12)}
+
+    .ben-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.65rem;margin-top:1rem}
+    .b-stat{background:#f8fafc;border-radius:8px;padding:.65rem .85rem;border-left:3px solid #0f4c75}
+    .b-stat-lbl{font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:700}
+    .b-stat-val{font-size:1.3rem;font-weight:800;color:#0f172a;margin-top:.15rem;font-variant-numeric:tabular-nums}
+    .b-stat-purple{border-left-color:#7c3aed}.b-stat-purple .b-stat-val{color:#6d28d9}
+    .b-stat-green{border-left-color:#16a34a}.b-stat-green .b-stat-val{color:#15803d}
+
+    .ben-table{font-size:.78rem}
+    .ben-extra-tag{display:inline-block;background:#ede9fe;color:#6d28d9;font-size:.62rem;font-weight:700;
+      padding:.05rem .35rem;border-radius:3px;margin-left:.3rem;letter-spacing:.04em;text-transform:uppercase;vertical-align:1px}
+    code.bid{font-size:.72rem;color:#475569;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Beneficiários</h1>
+      <span class="admin-sub">Pesquisa, filtros e perfil de cada beneficiário</span>
+    </header>
+
+    <section class="admin-section">
+      <h2>Filtros</h2>
+      <div class="ben-filters">
+        <div>
+          <label for="f-search">Pesquisar</label>
+          <input id="f-search" type="text" placeholder="Nome, NUIT ou ID…" autocomplete="off">
+        </div>
+        <div>
+          <label for="f-province">Província</label>
+          <select id="f-province"><option value="">Todas</option></select>
+        </div>
+        <div>
+          <label for="f-district">Distrito</label>
+          <select id="f-district"><option value="">Todos</option></select>
+        </div>
+        <div>
+          <label for="f-kind">Tipo</label>
+          <select id="f-kind">
+            <option value="">Todos</option>
+            <option value="plan">Do plano</option>
+            <option value="extra">Extras (auto-criados)</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:end">
+          <button id="btn-clear" class="btn">Limpar filtros</button>
+        </div>
+      </div>
+
+      <div class="ben-stats" id="stats">
+        <div class="b-stat"><div class="b-stat-lbl">Beneficiários</div><div class="b-stat-val" id="s-total">—</div></div>
+        <div class="b-stat b-stat-purple"><div class="b-stat-lbl">Extras</div><div class="b-stat-val" id="s-extra">—</div></div>
+        <div class="b-stat"><div class="b-stat-lbl">Distritos</div><div class="b-stat-val" id="s-distritos">—</div></div>
+        <div class="b-stat b-stat-green"><div class="b-stat-lbl">Já receberam</div><div class="b-stat-val" id="s-com-entregas">—</div></div>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <h2 class="section-title-row" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Lista de Beneficiários</span>
+        <span style="font-weight:400;color:#64748b;font-size:.75rem" id="row-count">A carregar…</span>
+      </h2>
+      <div class="tbl-wrap">
+        <table class="adm-table ben-table" id="ben-table">
+          <thead><tr id="thead-row"></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, esc, sortRows, sortArrow, bindSortable } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+
+      const COLS = [
+        { key: "extensionist_id",  label: "ID",          sortable: true,  type: "string" },
+        { key: "nuit",             label: "NUIT",        sortable: true,  type: "string" },
+        { key: "name",             label: "Nome",        sortable: true,  type: "string" },
+        { key: "province",         label: "Província",   sortable: true,  type: "string" },
+        { key: "district",         label: "Distrito",    sortable: true,  type: "string" },
+        { key: "n_products",       label: "Produtos",    sortable: true,  type: "number", numCol: true },
+        { key: "planned_total",    label: "Plano",       sortable: true,  type: "number", numCol: true },
+        { key: "committed_total",  label: "Entregue",    sortable: true,  type: "number", numCol: true },
+        { key: "available_total",  label: "Falta",       sortable: true,  type: "number", numCol: true },
+        { key: "n_services",       label: "Serviços",    sortable: true,  type: "number", numCol: true },
+        { key: null,               label: "",            sortable: false },
+      ];
+      const sort = { sortKey: "name", sortAsc: true, render: () => render() };
+
+      let geoCache = null;
+      let allRows = [];
+      let timer = null;
+
+      async function loadGeo() {
+        if (!geoCache) geoCache = await fetchJSON("/admin/api/distribution/geography");
+        $("#f-province").innerHTML = '<option value="">Todas</option>' +
+          Object.keys(geoCache).sort().map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
+      }
+      function loadDistrictOptions() {
+        const prov = $("#f-province").value;
+        const sel = $("#f-district");
+        if (!prov || !geoCache[prov]) {
+          sel.innerHTML = '<option value="">Todos</option>';
+          return;
+        }
+        sel.innerHTML = '<option value="">Todos</option>' +
+          Object.keys(geoCache[prov]).sort().map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
+      }
+
+      function buildQuery() {
+        const p = new URLSearchParams();
+        const search = $("#f-search").value.trim(); if (search) p.set("search", search);
+        const prov   = $("#f-province").value;     if (prov)   p.set("province", prov);
+        const dist   = $("#f-district").value;     if (dist)   p.set("district", dist);
+        const kind   = $("#f-kind").value;          if (kind)   p.set("kind", kind);
+        return p;
+      }
+
+      function renderHeader() {
+        $("#thead-row").innerHTML = COLS.map((c) => {
+          const cls = c.numCol ? "num" : "";
+          if (!c.sortable) return `<th class="${cls}">${esc(c.label)}</th>`;
+          return `<th class="${cls}" data-sort="${c.key}" data-sort-type="${c.type}">${esc(c.label)}${sortArrow(c.key, sort.sortKey, sort.sortAsc)}</th>`;
+        }).join("");
+        bindSortable($("#ben-table"), sort);
+      }
+
+      function render() {
+        renderHeader();
+        const col = COLS.find((c) => c.key === sort.sortKey);
+        const sorted = sortRows(allRows, sort.sortKey, sort.sortAsc, col?.type);
+        const body = $("#tbody");
+        if (!sorted.length) {
+          body.innerHTML = `<tr><td colspan="${COLS.length}" class="empty">Sem beneficiários nesta selecção.</td></tr>`;
+          $("#row-count").textContent = "0 beneficiários";
+          return;
+        }
+        body.innerHTML = sorted.map((r) => {
+          const extraTag = r.is_extra ? '<span class="ben-extra-tag">Extra</span>' : "";
+          return `<tr>
+            <td><code class="bid">${esc(r.extensionist_id)}</code>${extraTag}</td>
+            <td><code class="bid">${esc(r.nuit || "—")}</code></td>
+            <td><a href="/admin/beneficiarios/${encodeURIComponent(r.extensionist_id)}" style="color:#0f4c75;font-weight:600">${esc(r.name)}</a></td>
+            <td>${esc(r.province || "—")}</td>
+            <td>${esc(r.district || "—")}</td>
+            <td class="num">${fmt(r.n_products)}</td>
+            <td class="num" style="color:#64748b">${fmt(r.planned_total)}</td>
+            <td class="num" style="color:#16a34a">${fmt(r.committed_total)}</td>
+            <td class="num" style="color:#dc2626;font-weight:700">${fmt(r.available_total)}</td>
+            <td class="num">${fmt(r.n_services)}</td>
+            <td><a href="/admin/beneficiarios/${encodeURIComponent(r.extensionist_id)}" class="btn btn-sm">Ver</a></td>
+          </tr>`;
+        }).join("");
+        $("#row-count").textContent = sorted.length + " beneficiário" + (sorted.length === 1 ? "" : "s");
+      }
+
+      function renderStats() {
+        const total = allRows.length;
+        const extras = allRows.filter((r) => r.is_extra).length;
+        const districts = new Set(allRows.map((r) => r.district).filter(Boolean)).size;
+        const comEntregas = allRows.filter((r) => r.n_services > 0).length;
+        $("#s-total").textContent = fmt(total);
+        $("#s-extra").textContent = fmt(extras);
+        $("#s-distritos").textContent = fmt(districts);
+        $("#s-com-entregas").textContent = fmt(comEntregas);
+      }
+
+      async function load() {
+        try {
+          const data = await fetchJSON("/admin/api/distribution/beneficiaries?" + buildQuery());
+          allRows = data.rows || [];
+          renderStats();
+          render();
+        } catch (e) {
+          $("#tbody").innerHTML = `<tr><td colspan="${COLS.length}" style="color:#dc2626;padding:1rem">Erro: ${esc(e.message)}</td></tr>`;
+        }
+      }
+
+      function debounced(fn) { return () => { clearTimeout(timer); timer = setTimeout(fn, 250); }; }
+
+      document.addEventListener("DOMContentLoaded", async () => {
+        $("#f-search").addEventListener("input", debounced(load));
+        $("#f-province").addEventListener("change", () => { loadDistrictOptions(); load(); });
+        $("#f-district").addEventListener("change", load);
+        $("#f-kind").addEventListener("change", load);
+        $("#btn-clear").addEventListener("click", () => {
+          $("#f-search").value = "";
+          $("#f-province").value = "";
+          $("#f-district").value = "";
+          $("#f-kind").value = "";
+          loadDistrictOptions();
+          load();
+        });
+
+        await loadGeo();
+        await load();
+      });
+    })();
+    AdminUI.renderLayout("beneficiarios");
+  </script>
+</body>
+</html>
