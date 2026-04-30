@@ -106,7 +106,7 @@
   function renderRows() {
     const body = $("#bal-body");
     if (!allRows.length) {
-      body.innerHTML = `<tr><td colspan="9"><div class="empty-state">
+      body.innerHTML = `<tr><td colspan="11"><div class="empty-state">
         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:.4rem"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         <div>Nada a entregar nesta selecção. Tudo cumprido.</div>
       </div></td></tr>`;
@@ -116,19 +116,27 @@
     body.innerHTML = allRows.map((r) => {
       const k = rowKey(r);
       const sel = selectedKeys.has(k);
-      const planned = Number(r.planned_qty) || 0;
-      const delivered = Number(r.delivered_qty) || 0;
+      const plannedOrig = Number(r.planned_original) || 0;
+      const realoc = Number(r.realocado_recebido) || 0;
+      const planned = Number(r.planned_qty) || 0;       // = original − realoc
+      const committed = Number(r.committed_qty) || 0;
       const available = Number(r.available_qty) || 0;
-      const pct = planned > 0 ? Math.round((delivered / planned) * 100) : 0;
+      // % entregue/cumprido em relação ao plano ajustado
+      const pct = planned > 0 ? Math.round((committed / planned) * 100) : 0;
       const pctClass = pct >= 100 ? "pct-high" : pct >= 50 ? "pct-mid" : "pct-0";
+      const realocCell = realoc > 0
+        ? `<span style="color:#7c3aed;font-weight:700" title="Recebeu ${fmtUnit(realoc, r.unit)} via realocação">${fmtUnit(realoc, r.unit)}</span>`
+        : '<span style="color:#cbd5e1">—</span>';
       return `<tr class="${sel ? "selected" : ""}" data-key="${esc(k)}">
         <td class="check-col"><input type="checkbox" class="check-input row-check" ${sel ? "checked" : ""}></td>
         <td><code style="font-size:.7rem">${esc(r.extensionist_id)}</code></td>
         <td>${esc(r.beneficiary_name)}</td>
         <td>${esc(r.district || "")}</td>
         <td>${esc(r.product_name)} <span style="color:#94a3b8;font-size:.7rem">(${esc(r.sku)})</span></td>
-        <td class="num">${fmtUnit(planned, r.unit)}</td>
-        <td class="num" style="color:#16a34a">${fmtUnit(delivered, r.unit)}</td>
+        <td class="num" style="color:#64748b">${fmtUnit(plannedOrig, r.unit)}</td>
+        <td class="num">${realocCell}</td>
+        <td class="num" style="font-weight:700">${fmtUnit(planned, r.unit)}</td>
+        <td class="num" style="color:#16a34a">${fmtUnit(committed, r.unit)}</td>
         <td class="num" style="color:#dc2626;font-weight:700">${fmtUnit(available, r.unit)}</td>
         <td class="num"><span class="pct ${pctClass}">${pct}%</span></td>
       </tr>`;

@@ -185,9 +185,11 @@
             <th>Beneficiário</th>
             <th>Distrito</th>
             <th>Produto</th>
-            <th class="num">Plano</th>
-            <th class="num">Entregue</th>
-            <th class="num">Falta</th>
+            <th class="num" title="Quantidade originalmente planeada (NOVA QUANTIDADE A ENTREGAR)">Plano Original</th>
+            <th class="num" title="Quantidade recebida via realocação de outro beneficiário">Realoc. Recebido</th>
+            <th class="num" title="Plano após subtrair Realocado Recebido">Plano Ajustado</th>
+            <th class="num" title="Já entregue (TRANSITO + FINALIZADO no sistema externo)">Entregue</th>
+            <th class="num" title="Falta entregar = max(0, Plano Ajustado − Entregue)">Falta</th>
             <th class="num">%</th>
           </tr></thead>
           <tbody id="bal-body"></tbody>

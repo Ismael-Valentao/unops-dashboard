@@ -66,8 +66,10 @@ const Balances = {
     const limit = opts.limit ? `LIMIT ${Number(opts.limit)}` : "LIMIT 5000";
     return query(
       `SELECT extensionist_id, sku, product_name, unit, province, district,
-              beneficiary_name, planned_qty, committed_qty, delivered_qty,
-              (planned_qty - committed_qty) AS available_qty
+              beneficiary_name,
+              planned_original, realocado_recebido,
+              planned_qty, committed_qty, delivered_qty,
+              GREATEST(0, planned_qty - committed_qty) AS available_qty
        FROM delivery_balances
        ${w}
        ORDER BY district, beneficiary_name, sku

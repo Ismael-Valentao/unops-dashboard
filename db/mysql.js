@@ -135,6 +135,20 @@ async function migrate() {
       'authorization_in','adsn_out'
     ) NOT NULL`
   );
+
+  // delivery_balances: planned_original + realocado_recebido (visíveis na UI)
+  if (!(await columnExists("delivery_balances", "planned_original"))) {
+    await getPool().query(
+      "ALTER TABLE delivery_balances ADD COLUMN planned_original DECIMAL(14,2) NOT NULL DEFAULT 0 AFTER beneficiary_name"
+    );
+    console.log("[DB] migrated delivery_balances.planned_original");
+  }
+  if (!(await columnExists("delivery_balances", "realocado_recebido"))) {
+    await getPool().query(
+      "ALTER TABLE delivery_balances ADD COLUMN realocado_recebido DECIMAL(14,2) NOT NULL DEFAULT 0 AFTER planned_original"
+    );
+    console.log("[DB] migrated delivery_balances.realocado_recebido");
+  }
 }
 
 async function init() {

@@ -406,7 +406,11 @@ CREATE TABLE IF NOT EXISTS delivery_balances (
   province         VARCHAR(64),
   district         VARCHAR(64),
   beneficiary_name VARCHAR(255) NOT NULL,
-  planned_qty      DECIMAL(14,2) NOT NULL,
+  -- planned_qty já tem Realocado Recebido subtraído (Qtd Pós Realocação).
+  -- Guardamos planned_original e realocado_recebido para o operador ver "porquê".
+  planned_original DECIMAL(14,2) NOT NULL DEFAULT 0,   -- NQAE original
+  realocado_recebido DECIMAL(14,2) NOT NULL DEFAULT 0, -- realocado vindo de outro benef
+  planned_qty      DECIMAL(14,2) NOT NULL,             -- = planned_original - realocado_recebido
   -- committed = planned bloqueado em qualquer serviço não-cancelado
   -- (draft + in_transit + delivered). Saldo despachável = planned − committed.
   committed_qty    DECIMAL(14,2) NOT NULL DEFAULT 0,
