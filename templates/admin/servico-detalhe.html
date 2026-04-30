@@ -27,6 +27,22 @@
     .btn-cancel{background:#fff;color:#dc2626;border:1px solid #dc2626}
     .btn-cancel:hover{background:#fef2f2}
     .btn-print{background:#0f4c75;color:#fff;border:0}
+    .btn-attach{background:#7c3aed;color:#fff;border:0}
+    .btn-attach:hover{background:#6d28d9}
+
+    .attach-modal{position:fixed;inset:0;background:rgba(15,23,42,.7);display:none;
+      align-items:center;justify-content:center;z-index:9999;padding:1rem}
+    .attach-modal.show{display:flex}
+    .attach-box{background:#fff;border-radius:12px;max-width:720px;width:100%;padding:1.5rem;
+      max-height:90vh;overflow:auto}
+    .attach-box h2{margin:0 0 .85rem;font-size:1.1rem}
+    .attach-result{margin-top:.85rem;padding:.75rem;border-radius:8px;font-size:.82rem}
+    .attach-ok{background:#dcfce7;color:#166534;border-left:3px solid #16a34a}
+    .attach-warn{background:#fef3c7;color:#92400e;border-left:3px solid #d97706}
+    .attach-err{background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626}
+    .attach-list{font-size:.78rem;margin-top:.4rem;line-height:1.5;max-height:280px;overflow:auto;
+      background:rgba(255,255,255,.7);padding:.5rem;border-radius:6px}
+    .attach-list code{font-size:.72rem;background:#f1f5f9;padding:1px 4px;border-radius:3px}
 
     /* Print mode */
     @media print {
@@ -49,6 +65,25 @@
 
     <div id="content"></div>
   </main>
+
+  <!-- Attach Guia modal -->
+  <div class="attach-modal" id="attach-modal">
+    <div class="attach-box">
+      <h2>📎 Anexar Guia de Transporte ADICIONAL (PDF)</h2>
+      <p style="font-size:.82rem;color:#475569;margin:0 0 .85rem">
+        Carregue o PDF gerado pela ADICIONAL Logistics quando o serviço foi colocado em trânsito.
+        O sistema extrai automaticamente os <strong>códigos ADSN</strong> e <strong>GTU</strong> de
+        cada beneficiário e atribui-os aos itens deste serviço.
+      </p>
+      <input type="file" id="guia-file" accept=".pdf" style="width:100%;padding:.5rem;border:1px solid #cbd5e1;border-radius:6px">
+      <div style="display:flex;gap:.5rem;margin-top:.85rem;align-items:center">
+        <button class="btn btn-attach" id="btn-guia-upload">Anexar e atribuir códigos</button>
+        <button class="btn" id="btn-guia-cancel">Cancelar</button>
+        <label style="margin-left:auto;font-size:.78rem;color:#64748b"><input type="checkbox" id="guia-dryrun"> Dry run (só mostrar, não atribuir)</label>
+      </div>
+      <div id="guia-result"></div>
+    </div>
+  </div>
 
   <script src="/static/admin.js"></script>
   <script>
@@ -84,6 +119,7 @@
             <div class="actions no-print">
               <button class="btn btn-print" onclick="window.print()">🖨 Imprimir Guia</button>
               ${svc.status === "draft" ? `<button class="btn btn-transit" id="btn-transit">🚛 Pôr em Trânsito</button>` : ""}
+              ${(svc.status === "in_transit" || svc.status === "delivered") ? `<button class="btn btn-attach" id="btn-attach">📎 Anexar Guia ADICIONAL (PDF)</button>` : ""}
               ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-deliver" id="btn-deliver">✓ Marcar Entregue</button>` : ""}
               ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-cancel" id="btn-cancel">✗ Cancelar</button>` : ""}
               <a href="/admin/servicos" class="btn">← Voltar</a>
@@ -172,6 +208,85 @@
             location.reload();
           } catch (e) { alert("Erro: " + e.message); }
         });
+        const btnAttach = document.getElementById("btn-attach");
+        if (btnAttach) btnAttach.addEventListener("click", () => {
+          document.getElementById("attach-modal").classList.add("show");
+          document.getElementById("guia-result").innerHTML = "";
+          document.getElementById("guia-file").value = "";
+        });
+      }
+
+      // Modal handlers (always bound)
+      document.addEventListener("click", (e) => {
+        if (e.target.id === "attach-modal") {
+          e.target.classList.remove("show");
+        }
+        if (e.target.id === "btn-guia-cancel") {
+          document.getElementById("attach-modal").classList.remove("show");
+        }
+        if (e.target.id === "btn-guia-upload") {
+          uploadGuia();
+        }
+      });
+
+      async function uploadGuia() {
+        const fileEl = document.getElementById("guia-file");
+        const out = document.getElementById("guia-result");
+        if (!fileEl.files[0]) { out.innerHTML = '<div class="attach-result attach-err">Escolha um PDF primeiro</div>'; return; }
+        const dryRun = document.getElementById("guia-dryrun").checked;
+        const btn = document.getElementById("btn-guia-upload");
+        btn.disabled = true; btn.textContent = "A processar PDF…";
+        out.innerHTML = '<div class="attach-result attach-warn">A extrair códigos do PDF (pode demorar 5–10s)…</div>';
+        try {
+          const fd = new FormData();
+          fd.append("file", fileEl.files[0]);
+          const url = `/admin/api/distribution/services/${id}/attach-guia${dryRun ? "?dry_run=1" : ""}`;
+          const res = await fetch(url, { method: "POST", body: fd });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || res.statusText);
+
+          if (dryRun) {
+            const stats = data.parsed.stats;
+            out.innerHTML = `<div class="attach-result attach-warn">
+              <strong>Dry run — extracção bem sucedida</strong> (nada foi gravado)<br>
+              Páginas: ${stats.total_pages} · ADSNs: ${stats.unique_adsn} · GTUs: ${stats.unique_gtu} · com NUIT: ${stats.with_nuit}
+              <div class="attach-list">${data.parsed.deliveries.slice(0, 30).map((d) =>
+                `<div>• <code>${esc(d.adsn)}</code> / <code>${esc(d.gtu||"—")}</code> / NUIT <code>${esc(d.nuit||"—")}</code> · ${esc(d.destinatario||"?")} · ${fmt(d.qty||0)} kg · ${esc(d.estado||"")}</div>`
+              ).join("")}</div>
+            </div>`;
+            return;
+          }
+
+          // Real attach
+          const matched = data.matched.length;
+          const unmatched = data.unmatched.length;
+          const skipped = data.skipped_status.length;
+          let html = `<div class="attach-result attach-ok">
+            <strong>✓ ${matched} item(ns) actualizado(s)</strong> com códigos ADSN+GTU
+            ${data.aggregator ? `<br>Camião agregador: <code>${esc(data.aggregator.adse)}</code> (${fmt(data.aggregator.qty || 0)} kg, ${esc(data.aggregator.matricula || "")})` : ""}
+          </div>`;
+          if (skipped > 0) {
+            html += `<div class="attach-result attach-warn"><strong>⊘ ${skipped} ignorado(s)</strong> por estado DESCARTADO/CANCELADO no sistema externo:
+              <div class="attach-list">${data.skipped_status.map((s) => `<div>• <code>${esc(s.adsn)}</code> · ${esc(s.name||"?")} · ${esc(s.estado)}</div>`).join("")}</div>
+            </div>`;
+          }
+          if (unmatched > 0) {
+            html += `<div class="attach-result attach-err"><strong>⚠ ${unmatched} sem match</strong> — verifique manualmente:
+              <div class="attach-list">${data.unmatched.map((u) =>
+                `<div>• <code>${esc(u.adsn)}</code> · ${esc(u.destinatario||"?")} (NUIT ${esc(u.nuit||"—")}) · ${esc(u.sku||"")} · ${fmt(u.qty||0)}kg → <em>${esc(u.reason)}</em></div>`
+              ).join("")}</div>
+            </div>`;
+          }
+          if (data.plate_mismatch) {
+            html += `<div class="attach-result attach-warn">⚠ A matrícula no PDF não bate exactamente com a do serviço — confirme se carregou o PDF correcto.</div>`;
+          }
+          html += `<div style="margin-top:.85rem;text-align:right"><button class="btn" onclick="location.reload()">↻ Recarregar página</button></div>`;
+          out.innerHTML = html;
+        } catch (e) {
+          out.innerHTML = `<div class="attach-result attach-err">Erro: ${esc(e.message)}</div>`;
+        } finally {
+          btn.disabled = false; btn.textContent = "Anexar e atribuir códigos";
+        }
       }
 
       document.addEventListener("DOMContentLoaded", async () => {

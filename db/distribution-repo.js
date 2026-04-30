@@ -417,6 +417,120 @@ const Services = {
     );
   },
 
+  // Anexa códigos ADSN/GTU a items de um serviço com base nas entregas
+  // extraídas de um PDF da ADICIONAL.
+  // Estratégia de matching:
+  //   1. NUIT → beneficiaries.nuit → extensionist_id (mais fiável)
+  //   2. Fallback: nome aproximado (case-insensitive trim, sem acentos)
+  //   3. Discriminar por (extensionist_id + sku) entre os items do serviço
+  // Apenas anexa se o item ainda não tem external_adsn (idempotente).
+  async attachGuiaDeliveries(serviceId, deliveries, opts = {}) {
+    const conn = await getPool().getConnection();
+    try {
+      const [svcRows] = await conn.query("SELECT * FROM delivery_services WHERE id = ?", [serviceId]);
+      if (!svcRows[0]) throw new Error("Serviço não encontrado");
+      const svc = svcRows[0];
+
+      // 1. Build NUIT → extensionist_id map (a partir dos beneficiaries do
+      //    serviço — mais rápido que carregar todos)
+      const [items] = await conn.query(
+        `SELECT i.*, b.nuit
+         FROM delivery_service_items i
+         LEFT JOIN beneficiaries b ON b.extensionist_id = i.extensionist_id
+         WHERE i.service_id = ?`,
+        [serviceId]
+      );
+      const itemsByNuitSku = new Map();      // `${nuit}|${sku}` → [items]
+      const itemsByNameSku = new Map();      // `${normalize(name)}|${sku}` → [items]
+      function norm(s) { return String(s || "").toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, ""); }
+      items.forEach((it) => {
+        if (it.nuit) {
+          const k = `${it.nuit}|${it.sku}`;
+          if (!itemsByNuitSku.has(k)) itemsByNuitSku.set(k, []);
+          itemsByNuitSku.get(k).push(it);
+        }
+        const nk = `${norm(it.beneficiary_name)}|${it.sku}`;
+        if (!itemsByNameSku.has(nk)) itemsByNameSku.set(nk, []);
+        itemsByNameSku.get(nk).push(it);
+      });
+
+      // 2. Loop deliveries e tentar match
+      const results = { matched: [], unmatched: [], skipped_status: [], plate_mismatch: false };
+
+      // Aviso (não bloqueante) se a matrícula do PDF não bater com a do serviço
+      const pdfPlate = (deliveries[0]?.matricula || "").toUpperCase().replace(/\s+/g, "");
+      const svcPlate = (svc.truck_plate || "").toUpperCase().replace(/\s+/g, "");
+      if (pdfPlate && svcPlate && !pdfPlate.includes(svcPlate.split("/")[0]) && !svcPlate.includes(pdfPlate.split("/")[0])) {
+        results.plate_mismatch = true;
+      }
+
+      await conn.beginTransaction();
+      try {
+        for (const d of deliveries) {
+          // Saltar DESCARTADO/CANCELADO (não fazem parte da carga real)
+          if (d.estado && /DESCART|CANCEL/i.test(d.estado)) {
+            results.skipped_status.push({ adsn: d.adsn, gtu: d.gtu, estado: d.estado, name: d.destinatario });
+            continue;
+          }
+          // Match: NUIT primeiro
+          let candidates = (d.nuit && d.sku && itemsByNuitSku.get(`${d.nuit}|${d.sku}`)) || [];
+          // Fallback: nome
+          if (!candidates.length && d.destinatario) {
+            candidates = itemsByNameSku.get(`${norm(d.destinatario)}|${d.sku}`) || [];
+          }
+          // Discriminar por qty se múltiplos
+          if (candidates.length > 1 && d.qty != null) {
+            const exact = candidates.filter((c) => Math.abs(Number(c.qty) - d.qty) < 0.5);
+            if (exact.length === 1) candidates = exact;
+          }
+          // Saltar items que já têm external_adsn (idempotente — re-upload é safe)
+          candidates = candidates.filter((c) => !c.external_adsn);
+          if (candidates.length === 1) {
+            const it = candidates[0];
+            await conn.query(
+              "UPDATE delivery_service_items SET external_adsn = ?, external_gtu = ? WHERE id = ?",
+              [d.adsn, d.gtu, it.id]
+            );
+            results.matched.push({
+              item_id: it.id,
+              adsn: d.adsn, gtu: d.gtu,
+              beneficiary: it.beneficiary_name, sku: it.sku, qty: it.qty,
+            });
+            // Tirar do mapa para não fazer match outra vez
+            const nk = `${norm(it.beneficiary_name)}|${it.sku}`;
+            if (itemsByNameSku.has(nk)) itemsByNameSku.set(nk, itemsByNameSku.get(nk).filter((x) => x.id !== it.id));
+            const nuk = `${it.nuit}|${it.sku}`;
+            if (itemsByNuitSku.has(nuk)) itemsByNuitSku.set(nuk, itemsByNuitSku.get(nuk).filter((x) => x.id !== it.id));
+          } else {
+            results.unmatched.push({
+              adsn: d.adsn, gtu: d.gtu, nuit: d.nuit,
+              destinatario: d.destinatario, sku: d.sku, qty: d.qty,
+              candidates: candidates.length,
+              reason: candidates.length === 0 ? "no match" : "ambiguous",
+            });
+          }
+        }
+
+        // Atualizar service-level: external_gtu + adsn no campo notes (se ainda não existir)
+        const aggregated = results.matched.length;
+        if (aggregated > 0 && opts.aggregator) {
+          const note = `[GUIA ADICIONAL] aggregator ADSE=${opts.aggregator.adse}, ${aggregated} items matched, total ${opts.aggregator.qty}kg, plate ${opts.aggregator.matricula}`;
+          await conn.query(
+            "UPDATE delivery_services SET notes = CONCAT(IFNULL(notes,''), '\\n', ?) WHERE id = ?",
+            [note, serviceId]
+          );
+        }
+        await conn.commit();
+      } catch (e) {
+        try { await conn.rollback(); } catch (_) {}
+        throw e;
+      }
+      return results;
+    } finally {
+      conn.release();
+    }
+  },
+
   async dashboardCounts() {
     const rows = await query(
       `SELECT status, COUNT(*) AS n, SUM(total_kg) AS kg

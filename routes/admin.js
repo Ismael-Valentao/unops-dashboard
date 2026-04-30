@@ -18,6 +18,7 @@ const {
 } = require("../db/ops-repo");
 const { Beneficiaries, Balances, Services: DistServices } = require("../db/distribution-repo");
 const { importPlanning, importServices } = require("../lib/distribution-bootstrap");
+const { parseGuia: parseAdicionalGuia } = require("../lib/parse-adicional-guia");
 const { parsePOExcel } = require("../lib/parse-po-excel");
 const { parseADSNExcel } = require("../lib/parse-adsn-excel");
 
@@ -1326,6 +1327,41 @@ router.post("/api/distribution/bootstrap/services",
       await auth.logAction(req, "import_services", "delivery_services", null, JSON.stringify(result));
       res.json(result);
     } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  })
+);
+
+// Anexar Guia ADICIONAL (PDF) → extrai ADSN+GTU+NUIT e atribui aos items.
+// Usa-se DEPOIS do serviço estar em trânsito (operador descarrega PDF do
+// sistema da outra empresa).
+router.post("/api/distribution/services/:id/attach-guia",
+  auth.requireRole("operator", "admin", "superadmin"),
+  distUpload.single("file"),
+  ah(async (req, res) => {
+    if (!req.file) return jsonError(res, 400, "PDF não fornecido");
+    const dryRun = req.query.dry_run === "1";
+    try {
+      const fs = require("fs");
+      const buf = fs.readFileSync(req.file.path);
+      const parsed = await parseAdicionalGuia(buf);
+
+      if (dryRun) return res.json({ dry_run: true, parsed });
+
+      const result = await DistServices.attachGuiaDeliveries(
+        req.params.id,
+        parsed.deliveries,
+        { aggregator: parsed.aggregator }
+      );
+      await auth.logAction(req, "attach_guia", "delivery_service", req.params.id,
+        JSON.stringify({ matched: result.matched.length, unmatched: result.unmatched.length, file: req.file.originalname }));
+      res.json({
+        ...result,
+        stats: parsed.stats,
+        aggregator: parsed.aggregator,
+      });
+    } catch (e) {
+      console.error("[attach-guia] error:", e);
       res.status(500).json({ error: e.message });
     }
   })
