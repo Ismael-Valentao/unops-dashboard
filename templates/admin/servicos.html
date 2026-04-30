@@ -27,6 +27,38 @@
     .badge-in_transit{background:#fef3c7;color:#92400e}
     .badge-delivered{background:#dcfce7;color:#166534}
     .badge-cancelled{background:#fee2e2;color:#991b1b}
+
+    /* Bulk action bar — sticky footer quando há selecção */
+    .bulk-bar{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);
+      background:#0f172a;color:#fff;padding:.6rem 1rem;border-radius:10px;
+      box-shadow:0 12px 40px rgba(0,0,0,.3);display:none;align-items:center;gap:.75rem;z-index:200;
+      animation:bulk-fade-in .15s ease}
+    .bulk-bar.show{display:flex}
+    .bulk-bar .bulk-count{font-weight:700;font-size:.85rem}
+    .bulk-bar .btn-bulk{background:#1e293b;color:#fff;border:1px solid #334155;font-size:.78rem;padding:.4rem .75rem}
+    .bulk-bar .btn-bulk:hover{background:#334155}
+    .bulk-bar .btn-bulk-deliver{background:#16a34a;border-color:#16a34a}
+    .bulk-bar .btn-bulk-deliver:hover{background:#15803d}
+    .bulk-bar .btn-bulk-cancel{background:transparent;border-color:#fca5a5;color:#fca5a5}
+    .bulk-bar .btn-bulk-cancel:hover{background:rgba(248,113,113,.12);color:#fff}
+    .bulk-bar .btn-bulk-clear{color:#94a3b8;background:transparent;border:0;font-size:.75rem;cursor:pointer}
+    @keyframes bulk-fade-in{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+
+    .check-col-svc{width:32px}
+    .check-col-svc input{cursor:pointer;width:15px;height:15px}
+    tr.row-selected{background:#dbeafe!important}
+
+    /* Cancel modal (reused style) */
+    .cm-modal{position:fixed;inset:0;background:rgba(15,23,42,.7);display:none;
+      align-items:center;justify-content:center;z-index:9999;padding:1rem}
+    .cm-modal.show{display:flex}
+    .cm-box{background:#fff;border-radius:12px;max-width:480px;width:100%;padding:1.5rem}
+    .cm-box h2{margin:0 0 .5rem;font-size:1.05rem}
+    .cm-box label{display:block;font-size:.7rem;text-transform:uppercase;color:#64748b;font-weight:600;margin-bottom:.25rem}
+    .cm-box select,.cm-box textarea{width:100%;padding:.55rem .65rem;border:1px solid #cbd5e1;border-radius:6px;font-size:.85rem;font-family:inherit;box-sizing:border-box}
+    .cm-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.25rem}
+    .cm-error{display:none;background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626;padding:.6rem;border-radius:6px;font-size:.78rem;margin-top:.7rem}
+    .cm-error.show{display:block}
   </style>
 </head>
 <body class="admin-body">
@@ -78,6 +110,35 @@
     </section>
   </main>
 
+  <!-- Bulk action bar -->
+  <div class="bulk-bar" id="bulk-bar">
+    <span class="bulk-count" id="bulk-count">0 seleccionados</span>
+    <button class="btn btn-bulk btn-bulk-deliver" id="btn-bulk-deliver">Marcar Entregue</button>
+    <button class="btn btn-bulk btn-bulk-cancel" id="btn-bulk-cancel">Cancelar</button>
+    <button class="btn-bulk-clear" id="btn-bulk-clear">Limpar selecção ✕</button>
+  </div>
+
+  <!-- Cancel modal (single + bulk) -->
+  <div class="cm-modal" id="cm-modal">
+    <div class="cm-box">
+      <h2 id="cm-title">Cancelar Serviços</h2>
+      <p style="font-size:.78rem;color:#64748b;margin:.3rem 0 .5rem" id="cm-desc">…</p>
+      <div style="margin-top:.7rem">
+        <label>Motivo *</label>
+        <select id="cm-category"></select>
+      </div>
+      <div style="margin-top:.7rem">
+        <label>Notas (opcional)</label>
+        <textarea id="cm-reason" rows="3" placeholder="Detalhes adicionais sobre o cancelamento…"></textarea>
+      </div>
+      <div class="cm-error" id="cm-error"></div>
+      <div class="cm-actions">
+        <button class="btn" id="cm-back">Voltar</button>
+        <button class="btn btn-cancel" id="cm-confirm">Confirmar cancelamento</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/admin.js"></script>
   <script>
     (function () {
@@ -86,8 +147,9 @@
 
       const STATUS_LABELS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
 
-      // Definição das colunas — usada para o header sortable e para o sort
+      // Definição das colunas — primeira é checkbox de seleção bulk
       const COLS = [
+        { key: "_check",           label: "",            sortable: false, checkCol: true },
         { key: "service_number",   label: "Nº Serviço",  sortable: true,  type: "string" },
         { key: "status",           label: "Estado",      sortable: true,  type: "string" },
         { key: "province",         label: "Província",   sortable: true,  type: "string" },
@@ -104,6 +166,8 @@
       let activeStatus = "";
       let timer = null;
       let allRows = [];
+      let selectedIds = new Set();
+      let cancelCategories = null;
       const sort = { sortKey: "created_at", sortAsc: false, render: () => render() };
 
       function renderCounts(counts) {
@@ -135,12 +199,29 @@
 
       function renderHeader() {
         const html = COLS.map((c) => {
+          if (c.checkCol) return `<th class="check-col-svc"><input type="checkbox" id="check-all-svc" title="Selecc. todos"></th>`;
           const cls = c.numCol ? "num" : "";
           if (!c.sortable) return `<th class="${cls}">${esc(c.label)}</th>`;
           return `<th class="${cls}" data-sort="${c.key}" data-sort-type="${c.type}">${esc(c.label)}${sortArrow(c.key, sort.sortKey, sort.sortAsc)}</th>`;
         }).join("");
         $("#svc-thead-row").innerHTML = html;
         bindSortable($("#svc-table"), sort);
+        const cAll = $("#check-all-svc");
+        if (cAll) {
+          // Select all toggles only the rows currently visible (sorted/filtered)
+          const visible = currentSorted();
+          cAll.checked = visible.length > 0 && visible.every((r) => selectedIds.has(r.id));
+          cAll.onclick = () => {
+            if (cAll.checked) visible.forEach((r) => selectedIds.add(r.id));
+            else visible.forEach((r) => selectedIds.delete(r.id));
+            render();
+          };
+        }
+      }
+
+      function currentSorted() {
+        const col = COLS.find((c) => c.key === sort.sortKey);
+        return sortRows(allRows, sort.sortKey, sort.sortAsc, col?.type);
       }
 
       function renderRows(rows) {
@@ -148,26 +229,117 @@
           $("#tbl-body").innerHTML = `<tr><td colspan="${COLS.length}" style="text-align:center;color:#94a3b8;padding:2rem">Sem serviços com este filtro.</td></tr>`;
           return;
         }
-        $("#tbl-body").innerHTML = rows.map((r) => `<tr>
-          <td><a href="/admin/servicos/${r.id}" style="color:#0f4c75;font-weight:600">${esc(r.service_number)}</a></td>
-          <td><span class="badge badge-${esc(r.status)}">${STATUS_LABELS[r.status] || r.status}</span></td>
-          <td>${esc(r.province)}</td>
-          <td>${esc(r.district)}</td>
-          <td><code style="font-size:.72rem">${esc(r.truck_plate || "—")}</code></td>
-          <td>${esc(r.origem_supplier || "—")}</td>
-          <td class="num">${fmt(r.n_beneficiaries)}</td>
-          <td class="num">${fmt(r.n_items)}</td>
-          <td class="num">${fmt(r.total_kg)}</td>
-          <td>${fmtDate(r.created_at)}</td>
-          <td><a href="/admin/servicos/${r.id}" class="btn btn-sm">Ver</a></td>
-        </tr>`).join("");
+        $("#tbl-body").innerHTML = rows.map((r) => {
+          const checked = selectedIds.has(r.id);
+          return `<tr class="${checked ? "row-selected" : ""}" data-id="${r.id}">
+            <td class="check-col-svc"><input type="checkbox" class="row-check" ${checked ? "checked" : ""}></td>
+            <td><a href="/admin/servicos/${r.id}" style="color:#0f4c75;font-weight:600">${esc(r.service_number)}</a></td>
+            <td><span class="badge badge-${esc(r.status)}">${STATUS_LABELS[r.status] || r.status}</span></td>
+            <td>${esc(r.province)}</td>
+            <td>${esc(r.district)}</td>
+            <td><code style="font-size:.72rem">${esc(r.truck_plate || "—")}</code></td>
+            <td>${esc(r.origem_supplier || "—")}</td>
+            <td class="num">${fmt(r.n_beneficiaries)}</td>
+            <td class="num">${fmt(r.n_items)}</td>
+            <td class="num">${fmt(r.total_kg)}</td>
+            <td>${fmtDate(r.created_at)}</td>
+            <td><a href="/admin/servicos/${r.id}" class="btn btn-sm">Ver</a></td>
+          </tr>`;
+        }).join("");
+        // Bind checkboxes
+        document.querySelectorAll("#tbl-body tr[data-id]").forEach((tr) => {
+          const cb = tr.querySelector(".row-check");
+          cb.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const id = Number(tr.dataset.id);
+            if (cb.checked) selectedIds.add(id); else selectedIds.delete(id);
+            tr.classList.toggle("row-selected", cb.checked);
+            updateBulkBar();
+          });
+        });
       }
 
       function render() {
         renderHeader();
-        const col = COLS.find((c) => c.key === sort.sortKey);
-        const sorted = sortRows(allRows, sort.sortKey, sort.sortAsc, col?.type);
-        renderRows(sorted);
+        renderRows(currentSorted());
+        updateBulkBar();
+      }
+
+      // ── Bulk action bar ───────────────────────────────────────
+      function updateBulkBar() {
+        const bar = $("#bulk-bar");
+        const n = selectedIds.size;
+        if (n === 0) { bar.classList.remove("show"); return; }
+        bar.classList.add("show");
+        $("#bulk-count").textContent = n + " seleccionado" + (n === 1 ? "" : "s");
+        // Botão "Marcar Entregue" só faz sentido se TODOS os seleccionados
+        // forem in_transit (entregar uma draft sem dispatch é nonsense).
+        const selected = allRows.filter((r) => selectedIds.has(r.id));
+        const allInTransit = selected.length > 0 && selected.every((r) => r.status === "in_transit");
+        const noneDelivered = selected.every((r) => r.status !== "delivered" && r.status !== "cancelled");
+        $("#btn-bulk-deliver").disabled = !allInTransit;
+        $("#btn-bulk-deliver").style.opacity = allInTransit ? "1" : ".5";
+        $("#btn-bulk-cancel").disabled = !noneDelivered;
+        $("#btn-bulk-cancel").style.opacity = noneDelivered ? "1" : ".5";
+      }
+
+      async function loadCancelCategories() {
+        if (!cancelCategories) {
+          const r = await fetchJSON("/admin/api/distribution/cancel-categories");
+          cancelCategories = r.categories || {};
+        }
+        return cancelCategories;
+      }
+
+      async function openCancelModal() {
+        const cats = await loadCancelCategories();
+        $("#cm-category").innerHTML = '<option value="">— Escolher motivo —</option>' +
+          Object.entries(cats).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+        $("#cm-title").textContent = "Cancelar " + selectedIds.size + " serviço" + (selectedIds.size === 1 ? "" : "s");
+        $("#cm-desc").innerHTML = `Cancelar liberta o saldo dos beneficiários nestes serviços. Esta acção <strong>não pode ser revertida</strong>.`;
+        $("#cm-reason").value = "";
+        $("#cm-error").classList.remove("show");
+        $("#cm-modal").classList.add("show");
+      }
+
+      async function bulkDeliver() {
+        const ids = [...selectedIds];
+        if (!confirm(`Marcar ${ids.length} serviço${ids.length === 1 ? "" : "s"} como ENTREGUE? Esta acção não é reversível.`)) return;
+        try {
+          const r = await fetchJSON("/admin/api/distribution/services/bulk/deliver", {
+            method: "POST", body: { ids },
+          });
+          alert(`OK: ${r.ok.length} entregue${r.ok.length === 1 ? "" : "s"}` +
+            (r.failed.length ? `\nFalhou: ${r.failed.length}\n` + r.failed.map((f) => `• ${f.id}: ${f.error}`).join("\n") : ""));
+          selectedIds.clear();
+          load();
+        } catch (e) { alert("Erro: " + e.message); }
+      }
+
+      async function bulkCancelConfirm() {
+        const errBox = $("#cm-error");
+        errBox.classList.remove("show");
+        const category = $("#cm-category").value;
+        const reason = $("#cm-reason").value.trim();
+        if (!category) {
+          errBox.textContent = "Escolha um motivo de cancelamento";
+          errBox.classList.add("show");
+          return;
+        }
+        try {
+          const ids = [...selectedIds];
+          const r = await fetchJSON("/admin/api/distribution/services/bulk/cancel", {
+            method: "POST", body: { ids, category, reason: reason || null },
+          });
+          $("#cm-modal").classList.remove("show");
+          alert(`OK: ${r.ok.length} cancelado${r.ok.length === 1 ? "" : "s"}` +
+            (r.failed.length ? `\nFalhou: ${r.failed.length}\n` + r.failed.map((f) => `• ${f.id}: ${f.error}`).join("\n") : ""));
+          selectedIds.clear();
+          load();
+        } catch (e) {
+          errBox.textContent = "Erro: " + e.message;
+          errBox.classList.add("show");
+        }
       }
 
       async function load() {
@@ -181,6 +353,9 @@
           const data = await fetchJSON("/admin/api/distribution/services?" + params);
           renderCounts(data.counts || {});
           allRows = data.rows || [];
+          // Drop selecções que já não estão no resultset actual
+          const ids = new Set(allRows.map((r) => r.id));
+          selectedIds = new Set([...selectedIds].filter((id) => ids.has(id)));
           render();
         } catch (e) {
           $("#tbl-body").innerHTML = `<tr><td colspan="${COLS.length}" style="color:#dc2626;padding:1rem">Erro: ${esc(e.message)}</td></tr>`;
@@ -194,6 +369,17 @@
         ["f-province", "f-district", "f-plate", "f-supplier"].forEach((id) =>
           $("#" + id).addEventListener("input", debounced(load))
         );
+
+        // Bulk handlers
+        $("#btn-bulk-deliver").addEventListener("click", bulkDeliver);
+        $("#btn-bulk-cancel").addEventListener("click", openCancelModal);
+        $("#btn-bulk-clear").addEventListener("click", () => { selectedIds.clear(); render(); });
+        $("#cm-back").addEventListener("click", () => $("#cm-modal").classList.remove("show"));
+        $("#cm-modal").addEventListener("click", (e) => {
+          if (e.target.id === "cm-modal") e.target.classList.remove("show");
+        });
+        $("#cm-confirm").addEventListener("click", bulkCancelConfirm);
+
         await load();
       });
     })();

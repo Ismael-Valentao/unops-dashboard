@@ -91,6 +91,31 @@
     <div id="content"></div>
   </main>
 
+  <!-- Cancel service modal -->
+  <div class="edit-modal" id="cancel-modal">
+    <div class="edit-box" style="max-width:480px">
+      <h2>Cancelar Serviço</h2>
+      <p style="font-size:.78rem;color:#64748b;margin:.3rem 0 .5rem">
+        Cancelar liberta o saldo destes <strong id="cm-items-count">…</strong> beneficiários.
+        Esta acção não pode ser revertida.
+      </p>
+      <div style="margin-top:.7rem">
+        <label style="display:block;font-size:.7rem;text-transform:uppercase;color:#64748b;font-weight:600;margin-bottom:.25rem">Motivo *</label>
+        <select id="cm-category" style="width:100%;padding:.55rem .65rem;border:1px solid #cbd5e1;border-radius:6px;font-size:.85rem;font-family:inherit"></select>
+      </div>
+      <div style="margin-top:.7rem">
+        <label style="display:block;font-size:.7rem;text-transform:uppercase;color:#64748b;font-weight:600;margin-bottom:.25rem">Notas (opcional)</label>
+        <textarea id="cm-reason" rows="3" placeholder="Detalhes adicionais sobre o cancelamento…"
+          style="width:100%;padding:.55rem .65rem;border:1px solid #cbd5e1;border-radius:6px;font-size:.85rem;font-family:inherit;box-sizing:border-box"></textarea>
+      </div>
+      <div class="check-box err" id="cm-error"></div>
+      <div class="edit-actions">
+        <button class="btn" id="cm-back">Voltar</button>
+        <button class="btn btn-cancel" id="cm-confirm">Confirmar cancelamento</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Edit service modal (só DRAFT) -->
   <div class="edit-modal" id="edit-modal">
     <div class="edit-box">
@@ -363,12 +388,43 @@
         });
         const btnCancel = document.getElementById("btn-cancel");
         if (btnCancel) btnCancel.addEventListener("click", async () => {
-          const reason = prompt(`Motivo do cancelamento de ${svc.service_number}?`);
-          if (reason === null) return;
+          const mod = document.getElementById("cancel-modal");
+          // Carrega categorias se ainda não tiver
+          const cats = await fetchJSON("/admin/api/distribution/cancel-categories");
+          const sel = document.getElementById("cm-category");
+          sel.innerHTML = '<option value="">— Escolher motivo —</option>' +
+            Object.entries(cats.categories).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+          document.getElementById("cm-items-count").textContent = svc.items.length;
+          document.getElementById("cm-reason").value = "";
+          document.getElementById("cm-error").classList.remove("show");
+          mod.classList.add("show");
+        });
+        document.getElementById("cm-back").addEventListener("click", () => {
+          document.getElementById("cancel-modal").classList.remove("show");
+        });
+        document.getElementById("cancel-modal").addEventListener("click", (e) => {
+          if (e.target.id === "cancel-modal") e.target.classList.remove("show");
+        });
+        document.getElementById("cm-confirm").addEventListener("click", async () => {
+          const errBox = document.getElementById("cm-error");
+          errBox.classList.remove("show");
+          const category = document.getElementById("cm-category").value;
+          const reason = document.getElementById("cm-reason").value.trim();
+          if (!category) {
+            errBox.textContent = "Escolha um motivo de cancelamento";
+            errBox.classList.add("show");
+            return;
+          }
           try {
-            await fetchJSON(`/admin/api/distribution/services/${id}/cancel`, { method: "POST", body: { reason } });
+            await fetchJSON(`/admin/api/distribution/services/${id}/cancel`, {
+              method: "POST",
+              body: { category, reason: reason || null },
+            });
             location.reload();
-          } catch (e) { alert("Erro: " + e.message); }
+          } catch (e) {
+            errBox.textContent = "Erro: " + e.message;
+            errBox.classList.add("show");
+          }
         });
         const btnAttach = document.getElementById("btn-attach");
         if (btnAttach) btnAttach.addEventListener("click", () => {

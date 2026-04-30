@@ -443,6 +443,8 @@ CREATE TABLE IF NOT EXISTS delivery_services (
   dispatched_at     DATETIME NULL,
   delivered_at      DATETIME NULL,
   cancelled_at      DATETIME NULL,
+  cancellation_category VARCHAR(32) NULL,        -- truck_breakdown / weather / benef_unreachable / wrong_data / other
+  cancellation_reason   TEXT NULL,
   imported_from     VARCHAR(255) NULL,
   notes             TEXT,
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,

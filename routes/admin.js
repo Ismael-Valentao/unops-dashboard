@@ -1353,11 +1353,44 @@ router.post("/api/distribution/services/:id/delivered", express.json(), auth.req
 }));
 
 router.post("/api/distribution/services/:id/cancel", express.json(), auth.requireRole("admin", "superadmin"), ah(async (req, res) => {
-  const result = await DistServices.cancel(req.params.id, req.body?.reason);
+  const result = await DistServices.cancel(req.params.id, req.body || {});
   if (result.error) return res.status(400).json(result);
-  await auth.logAction(req, "cancel", "delivery_service", req.params.id, req.body?.reason);
+  await auth.logAction(req, "cancel", "delivery_service", req.params.id, JSON.stringify(req.body || {}));
   res.json(result);
 }));
+
+// Lista de categorias de cancelamento (para popular dropdown na UI)
+router.get("/api/distribution/cancel-categories", ah(async (_req, res) => {
+  res.json({ categories: DistServices.CANCEL_CATEGORIES });
+}));
+
+// ── Bulk operations ────────────────────────────────────────
+router.post("/api/distribution/services/bulk/deliver",
+  express.json(),
+  auth.requireRole("operator", "admin", "superadmin"),
+  ah(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
+    const result = await DistServices.bulkSetDelivered(ids);
+    await auth.logAction(req, "bulk_deliver", "delivery_service", null,
+      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length }));
+    res.json(result);
+  })
+);
+
+router.post("/api/distribution/services/bulk/cancel",
+  express.json(),
+  auth.requireRole("admin", "superadmin"),
+  ah(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
+    const opts = { category: req.body?.category, reason: req.body?.reason };
+    const result = await DistServices.bulkCancel(ids, opts);
+    await auth.logAction(req, "bulk_cancel", "delivery_service", null,
+      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length, ...opts }));
+    res.json(result);
+  })
+);
 
 router.get("/api/distribution/in-transit", ah(async (_req, res) => {
   res.json({ rows: await DistServices.inTransit() });

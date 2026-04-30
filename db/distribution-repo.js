@@ -508,8 +508,23 @@ const Services = {
     }
   },
 
+  // Categorias válidas de cancelamento. Mantemos como const para a UI
+  // saber o que mostrar e o backend para validar.
+  CANCEL_CATEGORIES: {
+    truck_breakdown:     "Avaria do camião",
+    weather:             "Condições meteorológicas",
+    benef_unreachable:   "Beneficiário não alcançável",
+    wrong_data:          "Dados incorrectos no plano",
+    insufficient_stock:  "Stock insuficiente",
+    other:               "Outro",
+  },
+
   // Cancela: liberta saldo (committed_qty -= qty). Se já estava 'delivered' não permite.
-  async cancel(serviceId, reason) {
+  // Aceita { reason, category }. Categoria é validada contra CANCEL_CATEGORIES.
+  async cancel(serviceId, opts = {}) {
+    const reason = opts.reason || null;
+    const category = opts.category && this.CANCEL_CATEGORIES[opts.category]
+      ? opts.category : null;
     const ts = now();
     const conn = await getPool().getConnection();
     try {
@@ -542,9 +557,10 @@ const Services = {
       }
       await conn.query(
         `UPDATE delivery_services
-         SET status = 'cancelled', cancelled_at = ?, notes = CONCAT(IFNULL(notes,''), ?)
+         SET status = 'cancelled', cancelled_at = ?,
+             cancellation_category = ?, cancellation_reason = ?
          WHERE id = ?`,
-        [ts, `\n[CANCEL ${ts}] ${reason || ""}`, serviceId]
+        [ts, category, reason, serviceId]
       );
       await conn.commit();
       return { ok: true };
@@ -554,6 +570,37 @@ const Services = {
     } finally {
       conn.release();
     }
+  },
+
+  // ── Bulk operations ────────────────────────────────────────
+  // Aplica setDelivered a vários serviços. Para-se ao primeiro erro
+  // mas retorna o que conseguiu fazer.
+  async bulkSetDelivered(serviceIds) {
+    const results = { ok: [], failed: [] };
+    for (const id of serviceIds) {
+      try {
+        const r = await this.setDelivered(id);
+        if (r.ok) results.ok.push(id);
+        else results.failed.push({ id, error: r.error });
+      } catch (e) {
+        results.failed.push({ id, error: e.message });
+      }
+    }
+    return results;
+  },
+
+  async bulkCancel(serviceIds, opts = {}) {
+    const results = { ok: [], failed: [] };
+    for (const id of serviceIds) {
+      try {
+        const r = await this.cancel(id, opts);
+        if (r.ok) results.ok.push(id);
+        else results.failed.push({ id, error: r.error });
+      } catch (e) {
+        results.failed.push({ id, error: e.message });
+      }
+    }
+    return results;
   },
 
   async list(opts = {}) {

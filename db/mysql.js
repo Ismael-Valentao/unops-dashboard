@@ -136,6 +136,20 @@ async function migrate() {
     ) NOT NULL`
   );
 
+  // delivery_services: categoria + razão de cancelamento (Fase 5)
+  if (!(await columnExists("delivery_services", "cancellation_category"))) {
+    await getPool().query(
+      "ALTER TABLE delivery_services ADD COLUMN cancellation_category VARCHAR(32) NULL AFTER cancelled_at"
+    );
+    console.log("[DB] migrated delivery_services.cancellation_category");
+  }
+  if (!(await columnExists("delivery_services", "cancellation_reason"))) {
+    await getPool().query(
+      "ALTER TABLE delivery_services ADD COLUMN cancellation_reason TEXT NULL AFTER cancellation_category"
+    );
+    console.log("[DB] migrated delivery_services.cancellation_reason");
+  }
+
   // delivery_balances: planned_original + realocado_recebido (visíveis na UI)
   if (!(await columnExists("delivery_balances", "planned_original"))) {
     await getPool().query(
