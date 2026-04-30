@@ -1324,9 +1324,23 @@ router.get("/api/distribution/services/:id", ah(async (req, res) => {
   res.json(svc);
 }));
 
+router.patch("/api/distribution/services/:id", express.json(), auth.requireRole("operator", "admin", "superadmin"), ah(async (req, res) => {
+  const result = await DistServices.update(req.params.id, req.body || {});
+  if (result.error) return res.status(400).json(result);
+  await auth.logAction(req, "update", "delivery_service", req.params.id, JSON.stringify(req.body));
+  res.json(result);
+}));
+
+router.get("/api/distribution/services/:id/preflight", ah(async (req, res) => {
+  const result = await DistServices.preflightCheck(req.params.id);
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+}));
+
 router.post("/api/distribution/services/:id/in-transit", express.json(), auth.requireRole("operator", "admin", "superadmin"), ah(async (req, res) => {
   const result = await DistServices.setInTransit(req.params.id, req.body || {});
   if (result.error) return res.status(400).json(result);
+  if (result.needs_confirm) return res.status(409).json(result);
   await auth.logAction(req, "in_transit", "delivery_service", req.params.id);
   res.json(result);
 }));

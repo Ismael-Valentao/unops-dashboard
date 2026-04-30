@@ -29,6 +29,26 @@
     .btn-print{background:#0f4c75;color:#fff;border:0}
     .btn-attach{background:#7c3aed;color:#fff;border:0}
     .btn-attach:hover{background:#6d28d9}
+    .btn-edit{background:#0f4c75;color:#fff;border:0}
+    .btn-edit:hover{background:#0c3a5c}
+
+    /* Edit modal */
+    .edit-modal{position:fixed;inset:0;background:rgba(15,23,42,.7);display:none;
+      align-items:center;justify-content:center;z-index:9999;padding:1rem}
+    .edit-modal.show{display:flex}
+    .edit-box{background:#fff;border-radius:12px;max-width:560px;width:100%;padding:1.5rem;max-height:90vh;overflow:auto}
+    .edit-box h2{margin:0 0 .5rem;font-size:1.05rem}
+    .edit-row{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-top:.7rem}
+    .edit-row label{display:block;font-size:.7rem;text-transform:uppercase;color:#64748b;font-weight:600;margin-bottom:.25rem}
+    .edit-row input,.edit-row select,.edit-row textarea{width:100%;padding:.5rem .65rem;border:1px solid #cbd5e1;
+      border-radius:6px;font-size:.85rem;font-family:inherit;box-sizing:border-box}
+    .edit-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.25rem}
+    .check-box{margin-top:.85rem;padding:.7rem;border-radius:6px;font-size:.78rem;line-height:1.5;display:none}
+    .check-box.show{display:block}
+    .check-box.warn{background:#fef3c7;color:#92400e;border-left:3px solid #d97706}
+    .check-box.err{background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626}
+    .check-box ul{margin:.3rem 0 0 1rem;padding:0}
+    .check-box li{margin:.15rem 0}
 
     .attach-modal{position:fixed;inset:0;background:rgba(15,23,42,.7);display:none;
       align-items:center;justify-content:center;z-index:9999;padding:1rem}
@@ -70,6 +90,60 @@
 
     <div id="content"></div>
   </main>
+
+  <!-- Edit service modal (só DRAFT) -->
+  <div class="edit-modal" id="edit-modal">
+    <div class="edit-box">
+      <h2>Editar Serviço</h2>
+      <p style="font-size:.78rem;color:#64748b;margin:.3rem 0 0">Alterações só permitidas enquanto o serviço está em rascunho.</p>
+      <div class="edit-row">
+        <div>
+          <label>Capacidade do camião (kg)</label>
+          <select id="e-capacity">
+            <option value="1000">1T</option>
+            <option value="2000">2T</option>
+            <option value="5000">5T</option>
+            <option value="10000">10T</option>
+            <option value="15000">15T</option>
+            <option value="30000">30T</option>
+          </select>
+        </div>
+        <div>
+          <label>Origem (fornecedor)</label>
+          <input id="e-origem" type="text">
+        </div>
+      </div>
+      <div class="edit-row">
+        <div>
+          <label>Matrícula principal</label>
+          <input id="e-plate" type="text" placeholder="AAB 450 MP" style="text-transform:uppercase;font-family:ui-monospace,monospace">
+        </div>
+        <div>
+          <label>Matrícula reboque</label>
+          <input id="e-plate-2" type="text" placeholder="AB 672 MC" style="text-transform:uppercase;font-family:ui-monospace,monospace">
+        </div>
+      </div>
+      <div class="edit-row">
+        <div>
+          <label>Motorista</label>
+          <input id="e-driver" type="text">
+        </div>
+        <div>
+          <label>Telefone</label>
+          <input id="e-phone" type="text" placeholder="84/87…">
+        </div>
+      </div>
+      <div style="margin-top:.7rem">
+        <label style="display:block;font-size:.7rem;text-transform:uppercase;color:#64748b;font-weight:600;margin-bottom:.25rem">Notas</label>
+        <textarea id="e-notes" rows="2" style="width:100%;padding:.5rem .65rem;border:1px solid #cbd5e1;border-radius:6px;font-size:.85rem;font-family:inherit;box-sizing:border-box"></textarea>
+      </div>
+      <div class="check-box err" id="e-errors"></div>
+      <div class="edit-actions">
+        <button class="btn" id="e-cancel">Cancelar</button>
+        <button class="btn btn-edit" id="e-save">Guardar</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Attach Guia modal -->
   <div class="attach-modal" id="attach-modal">
@@ -135,6 +209,7 @@
             </div>
             <div class="actions no-print">
               <button class="btn btn-print" onclick="window.print()">Imprimir Guia</button>
+              ${svc.status === "draft" ? `<button class="btn btn-edit" id="btn-edit">Editar</button>` : ""}
               ${svc.status === "draft" ? `<button class="btn btn-transit" id="btn-transit">Pôr em Trânsito</button>` : ""}
               ${(svc.status === "in_transit" || svc.status === "delivered") ? `<button class="btn btn-attach" id="btn-attach">Anexar Guia ADICIONAL</button>` : ""}
               ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-deliver" id="btn-deliver">Marcar Entregue</button>` : ""}
@@ -211,11 +286,72 @@
         // Action handlers
         const btnTransit = document.getElementById("btn-transit");
         if (btnTransit) btnTransit.addEventListener("click", async () => {
-          if (!confirm(`Pôr em trânsito ${svc.service_number}?`)) return;
+          // Step 1: pre-flight check
+          let check;
           try {
-            await fetchJSON(`/admin/api/distribution/services/${id}/in-transit`, { method: "POST", body: {} });
+            check = await fetchJSON(`/admin/api/distribution/services/${id}/preflight`);
+          } catch (e) { alert("Erro: " + e.message); return; }
+          if (check.errors && check.errors.length) {
+            alert("Não pode pôr em trânsito:\n\n• " + check.errors.join("\n• ") +
+              (check.warnings?.length ? "\n\nAvisos:\n• " + check.warnings.join("\n• ") : ""));
+            return;
+          }
+          let force = false;
+          if (check.warnings && check.warnings.length) {
+            const ok = confirm(`Pôr ${svc.service_number} em trânsito apesar destes avisos?\n\n• ${check.warnings.join("\n• ")}`);
+            if (!ok) return;
+            force = true;
+          } else {
+            if (!confirm(`Pôr ${svc.service_number} em trânsito?`)) return;
+          }
+          try {
+            await fetchJSON(`/admin/api/distribution/services/${id}/in-transit`, {
+              method: "POST",
+              body: { force },
+            });
             location.reload();
           } catch (e) { alert("Erro: " + e.message); }
+        });
+
+        // Edit modal (só draft)
+        const btnEdit = document.getElementById("btn-edit");
+        if (btnEdit) btnEdit.addEventListener("click", () => {
+          const mod = document.getElementById("edit-modal");
+          document.getElementById("e-capacity").value = svc.truck_capacity_kg || "30000";
+          document.getElementById("e-origem").value = svc.origem_supplier || "";
+          document.getElementById("e-plate").value = svc.truck_plate || "";
+          document.getElementById("e-plate-2").value = svc.truck_plate_2 || "";
+          document.getElementById("e-driver").value = svc.driver_name || "";
+          document.getElementById("e-phone").value = svc.driver_phone || "";
+          document.getElementById("e-notes").value = svc.notes || "";
+          document.getElementById("e-errors").classList.remove("show");
+          mod.classList.add("show");
+        });
+        document.getElementById("e-cancel").addEventListener("click", () => {
+          document.getElementById("edit-modal").classList.remove("show");
+        });
+        document.getElementById("edit-modal").addEventListener("click", (e) => {
+          if (e.target.id === "edit-modal") e.target.classList.remove("show");
+        });
+        document.getElementById("e-save").addEventListener("click", async () => {
+          const errBox = document.getElementById("e-errors");
+          errBox.classList.remove("show");
+          const patch = {
+            truck_capacity_kg: Number(document.getElementById("e-capacity").value) || 0,
+            origem_supplier: document.getElementById("e-origem").value.trim() || null,
+            truck_plate: document.getElementById("e-plate").value.trim().toUpperCase() || null,
+            truck_plate_2: document.getElementById("e-plate-2").value.trim().toUpperCase() || null,
+            driver_name: document.getElementById("e-driver").value.trim() || null,
+            driver_phone: document.getElementById("e-phone").value.trim() || null,
+            notes: document.getElementById("e-notes").value.trim() || null,
+          };
+          try {
+            await fetchJSON(`/admin/api/distribution/services/${id}`, { method: "PATCH", body: patch });
+            location.reload();
+          } catch (e) {
+            errBox.textContent = "Erro: " + e.message;
+            errBox.classList.add("show");
+          }
         });
         const btnDeliver = document.getElementById("btn-deliver");
         if (btnDeliver) btnDeliver.addEventListener("click", async () => {

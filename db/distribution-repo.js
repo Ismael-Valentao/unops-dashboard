@@ -358,26 +358,112 @@ const Services = {
     }
   },
 
+  // Edita campos editáveis de um serviço em DRAFT.
+  // Permite corrigir matrícula, motorista, telefone, origem, capacidade,
+  // notas. Não toca em itens (para isso é cancelar + recriar).
+  async update(serviceId, patch) {
+    const allowed = [
+      "truck_plate", "truck_plate_2", "driver_name", "driver_phone",
+      "origem_supplier", "truck_capacity_kg", "notes",
+    ];
+    const sets = [];
+    const params = [];
+    for (const k of allowed) {
+      if (Object.prototype.hasOwnProperty.call(patch, k)) {
+        sets.push(`${k} = ?`);
+        let v = patch[k];
+        if (k === "truck_plate" || k === "truck_plate_2") {
+          v = v ? String(v).toUpperCase().trim() : null;
+        } else if (k === "truck_capacity_kg") {
+          v = Number(v) || 0;
+        } else if (typeof v === "string") {
+          v = v.trim() || null;
+        }
+        params.push(v);
+      }
+    }
+    if (!sets.length) return { error: "Nada para actualizar" };
+
+    const conn = await getPool().getConnection();
+    try {
+      const [r] = await conn.query(
+        `UPDATE delivery_services SET ${sets.join(", ")}
+         WHERE id = ? AND status = 'draft'`,
+        [...params, serviceId]
+      );
+      if (r.affectedRows === 0) {
+        return { error: "Serviço não está em rascunho — não pode ser editado" };
+      }
+      return { ok: true };
+    } finally {
+      conn.release();
+    }
+  },
+
+  // Pre-flight checks antes de pôr em trânsito. Devolve { ok:true, warnings }
+  // ou { error:"…", details:{…} } se algo crítico falhar.
+  // Validações:
+  //   - Serviço está em draft
+  //   - truck_plate definida e em formato razoável (ex: AAB 450 MP)
+  //   - driver_name definido
+  //   - driver_phone se definido, ≥ 9 dígitos
+  //   - capacidade > 0
+  //   - total_kg ≤ truck_capacity_kg (já checado no create, mas re-confirma)
+  async preflightCheck(serviceId) {
+    const svc = await queryOne("SELECT * FROM delivery_services WHERE id = ?", [serviceId]);
+    if (!svc) return { error: "Serviço não existe" };
+    if (svc.status !== "draft") return { error: "Serviço já saiu do rascunho", details: { status: svc.status } };
+    const errors = [];
+    const warnings = [];
+    const plate = (svc.truck_plate || "").trim();
+    if (!plate) errors.push("Matrícula em falta");
+    else if (!/^[A-Z]{2,4}[\s-]?\d{2,4}[\s-]?[A-Z]{2}$/i.test(plate)) {
+      warnings.push(`Matrícula "${plate}" tem formato fora do padrão (esperado: XXX 000 XX)`);
+    }
+    if (!svc.driver_name || !svc.driver_name.trim()) errors.push("Motorista em falta");
+    if (svc.driver_phone) {
+      const digits = svc.driver_phone.replace(/\D/g, "");
+      if (digits.length < 9) warnings.push(`Telefone do motorista parece incompleto (${digits.length} dígitos)`);
+    } else {
+      warnings.push("Telefone do motorista não definido");
+    }
+    if (!svc.truck_capacity_kg || svc.truck_capacity_kg <= 0) {
+      warnings.push("Capacidade do camião não definida");
+    } else if (Number(svc.total_kg) > Number(svc.truck_capacity_kg)) {
+      errors.push(`Carga (${svc.total_kg} kg) excede capacidade (${svc.truck_capacity_kg} kg)`);
+    }
+    return { ok: errors.length === 0, errors, warnings };
+  },
+
   // Avança estado: draft → in_transit (carregou) → delivered (chegou). Cancelar é noutra função.
+  // Aceita opt force=true para bypass de warnings (mas erros sempre bloqueiam).
   async setInTransit(serviceId, opts = {}) {
+    // Permite editar campos finais antes do pre-flight (motorista, etc)
+    if (opts.truck_plate || opts.driver_name || opts.driver_phone) {
+      await this.update(serviceId, opts);
+    }
+    const check = await this.preflightCheck(serviceId);
+    if (check.error) return { error: check.error };
+    if (check.errors && check.errors.length) {
+      return { error: "Pre-flight check falhou", check };
+    }
+    if (!opts.force && check.warnings && check.warnings.length) {
+      // Se houver warnings e o caller não disse force, devolve para confirmar
+      return { needs_confirm: true, check };
+    }
     const ts = now();
-    const fields = ["status = 'in_transit'", "dispatched_at = ?"];
-    const params = [ts];
-    if (opts.truck_plate)  { fields.push("truck_plate = ?");  params.push(opts.truck_plate); }
-    if (opts.driver_name)  { fields.push("driver_name = ?");  params.push(opts.driver_name); }
-    if (opts.driver_phone) { fields.push("driver_phone = ?"); params.push(opts.driver_phone); }
-    params.push(serviceId);
     const conn = await getPool().getConnection();
     try {
       const [res] = await conn.query(
-        `UPDATE delivery_services SET ${fields.join(", ")}
+        `UPDATE delivery_services
+         SET status = 'in_transit', dispatched_at = ?
          WHERE id = ? AND status = 'draft'`,
-        params
+        [ts, serviceId]
       );
       if (res.affectedRows === 0) {
-        return { error: "Serviço não está em rascunho ou já foi enviado" };
+        return { error: "Serviço já não está em rascunho" };
       }
-      return { ok: true };
+      return { ok: true, warnings: check.warnings || [] };
     } finally {
       conn.release();
     }
