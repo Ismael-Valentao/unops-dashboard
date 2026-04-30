@@ -16,6 +16,8 @@ const {
   Products, Warehouses, Departures, Plans,
   PurchaseOrders, Authorizations, StockEntries, ADSN, StockExits,
 } = require("../db/ops-repo");
+const { Beneficiaries, Balances, Services: DistServices } = require("../db/distribution-repo");
+const { importPlanning, importServices } = require("../lib/distribution-bootstrap");
 const { parsePOExcel } = require("../lib/parse-po-excel");
 const { parseADSNExcel } = require("../lib/parse-adsn-excel");
 
@@ -1192,5 +1194,141 @@ router.get("/api/trucks-today", ah(async (req, res) => {
     },
   });
 }));
+
+// ════════════════════════════════════════════════════════════
+// DISTRIBUIÇÃO — saldo / serviços / camiões em trânsito
+// ════════════════════════════════════════════════════════════
+const distUploadDir = path.join(UPLOAD_DIR, "distribution");
+if (!fs.existsSync(distUploadDir)) fs.mkdirSync(distUploadDir, { recursive: true });
+const distUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, distUploadDir),
+    filename: (_req, file, cb) => {
+      const ts = Date.now();
+      const safe = file.originalname.replace(/[^a-zA-Z0-9.\-_ ()]/g, "_");
+      cb(null, `${ts}_${safe}`);
+    },
+  }),
+  limits: { fileSize: 30 * 1024 * 1024 },
+});
+
+// ── Pages (HTML) ────────────────────────────────────────────
+router.get("/distribuicao",        (_req, res) => send(res, "distribuicao.html"));
+router.get("/servicos",            (_req, res) => send(res, "servicos.html"));
+router.get("/servicos/:id",        (_req, res) => send(res, "servico-detalhe.html"));
+router.get("/camioes",             (_req, res) => send(res, "camioes.html"));
+
+// ── API ─────────────────────────────────────────────────────
+router.get("/api/distribution/geography", ah(async (_req, res) => {
+  res.json(await Beneficiaries.geography());
+}));
+
+router.get("/api/distribution/balances", ah(async (req, res) => {
+  const { province, district, sku, only_available } = req.query;
+  const rows = await Balances.list({
+    province, district, sku,
+    onlyAvailable: only_available === "1",
+    limit: req.query.limit,
+  });
+  res.json({ rows });
+}));
+
+router.get("/api/distribution/summary", ah(async (req, res) => {
+  const { province, district } = req.query;
+  res.json(await Balances.summary({ province, district }));
+}));
+
+// Cria um serviço de entrega.
+// Body: { province, district, truck_capacity_kg, truck_plate, truck_plate_2,
+//         driver_name, driver_phone, origem_supplier, notes,
+//         items: [{extensionist_id, sku, qty}] }
+router.post("/api/distribution/services", express.json(), auth.requireRole("operator", "admin", "superadmin"), ah(async (req, res) => {
+  const { items, ...svc } = req.body || {};
+  if (!Array.isArray(items) || !items.length) return jsonError(res, 400, "Pelo menos um item é obrigatório");
+  try {
+    const result = await DistServices.create(svc, items, req.user?.id);
+    if (result.error) return res.status(400).json(result);
+    await auth.logAction(req, "create", "delivery_service", result.service_id, JSON.stringify({
+      service_number: result.service_number, items: items.length, total_kg: result.total_kg,
+    }));
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}));
+
+router.get("/api/distribution/services", ah(async (req, res) => {
+  const rows = await DistServices.list(req.query);
+  const counts = await DistServices.dashboardCounts();
+  res.json({ rows, counts });
+}));
+
+router.get("/api/distribution/services/:id", ah(async (req, res) => {
+  const svc = await DistServices.byId(req.params.id);
+  if (!svc) return jsonError(res, 404, "Serviço não encontrado");
+  res.json(svc);
+}));
+
+router.post("/api/distribution/services/:id/in-transit", express.json(), auth.requireRole("operator", "admin", "superadmin"), ah(async (req, res) => {
+  const result = await DistServices.setInTransit(req.params.id, req.body || {});
+  if (result.error) return res.status(400).json(result);
+  await auth.logAction(req, "in_transit", "delivery_service", req.params.id);
+  res.json(result);
+}));
+
+router.post("/api/distribution/services/:id/delivered", express.json(), auth.requireRole("operator", "admin", "superadmin"), ah(async (req, res) => {
+  const result = await DistServices.setDelivered(req.params.id);
+  if (result.error) return res.status(400).json(result);
+  await auth.logAction(req, "delivered", "delivery_service", req.params.id);
+  res.json(result);
+}));
+
+router.post("/api/distribution/services/:id/cancel", express.json(), auth.requireRole("admin", "superadmin"), ah(async (req, res) => {
+  const result = await DistServices.cancel(req.params.id, req.body?.reason);
+  if (result.error) return res.status(400).json(result);
+  await auth.logAction(req, "cancel", "delivery_service", req.params.id, req.body?.reason);
+  res.json(result);
+}));
+
+router.get("/api/distribution/in-transit", ah(async (_req, res) => {
+  res.json({ rows: await DistServices.inTransit() });
+}));
+
+router.get("/api/distribution/by-plate", ah(async (req, res) => {
+  const plate = String(req.query.plate || "").trim();
+  if (!plate) return res.json({ rows: [] });
+  res.json({ rows: await DistServices.byPlate(plate) });
+}));
+
+// ── Bootstrap (importação dos 2 Excels) ─────────────────────
+router.post("/api/distribution/bootstrap/planning",
+  auth.requireRole("admin", "superadmin"),
+  distUpload.single("file"),
+  ah(async (req, res) => {
+    if (!req.file) return jsonError(res, 400, "Ficheiro não fornecido");
+    try {
+      const result = await importPlanning(req.file.path);
+      await auth.logAction(req, "import_planning", "delivery_balances", null, JSON.stringify(result));
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  })
+);
+
+router.post("/api/distribution/bootstrap/services",
+  auth.requireRole("admin", "superadmin"),
+  distUpload.single("file"),
+  ah(async (req, res) => {
+    if (!req.file) return jsonError(res, 400, "Ficheiro não fornecido");
+    try {
+      const result = await importServices(req.file.path);
+      await auth.logAction(req, "import_services", "delivery_services", null, JSON.stringify(result));
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  })
+);
 
 module.exports = router;

@@ -377,3 +377,97 @@ CREATE TABLE IF NOT EXISTS stock_exits (
   FOREIGN KEY (dispatched_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_exit_plate (truck_plate)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Distribuição (entrega ao beneficiário final) ──────────────────────
+-- Fluxo: Plano (Excel) → Saldo por benef×produto → Serviço (= camião) → Itens
+-- Constraint atómica (saldo nunca < 0) feita via UPDATE...WHERE em transação.
+
+CREATE TABLE IF NOT EXISTS beneficiaries (
+  extensionist_id  VARCHAR(16) NOT NULL PRIMARY KEY,    -- '0601-0001'
+  nuit             VARCHAR(16) NULL,                     -- '2601050' (Cod Destino)
+  name             VARCHAR(255) NOT NULL,
+  province         VARCHAR(64),
+  district         VARCHAR(64),
+  posto            VARCHAR(64),
+  contact          VARCHAR(64),
+  supervisor_name  VARCHAR(255),
+  supervisor_phone VARCHAR(64),
+  imported_at      DATETIME NOT NULL,
+  UNIQUE KEY u_benef_nuit (nuit),
+  INDEX idx_benef_district (province, district),
+  INDEX idx_benef_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS delivery_balances (
+  extensionist_id  VARCHAR(16) NOT NULL,
+  sku              VARCHAR(32) NOT NULL,
+  product_name     VARCHAR(128) NOT NULL,
+  unit             VARCHAR(8)  NOT NULL DEFAULT 'kg',
+  province         VARCHAR(64),
+  district         VARCHAR(64),
+  beneficiary_name VARCHAR(255) NOT NULL,
+  planned_qty      DECIMAL(14,2) NOT NULL,
+  -- committed = planned bloqueado em qualquer serviço não-cancelado
+  -- (draft + in_transit + delivered). Saldo despachável = planned − committed.
+  committed_qty    DECIMAL(14,2) NOT NULL DEFAULT 0,
+  delivered_qty    DECIMAL(14,2) NOT NULL DEFAULT 0,
+  PRIMARY KEY (extensionist_id, sku),
+  FOREIGN KEY (extensionist_id) REFERENCES beneficiaries(extensionist_id) ON DELETE CASCADE,
+  INDEX idx_bal_district (province, district),
+  INDEX idx_bal_sku (sku)
+  -- Guarantee committed_qty <= planned_qty AND delivered_qty <= committed_qty
+  -- enforced at application level via atomic UPDATE...WHERE in transactions
+  -- (CHECK constraints behave inconsistently across MySQL/MariaDB versions).
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS delivery_services (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  service_number    VARCHAR(32) NOT NULL UNIQUE,        -- 'SRV-2026-0001' (interno) ou 'SRV-IMP-{adsn}' (importado)
+  province          VARCHAR(64) NOT NULL,
+  district          VARCHAR(64) NOT NULL,
+  truck_capacity_kg INT NOT NULL DEFAULT 0,             -- 30000/15000/10000/5000/2000/1000 (0 se importado sem info)
+  truck_plate       VARCHAR(32),
+  truck_plate_2     VARCHAR(32),
+  driver_name       VARCHAR(255),
+  driver_phone      VARCHAR(64),
+  origem_supplier   VARCHAR(128),
+  status            ENUM('draft','in_transit','delivered','cancelled') NOT NULL DEFAULT 'draft',
+  total_kg          DECIMAL(14,2) NOT NULL DEFAULT 0,
+  source            ENUM('manual','imported') NOT NULL DEFAULT 'manual',
+  created_at        DATETIME NOT NULL,
+  created_by        INT NULL,
+  dispatched_at     DATETIME NULL,
+  delivered_at      DATETIME NULL,
+  cancelled_at      DATETIME NULL,
+  imported_from     VARCHAR(255) NULL,
+  notes             TEXT,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_svc_status (status),
+  INDEX idx_svc_district (province, district),
+  INDEX idx_svc_plate (truck_plate),
+  INDEX idx_svc_created (created_at),
+  INDEX idx_svc_source (source)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS delivery_service_items (
+  id               INT AUTO_INCREMENT PRIMARY KEY,
+  service_id       INT NOT NULL,
+  extensionist_id  VARCHAR(16) NOT NULL,
+  sku              VARCHAR(32) NOT NULL,
+  qty              DECIMAL(14,2) NOT NULL,
+  unit             VARCHAR(8) NOT NULL DEFAULT 'kg',
+  beneficiary_name VARCHAR(255) NOT NULL,
+  product_name     VARCHAR(128) NOT NULL,
+  province         VARCHAR(64),
+  district         VARCHAR(64),
+  external_adsn    VARCHAR(64) NULL,                  -- ADSN do sistema externo (1 por item)
+  external_gtu     VARCHAR(64) NULL,
+  FOREIGN KEY (service_id) REFERENCES delivery_services(id) ON DELETE CASCADE,
+  FOREIGN KEY (extensionist_id, sku) REFERENCES delivery_balances(extensionist_id, sku),
+  -- (service_id, extensionist_id, sku) NÃO é UNIQUE: o sistema externo pode
+  -- emitir múltiplos ADSNs para o mesmo beneficiário/produto no mesmo camião.
+  -- A UI manual previne duplicados; aqui apenas asseguramos idempotência por ADSN.
+  UNIQUE KEY u_dsi_external_adsn (external_adsn),
+  INDEX idx_dsi_svc_benef (service_id, extensionist_id, sku),
+  INDEX idx_dsi_benef (extensionist_id, sku)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

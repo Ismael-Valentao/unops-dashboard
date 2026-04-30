@@ -2,6 +2,10 @@
 window.AdminUI = (function () {
   const NAV = [
     { key: "dashboard",       label: "Dashboard",    icon: "▣",  href: "/admin" },
+    { section: "Distribuição" },
+    { key: "distribuicao",    label: "Saldo & Despachar", icon: "🎯", href: "/admin/distribuicao" },
+    { key: "servicos",        label: "Serviços",     icon: "🚚", href: "/admin/servicos" },
+    { key: "camioes",         label: "Camiões",      icon: "🛻", href: "/admin/camioes" },
     { section: "Compras" },
     { key: "purchase-orders", label: "Purchase Orders", icon: "📄", href: "/admin/purchase-orders" },
     { key: "authorizations",  label: "Autorizações", icon: "📝", href: "/admin/authorizations" },

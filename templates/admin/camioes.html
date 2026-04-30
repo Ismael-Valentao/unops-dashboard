@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Camiões</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    .truck-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.85rem;margin-top:1rem}
+    .truck-card{background:#fff;border-radius:10px;padding:1rem 1.15rem;border:1px solid #e2e8f0;
+      border-left:4px solid #d97706;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+    .truck-card h3{margin:0;font-size:1.1rem;letter-spacing:.04em;font-family:ui-monospace,monospace}
+    .truck-route{color:#475569;font-size:.78rem;margin-top:.2rem}
+    .truck-stats{display:flex;justify-content:space-between;margin-top:.6rem;padding-top:.6rem;border-top:1px dashed #e2e8f0;
+      font-size:.75rem}
+    .truck-stats .stat{text-align:center}
+    .truck-stats .v{font-size:1.05rem;font-weight:800;color:#1e293b}
+    .truck-stats .l{color:#64748b;text-transform:uppercase;font-size:.62rem;letter-spacing:.04em;font-weight:600;margin-top:.1rem}
+    .truck-actions{display:flex;gap:.4rem;margin-top:.7rem;flex-wrap:wrap}
+    .truck-actions .btn{font-size:.75rem;padding:.35rem .65rem}
+
+    .empty-state{padding:3rem;text-align:center;color:#94a3b8}
+    .empty-state .ico{font-size:3rem;margin-bottom:.5rem}
+
+    .plate-search{margin-top:1rem;background:#f8fafc;padding:1rem;border-radius:8px}
+    .plate-search input{width:300px;padding:.55rem .7rem;border:1px solid #cbd5e1;border-radius:6px;font-family:ui-monospace,monospace;font-size:.95rem}
+    .plate-search button{margin-left:.5rem}
+
+    .badge{display:inline-block;padding:.18rem .55rem;border-radius:4px;font-size:.7rem;font-weight:700}
+    .badge-draft{background:#f1f5f9;color:#475569}
+    .badge-in_transit{background:#fef3c7;color:#92400e}
+    .badge-delivered{background:#dcfce7;color:#166534}
+    .badge-cancelled{background:#fee2e2;color:#991b1b}
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>🛻 Camiões</h1>
+      <span class="admin-sub">Em trânsito agora &amp; histórico por matrícula</span>
+    </header>
+
+    <section class="admin-section">
+      <h2 style="display:flex;justify-content:space-between;align-items:center">
+        <span>🚛 Em Trânsito Agora</span>
+        <span style="font-weight:400;color:#64748b;font-size:.75rem" id="transit-count">A carregar…</span>
+      </h2>
+      <div id="transit-grid" class="truck-grid"></div>
+    </section>
+
+    <section class="admin-section">
+      <h2>🔍 Pesquisa por Matrícula</h2>
+      <div class="plate-search">
+        <input id="plate-input" type="text" placeholder="AAB 450 MP" autocomplete="off">
+        <button class="btn" id="btn-search">Pesquisar</button>
+        <span style="color:#64748b;font-size:.78rem;margin-left:.6rem">Procura em todos os serviços (qualquer estado)</span>
+      </div>
+      <div id="plate-results" style="margin-top:1rem"></div>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, fmtDate, esc } = window.AdminUI;
+      const STATUS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
+
+      function renderTransitCard(t) {
+        return `<div class="truck-card">
+          <h3>${esc(t.truck_plate || "—")}</h3>
+          <div class="truck-route">${esc(t.origem_supplier || "—")} → <strong>${esc(t.district)}</strong> (${esc(t.province)})</div>
+          <div class="truck-stats">
+            <div class="stat"><div class="v">${fmt(t.total_kg)}</div><div class="l">kg</div></div>
+            <div class="stat"><div class="v">${fmt(t.n_beneficiaries)}</div><div class="l">benef.</div></div>
+            <div class="stat"><div class="v">${fmt(t.n_items)}</div><div class="l">itens</div></div>
+          </div>
+          <div style="font-size:.75rem;color:#64748b;margin-top:.5rem">Saiu: ${fmtDate(t.dispatched_at)}</div>
+          <div style="font-size:.75rem;color:#64748b">Motorista: ${esc(t.driver_name || "—")}</div>
+          <div class="truck-actions">
+            <a href="/admin/servicos/${t.id}" class="btn">Detalhe</a>
+            <button class="btn" data-deliver="${t.id}" data-num="${esc(t.service_number)}">✓ Marcar Entregue</button>
+          </div>
+        </div>`;
+      }
+
+      async function loadTransit() {
+        try {
+          const data = await fetchJSON("/admin/api/distribution/in-transit");
+          $("#transit-count").textContent = data.rows.length + " camião(ões)";
+          if (!data.rows.length) {
+            $("#transit-grid").innerHTML = `<div class="empty-state"><div class="ico">🌴</div>Nenhum camião em trânsito.</div>`;
+            return;
+          }
+          $("#transit-grid").innerHTML = data.rows.map(renderTransitCard).join("");
+          // Bind deliver buttons
+          document.querySelectorAll("[data-deliver]").forEach((b) => {
+            b.addEventListener("click", async () => {
+              if (!confirm(`Marcar ${b.dataset.num} como ENTREGUE?`)) return;
+              try {
+                await fetchJSON(`/admin/api/distribution/services/${b.dataset.deliver}/delivered`, { method: "POST", body: {} });
+                loadTransit();
+              } catch (e) { alert("Erro: " + e.message); }
+            });
+          });
+        } catch (e) {
+          $("#transit-grid").innerHTML = `<div class="empty-state" style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
+        }
+      }
+
+      async function searchPlate() {
+        const plate = $("#plate-input").value.trim();
+        if (!plate) { $("#plate-results").innerHTML = ""; return; }
+        try {
+          const data = await fetchJSON("/admin/api/distribution/by-plate?plate=" + encodeURIComponent(plate));
+          if (!data.rows.length) {
+            $("#plate-results").innerHTML = `<div style="color:#94a3b8">Nenhum serviço com matrícula "${esc(plate)}".</div>`;
+            return;
+          }
+          $("#plate-results").innerHTML = `
+            <div style="margin-bottom:.6rem;font-size:.85rem;color:#475569"><strong>${data.rows.length}</strong> serviços encontrados:</div>
+            <table class="adm-table">
+              <thead><tr>
+                <th>Nº</th><th>Estado</th><th>Distrito</th><th>Origem</th>
+                <th class="num">Benef.</th><th class="num">Total kg</th>
+                <th>Saída</th><th>Entregue</th><th></th>
+              </tr></thead>
+              <tbody>${data.rows.map((r) => `<tr>
+                <td><a href="/admin/servicos/${r.id}" style="color:#0f4c75;font-weight:600">${esc(r.service_number)}</a></td>
+                <td><span class="badge badge-${esc(r.status)}">${STATUS[r.status] || r.status}</span></td>
+                <td>${esc(r.district)}</td>
+                <td>${esc(r.origem_supplier || "—")}</td>
+                <td class="num">${fmt(r.n_beneficiaries)}</td>
+                <td class="num">${fmt(r.total_kg)}</td>
+                <td>${fmtDate(r.dispatched_at)}</td>
+                <td>${fmtDate(r.delivered_at)}</td>
+                <td><a href="/admin/servicos/${r.id}" class="btn btn-sm">Ver</a></td>
+              </tr>`).join("")}</tbody>
+            </table>`;
+        } catch (e) {
+          $("#plate-results").innerHTML = `<div style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
+        }
+      }
+
+      function $(s) { return document.querySelector(s); }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        loadTransit();
+        $("#btn-search").addEventListener("click", searchPlate);
+        $("#plate-input").addEventListener("keypress", (e) => { if (e.key === "Enter") searchPlate(); });
+      });
+    })();
+    AdminUI.renderLayout("camioes");
+  </script>
+</body>
+</html>

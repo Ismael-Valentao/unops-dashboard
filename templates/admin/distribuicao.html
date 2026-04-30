@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Distribuição</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    /* ── Distribuição ─────────────────────────────────────── */
+    .dist-controls{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:.75rem;align-items:end;margin-bottom:1rem}
+    .dist-controls label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;
+      color:#64748b;font-weight:600;margin-bottom:.3rem}
+    .dist-controls select,.dist-controls input{width:100%;padding:.5rem .65rem;border:1px solid #cbd5e1;border-radius:6px;font-size:.85rem;background:#fff}
+    .dist-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem}
+    .dist-sum{background:#f8fafc;border-radius:8px;padding:.75rem .9rem;border-left:3px solid #0f4c75}
+    .dist-sum-lbl{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:700}
+    .dist-sum-val{font-size:1.3rem;font-weight:800;color:#0f4c75;line-height:1.1;margin-top:.15rem}
+    .dist-sum-sub{font-size:.7rem;color:#94a3b8;margin-top:.2rem}
+    .dist-sum-falta{border-left-color:#dc2626}
+    .dist-sum-falta .dist-sum-val{color:#dc2626}
+    .dist-sum-done{border-left-color:#16a34a}
+    .dist-sum-done .dist-sum-val{color:#16a34a}
+
+    /* Truck capacity panel */
+    .truck-panel{background:linear-gradient(to right,#fef3c7,#fff);border-radius:10px;padding:1rem 1.15rem;
+      border:1px solid #fcd34d;margin-bottom:1rem}
+    .truck-panel h3{margin:0 0 .55rem;font-size:.85rem;color:#92400e;display:flex;align-items:center;gap:.4rem}
+    .cap-buttons{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.6rem}
+    .cap-btn{padding:.4rem .8rem;border:1.5px solid #cbd5e1;background:#fff;border-radius:6px;font-weight:700;
+      font-size:.78rem;cursor:pointer;color:#475569;font-family:inherit}
+    .cap-btn:hover{border-color:#0f4c75;background:#f0f9ff}
+    .cap-btn.active{background:#0f4c75;color:#fff;border-color:#0f4c75}
+    .cap-bar{height:24px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;position:relative;margin-bottom:.5rem}
+    .cap-fill{height:100%;background:linear-gradient(90deg,#16a34a 0%,#84cc16 75%,#facc15 90%,#dc2626 100%);transition:width .25s}
+    .cap-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;color:#1e293b;text-shadow:0 0 4px #fff}
+    .cap-actions{display:flex;gap:.5rem;flex-wrap:wrap}
+    .btn-fill{background:#0f4c75;color:#fff}
+    .btn-fill:hover{background:#0c3a5c}
+    .btn-create{background:#16a34a;color:#fff}
+    .btn-create:hover{background:#15803d}
+    .btn-create:disabled{background:#94a3b8;cursor:not-allowed}
+    .btn-clear{background:#fff;color:#dc2626;border:1px solid #dc2626}
+    .btn-clear:hover{background:#fef2f2}
+
+    /* Balance table */
+    .bal-tbl{width:100%;font-size:.78rem;border-collapse:collapse}
+    .bal-tbl thead th{background:#f1f5f9;padding:.5rem .65rem;text-align:left;font-weight:700;color:#475569;
+      border-bottom:2px solid #cbd5e1;position:sticky;top:0;z-index:1;font-size:.7rem;text-transform:uppercase;letter-spacing:.03em}
+    .bal-tbl tbody td{padding:.45rem .65rem;border-bottom:1px solid #f1f5f9}
+    .bal-tbl tbody tr:hover{background:#f0f9ff}
+    .bal-tbl tbody tr.selected{background:#dbeafe}
+    .bal-tbl tbody tr.selected:hover{background:#bfdbfe}
+    .bal-tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+    .bal-tbl .check-col{width:32px;text-align:center}
+    .bal-tbl .pct{display:inline-block;padding:.1rem .35rem;border-radius:4px;font-size:.68rem;font-weight:700}
+    .bal-tbl .pct-0{background:#fee2e2;color:#991b1b}
+    .bal-tbl .pct-mid{background:#fef3c7;color:#92400e}
+    .bal-tbl .pct-high{background:#dcfce7;color:#166534}
+    .bal-tbl .check-input{cursor:pointer;width:16px;height:16px}
+    .bal-tbl-wrap{max-height:540px;overflow:auto;border:1px solid #e2e8f0;border-radius:8px}
+
+    /* Modal */
+    .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.65);display:none;
+      align-items:center;justify-content:center;z-index:9999;padding:1rem}
+    .modal-overlay.show{display:flex}
+    .modal{background:#fff;border-radius:12px;max-width:520px;width:100%;padding:1.5rem;
+      box-shadow:0 20px 50px rgba(0,0,0,.3)}
+    .modal h2{margin:0 0 1rem;font-size:1.1rem}
+    .modal label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;
+      color:#64748b;font-weight:600;margin-bottom:.3rem;margin-top:.7rem}
+    .modal input,.modal select,.modal textarea{width:100%;padding:.55rem .7rem;
+      border:1px solid #cbd5e1;border-radius:6px;font-size:.85rem;font-family:inherit;box-sizing:border-box}
+    .modal-row{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
+    .modal-info{background:#fef3c7;border-left:4px solid #d97706;padding:.65rem .85rem;border-radius:6px;
+      font-size:.78rem;line-height:1.5;margin:.85rem 0}
+    .modal-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.25rem}
+    .err-box{background:#fee2e2;border-left:4px solid #dc2626;padding:.6rem .85rem;border-radius:6px;
+      font-size:.78rem;color:#991b1b;display:none;margin:.5rem 0}
+    .err-box.show{display:block}
+
+    /* Empty / loading states */
+    .empty-state{padding:3rem 1rem;text-align:center;color:#94a3b8}
+    .empty-state .ico{font-size:2.5rem;margin-bottom:.5rem;opacity:.5}
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>🎯 Saldo &amp; Despachar</h1>
+      <span class="admin-sub">Selecciona quem entregar; o sistema bloqueia o saldo automaticamente</span>
+    </header>
+
+    <!-- First-run bootstrap panel — shown only when DB has no data yet -->
+    <section class="admin-section" id="bootstrap-panel" style="display:none;border-left:4px solid #d97706;background:linear-gradient(to right,#fffbeb,#fff)">
+      <h2 style="display:flex;align-items:center;gap:.4rem;color:#92400e">⚠ Sistema vazio — importe os dados de arranque</h2>
+      <p style="font-size:.85rem;color:#475569;margin:.5rem 0 1rem">
+        Antes de começar a despachar, importe os dois ficheiros Excel:
+        <strong>(1)</strong> o Planeamento (define quem deve receber o quê) e
+        <strong>(2)</strong> o histórico de Serviços do sistema antigo (define o que já foi entregue).
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+        <div style="background:#fff;padding:1rem;border-radius:8px;border:1px solid #e2e8f0">
+          <h3 style="margin:0 0 .4rem;font-size:.95rem">1️⃣ Planeamento</h3>
+          <div style="font-size:.78rem;color:#64748b;margin-bottom:.5rem">Ficheiro <code>Planeamento_Actualizado_*.xlsx</code></div>
+          <input type="file" id="bs-planning-file" accept=".xlsx" style="width:100%;font-size:.85rem">
+          <button class="btn btn-fill" id="bs-planning-btn" style="margin-top:.5rem;width:100%">Importar Planeamento</button>
+          <div id="bs-planning-result" style="margin-top:.5rem;font-size:.78rem"></div>
+        </div>
+        <div style="background:#fff;padding:1rem;border-radius:8px;border:1px solid #e2e8f0">
+          <h3 style="margin:0 0 .4rem;font-size:.95rem">2️⃣ Serviços (histórico)</h3>
+          <div style="font-size:.78rem;color:#64748b;margin-bottom:.5rem">Ficheiro <code>servicos*.xlsx</code> (TRANSITO/FINALIZADO/CRIADO)</div>
+          <input type="file" id="bs-services-file" accept=".xlsx" style="width:100%;font-size:.85rem">
+          <button class="btn btn-fill" id="bs-services-btn" style="margin-top:.5rem;width:100%">Importar Serviços</button>
+          <div id="bs-services-result" style="margin-top:.5rem;font-size:.78rem"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Filters -->
+    <section class="admin-section">
+      <div class="dist-controls">
+        <div>
+          <label for="f-province">Província</label>
+          <select id="f-province"><option value="">A carregar…</option></select>
+        </div>
+        <div>
+          <label for="f-district">Distrito</label>
+          <select id="f-district"><option value="">— Escolhe província —</option></select>
+        </div>
+        <div>
+          <label for="f-sku">Produto (SKU)</label>
+          <select id="f-sku">
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:end">
+          <button id="btn-refresh" class="btn">↻ Refrescar</button>
+        </div>
+      </div>
+
+      <!-- Summary -->
+      <div class="dist-summary" id="summary">
+        <div class="dist-sum"><div class="dist-sum-lbl">Beneficiários</div><div class="dist-sum-val" id="s-benef">—</div></div>
+        <div class="dist-sum"><div class="dist-sum-lbl">Plano (kg)</div><div class="dist-sum-val" id="s-planned">—</div><div class="dist-sum-sub" id="s-planned-other">—</div></div>
+        <div class="dist-sum dist-sum-done"><div class="dist-sum-lbl">Entregue (kg)</div><div class="dist-sum-val" id="s-delivered">—</div><div class="dist-sum-sub" id="s-delivered-pct">—</div></div>
+        <div class="dist-sum dist-sum-falta"><div class="dist-sum-lbl">Falta (kg)</div><div class="dist-sum-val" id="s-available">—</div><div class="dist-sum-sub" id="s-available-other">—</div></div>
+      </div>
+
+      <!-- Truck panel -->
+      <div class="truck-panel">
+        <h3>🚛 Camião</h3>
+        <div class="cap-buttons" id="cap-btns">
+          <button class="cap-btn" data-cap="1000">1T</button>
+          <button class="cap-btn" data-cap="2000">2T</button>
+          <button class="cap-btn" data-cap="5000">5T</button>
+          <button class="cap-btn" data-cap="10000">10T</button>
+          <button class="cap-btn" data-cap="15000">15T</button>
+          <button class="cap-btn active" data-cap="30000">30T</button>
+        </div>
+        <div class="cap-bar">
+          <div class="cap-fill" id="cap-fill" style="width:0%"></div>
+          <div class="cap-text" id="cap-text">0 / 30.000 kg • 0 itens</div>
+        </div>
+        <div class="cap-actions">
+          <button id="btn-autofill" class="btn btn-fill">⚡ Auto-preencher</button>
+          <button id="btn-create" class="btn btn-create" disabled>💾 Criar Serviço</button>
+          <button id="btn-clear-sel" class="btn btn-clear">🗑 Limpar Selecção</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Balance table -->
+    <section class="admin-section">
+      <h2 style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Beneficiários (saldo &gt; 0)</span>
+        <span style="font-weight:400;color:#64748b;font-size:.75rem" id="row-count">—</span>
+      </h2>
+      <div class="bal-tbl-wrap">
+        <table class="bal-tbl" id="bal-table">
+          <thead><tr>
+            <th class="check-col"><input type="checkbox" id="check-all" class="check-input" title="Selecc. todos"></th>
+            <th>ID</th>
+            <th>Beneficiário</th>
+            <th>Distrito</th>
+            <th>Produto</th>
+            <th class="num">Plano</th>
+            <th class="num">Entregue</th>
+            <th class="num">Falta</th>
+            <th class="num">%</th>
+          </tr></thead>
+          <tbody id="bal-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Create service modal -->
+  <div class="modal-overlay" id="create-modal">
+    <div class="modal">
+      <h2>Criar Serviço de Entrega</h2>
+      <div class="modal-info" id="modal-summary"></div>
+      <div class="err-box" id="modal-err"></div>
+
+      <div class="modal-row">
+        <div>
+          <label>Origem (fornecedor)</label>
+          <input id="m-origem" type="text" placeholder="Ex: SeedCo, Phoenix">
+        </div>
+        <div>
+          <label>Capacidade</label>
+          <input id="m-capacity" type="text" readonly>
+        </div>
+      </div>
+      <div class="modal-row">
+        <div>
+          <label>Matrícula principal *</label>
+          <input id="m-plate" type="text" placeholder="AAB 450 MP" required>
+        </div>
+        <div>
+          <label>Matrícula reboque</label>
+          <input id="m-plate-2" type="text" placeholder="AB 672 MC">
+        </div>
+      </div>
+      <div class="modal-row">
+        <div>
+          <label>Motorista *</label>
+          <input id="m-driver" type="text" placeholder="Nome completo" required>
+        </div>
+        <div>
+          <label>Telefone</label>
+          <input id="m-phone" type="text" placeholder="84/87...">
+        </div>
+      </div>
+      <label>Notas (opcional)</label>
+      <textarea id="m-notes" rows="2" placeholder="Notas adicionais"></textarea>
+
+      <div class="modal-actions">
+        <button class="btn btn-clear" id="m-cancel">Cancelar</button>
+        <button class="btn btn-create" id="m-confirm">✓ Criar (rascunho)</button>
+        <button class="btn btn-create" id="m-confirm-transit">🚛 Criar e Pôr em Trânsito</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script src="/static/distribuicao.js"></script>
+  <script>AdminUI.renderLayout("distribuicao");</script>
+</body>
+</html>
