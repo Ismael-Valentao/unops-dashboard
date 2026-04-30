@@ -467,6 +467,12 @@ const Services = {
       await conn.beginTransaction();
       try {
         for (const d of deliveries) {
+          // DEFENSIVE GUARD: ADSE é a capa do camião, NÃO uma entrega.
+          // O parser já filtra mas garantimos aqui também (defense in depth).
+          if (d.adsn && /^ADSE/i.test(d.adsn)) {
+            console.warn("[attach-guia] ignorando ADSE (capa, não entrega):", d.adsn);
+            continue;
+          }
           // Saltar DESCARTADO/CANCELADO (não fazem parte da carga real)
           if (d.estado && /DESCART|CANCEL/i.test(d.estado)) {
             results.skipped_status.push({ adsn: d.adsn, gtu: d.gtu, estado: d.estado, name: d.destinatario });

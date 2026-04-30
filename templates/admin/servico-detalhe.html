@@ -247,11 +247,21 @@
 
           if (dryRun) {
             const stats = data.parsed.stats;
+            const agg = data.parsed.aggregator;
             out.innerHTML = `<div class="attach-result attach-warn">
-              <strong>Dry run — extracção bem sucedida</strong> (nada foi gravado)<br>
-              Páginas: ${stats.total_pages} · ADSNs: ${stats.unique_adsn} · GTUs: ${stats.unique_gtu} · com NUIT: ${stats.with_nuit}
+              <strong>Dry run — extracção bem sucedida</strong> (nada foi gravado)
+              <div style="margin-top:.4rem;font-size:.8rem">
+                <strong>Capa do camião (não conta como entrega):</strong><br>
+                ${agg ? `<code>${esc(agg.adse)}</code> · ${fmt(agg.qty||0)} kg · ${esc(agg.matricula||"")} · ${esc(agg.destinatario||"")}` : "(sem capa detectada)"}
+              </div>
+              <div style="margin-top:.5rem;font-size:.8rem">
+                <strong>Páginas:</strong> ${stats.total_pages} (capa: ${stats.aggregator_pages}, ADICIONAL: ${stats.adicional_pages}, AQI: ${stats.aqi_pages})<br>
+                <strong>Únicos após dedup das 3 cópias:</strong> ${stats.unique_adsn} ADSN · ${stats.unique_gtu} GTU · ${stats.with_nuit} com NUIT
+                ${stats.incomplete_copies > 0 ? `<br><span style="color:#dc2626">⚠ ${stats.incomplete_copies} entrega(s) com cópias incompletas (Original/Duplicado/Triplicado)</span>` : ""}
+              </div>
               <div class="attach-list">${data.parsed.deliveries.slice(0, 30).map((d) =>
-                `<div>• <code>${esc(d.adsn)}</code> / <code>${esc(d.gtu||"—")}</code> / NUIT <code>${esc(d.nuit||"—")}</code> · ${esc(d.destinatario||"?")} · ${fmt(d.qty||0)} kg · ${esc(d.estado||"")}</div>`
+                `<div>• <code>${esc(d.adsn)}</code> / <code>${esc(d.gtu||"—")}</code> / NUIT <code>${esc(d.nuit||"—")}</code> · ${esc(d.destinatario||"?")} · ${fmt(d.qty||0)} kg · ${esc(d.estado||"")}` +
+                ` <small style="color:#94a3b8">[ADIC ${d.copies_adicional.length}/3 · AQI ${d.copies_aqi.length}/3]</small></div>`
               ).join("")}</div>
             </div>`;
             return;
@@ -263,7 +273,7 @@
           const skipped = data.skipped_status.length;
           let html = `<div class="attach-result attach-ok">
             <strong>✓ ${matched} item(ns) actualizado(s)</strong> com códigos ADSN+GTU
-            ${data.aggregator ? `<br>Camião agregador: <code>${esc(data.aggregator.adse)}</code> (${fmt(data.aggregator.qty || 0)} kg, ${esc(data.aggregator.matricula || "")})` : ""}
+            ${data.aggregator ? `<br><small>Capa do camião (info): <code>${esc(data.aggregator.adse)}</code> · ${fmt(data.aggregator.qty || 0)} kg · ${esc(data.aggregator.matricula || "")}</small>` : ""}
           </div>`;
           if (skipped > 0) {
             html += `<div class="attach-result attach-warn"><strong>⊘ ${skipped} ignorado(s)</strong> por estado DESCARTADO/CANCELADO no sistema externo:
