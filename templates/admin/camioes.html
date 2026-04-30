@@ -163,7 +163,7 @@
   <script src="/static/admin.js"></script>
   <script>
     (function () {
-      const { fetchJSON, fmt, fmtDate, esc } = window.AdminUI;
+      const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable } = window.AdminUI;
       const STATUS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
       const STATUS_TITLE = {
         in_transit: "Camiões em Trânsito",
@@ -178,6 +178,19 @@
 
       let geoCache = null;          // { province: { district: count } }
       let timer = null;
+      let plateRows = [];           // cached results from last plate search
+      const plateSort = { sortKey: "created_at", sortAsc: false, render: () => renderPlateResults() };
+      const PLATE_COLS = [
+        { key: "service_number",  label: "Nº",        sortable: true, type: "string" },
+        { key: "status",          label: "Estado",    sortable: true, type: "string" },
+        { key: "district",        label: "Distrito",  sortable: true, type: "string" },
+        { key: "origem_supplier", label: "Origem",    sortable: true, type: "string" },
+        { key: "n_beneficiaries", label: "Benef.",    sortable: true, type: "number", numCol: true },
+        { key: "total_kg",        label: "Total kg",  sortable: true, type: "number", numCol: true },
+        { key: "dispatched_at",   label: "Saída",     sortable: true, type: "date" },
+        { key: "delivered_at",    label: "Entregue",  sortable: true, type: "date" },
+        { key: null,              label: "",          sortable: false },
+      ];
 
       function getFilters() {
         return {
@@ -304,36 +317,47 @@
       function refresh() { loadSummary(); loadBoard(); }
       function debounced(fn) { return () => { clearTimeout(timer); timer = setTimeout(fn, 250); }; }
 
-      // ── Plate search (mantém comportamento antigo) ──────────
+      // ── Plate search (sortable results) ─────────────────────
+      function renderPlateResults() {
+        if (!plateRows.length) return;
+        const headerHtml = PLATE_COLS.map((c) => {
+          const cls = c.numCol ? "num" : "";
+          if (!c.sortable) return `<th class="${cls}">${esc(c.label)}</th>`;
+          return `<th class="${cls}" data-sort="${c.key}" data-sort-type="${c.type}">${esc(c.label)}${sortArrow(c.key, plateSort.sortKey, plateSort.sortAsc)}</th>`;
+        }).join("");
+        const col = PLATE_COLS.find((c) => c.key === plateSort.sortKey);
+        const sorted = sortRows(plateRows, plateSort.sortKey, plateSort.sortAsc, col?.type);
+        const bodyHtml = sorted.map((r) => `<tr>
+          <td><a href="/admin/servicos/${r.id}" style="color:#0f4c75;font-weight:600">${esc(r.service_number)}</a></td>
+          <td><span class="badge badge-${esc(r.status)}">${STATUS[r.status] || r.status}</span></td>
+          <td>${esc(r.district)}</td>
+          <td>${esc(r.origem_supplier || "—")}</td>
+          <td class="num">${fmt(r.n_beneficiaries)}</td>
+          <td class="num">${fmt(r.total_kg)}</td>
+          <td>${fmtDate(r.dispatched_at)}</td>
+          <td>${fmtDate(r.delivered_at)}</td>
+          <td><a href="/admin/servicos/${r.id}" class="btn btn-sm">Ver</a></td>
+        </tr>`).join("");
+        $("#plate-results").innerHTML = `
+          <div style="margin-bottom:.6rem;font-size:.85rem;color:#475569"><strong>${plateRows.length}</strong> serviços encontrados:</div>
+          <table class="adm-table" id="plate-table">
+            <thead><tr>${headerHtml}</tr></thead>
+            <tbody>${bodyHtml}</tbody>
+          </table>`;
+        bindSortable($("#plate-table"), plateSort);
+      }
+
       async function searchPlate() {
         const plate = $("#plate-input").value.trim();
-        if (!plate) { $("#plate-results").innerHTML = ""; return; }
+        if (!plate) { $("#plate-results").innerHTML = ""; plateRows = []; return; }
         try {
           const data = await fetchJSON("/admin/api/distribution/by-plate?plate=" + encodeURIComponent(plate));
-          if (!data.rows.length) {
+          plateRows = data.rows || [];
+          if (!plateRows.length) {
             $("#plate-results").innerHTML = `<div style="color:#94a3b8">Nenhum serviço com matrícula "${esc(plate)}".</div>`;
             return;
           }
-          $("#plate-results").innerHTML = `
-            <div style="margin-bottom:.6rem;font-size:.85rem;color:#475569"><strong>${data.rows.length}</strong> serviços encontrados:</div>
-            <table class="adm-table">
-              <thead><tr>
-                <th>Nº</th><th>Estado</th><th>Distrito</th><th>Origem</th>
-                <th class="num">Benef.</th><th class="num">Total kg</th>
-                <th>Saída</th><th>Entregue</th><th></th>
-              </tr></thead>
-              <tbody>${data.rows.map((r) => `<tr>
-                <td><a href="/admin/servicos/${r.id}" style="color:#0f4c75;font-weight:600">${esc(r.service_number)}</a></td>
-                <td><span class="badge badge-${esc(r.status)}">${STATUS[r.status] || r.status}</span></td>
-                <td>${esc(r.district)}</td>
-                <td>${esc(r.origem_supplier || "—")}</td>
-                <td class="num">${fmt(r.n_beneficiaries)}</td>
-                <td class="num">${fmt(r.total_kg)}</td>
-                <td>${fmtDate(r.dispatched_at)}</td>
-                <td>${fmtDate(r.delivered_at)}</td>
-                <td><a href="/admin/servicos/${r.id}" class="btn btn-sm">Ver</a></td>
-              </tr>`).join("")}</tbody>
-            </table>`;
+          renderPlateResults();
         } catch (e) {
           $("#plate-results").innerHTML = `<div style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
         }

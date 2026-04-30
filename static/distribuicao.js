@@ -1,12 +1,28 @@
 /* ── Distribuição (saldo + criar serviço) ──────────────────── */
 (function () {
-  const { fetchJSON, fmt, esc } = window.AdminUI;
+  const { fetchJSON, fmt, esc, sortRows, sortArrow, bindSortable } = window.AdminUI;
 
   // State
   let geo = {};                        // { province: { district: count } }
   let allRows = [];                    // current balance rows
   let selectedKeys = new Set();        // `${ext_id}|${sku}` of rows the user picked
   let truckCapacity = 30000;            // default 30T
+
+  // Definição das colunas para sort
+  const BAL_COLS = [
+    { key: null,                 label: "",                   sortable: false },
+    { key: "extensionist_id",    label: "ID",                 sortable: true,  type: "string" },
+    { key: "beneficiary_name",   label: "Beneficiário",       sortable: true,  type: "string" },
+    { key: "district",           label: "Distrito",           sortable: true,  type: "string" },
+    { key: "product_name",       label: "Produto",            sortable: true,  type: "string" },
+    { key: "planned_original",   label: "Plano Original",     sortable: true,  type: "number", numCol: true, title: "Quantidade originalmente planeada (NOVA QUANTIDADE A ENTREGAR)" },
+    { key: "realocado_recebido", label: "Realoc. Recebido",   sortable: true,  type: "number", numCol: true, title: "Quantidade recebida via realocação de outro beneficiário" },
+    { key: "planned_qty",        label: "Plano Ajustado",     sortable: true,  type: "number", numCol: true, title: "Plano após subtrair Realocado Recebido" },
+    { key: "committed_qty",      label: "Entregue",           sortable: true,  type: "number", numCol: true, title: "Já entregue (TRANSITO + FINALIZADO no sistema externo)" },
+    { key: "available_qty",      label: "Falta",              sortable: true,  type: "number", numCol: true, title: "Falta entregar = max(0, Plano Ajustado − Entregue)" },
+    { key: "_pct",               label: "%",                  sortable: true,  type: "number", numCol: true },
+  ];
+  const balSort = { sortKey: "available_qty", sortAsc: false, render: () => renderRows() };
 
   // Helpers
   function $(s) { return document.querySelector(s); }
@@ -152,17 +168,39 @@
     $("#f-sku").innerHTML = opts;
   }
 
+  function renderHeader() {
+    const head = $("#bal-thead-row");
+    head.innerHTML = BAL_COLS.map((c) => {
+      const cls = c.numCol ? "num" : (c.key === null ? "check-col" : "");
+      if (!c.sortable) {
+        return `<th class="${cls}">${c.key === null ? '<input type="checkbox" id="check-all" class="check-input" title="Selecc. todos">' : esc(c.label)}</th>`;
+      }
+      const titleAttr = c.title ? ` title="${esc(c.title)}"` : "";
+      return `<th class="${cls}" data-sort="${c.key}" data-sort-type="${c.type}"${titleAttr}>${esc(c.label)}${sortArrow(c.key, balSort.sortKey, balSort.sortAsc)}</th>`;
+    }).join("");
+    bindSortable($("#bal-table"), balSort);
+  }
+
   function renderRows() {
+    renderHeader();
     const body = $("#bal-body");
     if (!allRows.length) {
-      body.innerHTML = `<tr><td colspan="11"><div class="empty-state">
+      body.innerHTML = `<tr><td colspan="${BAL_COLS.length}"><div class="empty-state">
         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:.4rem"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         <div>Nada a entregar nesta selecção. Tudo cumprido.</div>
       </div></td></tr>`;
       $("#row-count").textContent = "0 itens";
       return;
     }
-    body.innerHTML = allRows.map((r) => {
+    // Inject _pct field para ordenação
+    allRows.forEach((r) => {
+      const planned = Number(r.planned_qty) || 0;
+      const committed = Number(r.committed_qty) || 0;
+      r._pct = planned > 0 ? Math.round((committed / planned) * 100) : 0;
+    });
+    const col = BAL_COLS.find((c) => c.key === balSort.sortKey);
+    const sorted = sortRows(allRows, balSort.sortKey, balSort.sortAsc, col?.type);
+    body.innerHTML = sorted.map((r) => {
       const k = rowKey(r);
       const sel = selectedKeys.has(k);
       const plannedOrig = Number(r.planned_original) || 0;

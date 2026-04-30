@@ -93,9 +93,21 @@
   <script src="/static/admin.js"></script>
   <script>
     (function () {
-      const { fetchJSON, fmt, fmtDate, esc } = window.AdminUI;
+      const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable } = window.AdminUI;
       const STATUS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
       const id = location.pathname.split("/").pop();
+
+      const ITEM_COLS = [
+        { key: "extensionist_id",  label: "Extens. ID",   sortable: true,  type: "string" },
+        { key: "beneficiary_name", label: "Beneficiário", sortable: true,  type: "string" },
+        { key: "district",         label: "Distrito",     sortable: true,  type: "string" },
+        { key: "product_name",     label: "Produto",      sortable: true,  type: "string" },
+        { key: "qty",              label: "Qtd",          sortable: true,  type: "number", numCol: true },
+        { key: "external_adsn",    label: "ADSN",         sortable: true,  type: "string" },
+        { key: "external_gtu",     label: "GTU",          sortable: true,  type: "string" },
+        { key: null,               label: "Assinatura",   sortable: false, noPrint: true },
+      ];
+      const itemsSort = { sortKey: "beneficiary_name", sortAsc: true, render: () => null };
 
       function render(svc) {
         document.title = "AQI — " + svc.service_number;
@@ -163,29 +175,38 @@
 
         <section class="admin-section">
           <h2>Itens (${svc.items.length})</h2>
-          <table class="adm-table" style="font-size:.75rem">
-            <thead><tr>
-              <th>#</th><th>Extens. ID</th><th>Beneficiário</th><th>Distrito</th>
-              <th>Produto</th><th class="num">Qtd</th><th>ADSN</th><th>GTU</th>
-              <th class="no-print">Assinatura</th>
-            </tr></thead>
-            <tbody>
-              ${svc.items.map((it, idx) => `<tr>
-                <td>${idx + 1}</td>
-                <td><code>${esc(it.extensionist_id)}</code></td>
-                <td>${esc(it.beneficiary_name)}</td>
-                <td>${esc(it.district || "")}</td>
-                <td>${esc(it.product_name)}</td>
-                <td class="num">${fmt(it.qty)} ${esc(it.unit)}</td>
-                <td><code style="font-size:.7rem">${esc(it.external_adsn || "—")}</code></td>
-                <td><code style="font-size:.7rem">${esc(it.external_gtu || "—")}</code></td>
-                <td class="no-print" style="border-bottom:1px dashed #cbd5e1;width:120px"></td>
-              </tr>`).join("")}
-            </tbody>
+          <table class="adm-table" id="items-table" style="font-size:.75rem">
+            <thead><tr id="items-thead-row"></tr></thead>
+            <tbody id="items-body"></tbody>
           </table>
         </section>
         `;
         document.getElementById("content").innerHTML = html;
+
+        // Items table — sortable
+        function renderItemsTable() {
+          const headerHtml = ITEM_COLS.map((c) => {
+            const cls = (c.numCol ? "num " : "") + (c.noPrint ? "no-print" : "");
+            if (!c.sortable) return `<th class="${cls.trim()}">${esc(c.label)}</th>`;
+            return `<th class="${cls.trim()}" data-sort="${c.key}" data-sort-type="${c.type}">${esc(c.label)}${sortArrow(c.key, itemsSort.sortKey, itemsSort.sortAsc)}</th>`;
+          }).join("");
+          document.getElementById("items-thead-row").innerHTML = headerHtml;
+          const col = ITEM_COLS.find((c) => c.key === itemsSort.sortKey);
+          const sorted = sortRows(svc.items, itemsSort.sortKey, itemsSort.sortAsc, col?.type);
+          document.getElementById("items-body").innerHTML = sorted.map((it) => `<tr>
+            <td><code>${esc(it.extensionist_id)}</code></td>
+            <td>${esc(it.beneficiary_name)}</td>
+            <td>${esc(it.district || "")}</td>
+            <td>${esc(it.product_name)}</td>
+            <td class="num">${fmt(it.qty)} ${esc(it.unit)}</td>
+            <td><code style="font-size:.7rem">${esc(it.external_adsn || "—")}</code></td>
+            <td><code style="font-size:.7rem">${esc(it.external_gtu || "—")}</code></td>
+            <td class="no-print" style="border-bottom:1px dashed #cbd5e1;width:120px"></td>
+          </tr>`).join("");
+          bindSortable(document.getElementById("items-table"), itemsSort);
+        }
+        itemsSort.render = renderItemsTable;
+        renderItemsTable();
 
         // Action handlers
         const btnTransit = document.getElementById("btn-transit");

@@ -150,8 +150,58 @@ window.AdminUI = (function () {
     `;
   }
 
+  // ── Sortable tables ─────────────────────────────────────────
+  // Helper genérico: ordena um array de rows por uma chave + direção,
+  // com tipos string/number/date. Usado por todas as tabelas admin para
+  // permitir clicar em <th data-sort="key" data-sort-type="number">.
+  function sortRows(rows, key, asc, type) {
+    if (!key) return rows;
+    const sign = asc ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      let va = a[key], vb = b[key];
+      if (type === "number") {
+        va = Number(va) || 0; vb = Number(vb) || 0;
+      } else if (type === "date") {
+        const pa = va ? new Date(String(va).replace(" ", "T")).getTime() : 0;
+        const pb = vb ? new Date(String(vb).replace(" ", "T")).getTime() : 0;
+        va = isNaN(pa) ? 0 : pa;
+        vb = isNaN(pb) ? 0 : pb;
+      } else {
+        va = String(va || "").toLowerCase();
+        vb = String(vb || "").toLowerCase();
+      }
+      if (va < vb) return -sign;
+      if (va > vb) return sign;
+      return 0;
+    });
+  }
+
+  // Devolve o HTML do indicador de ordenação para o <th> activo.
+  function sortArrow(key, sortKey, asc) {
+    if (key !== sortKey) return '<span class="sort-arrow">↕</span>';
+    return asc ? '<span class="sort-arrow active">↑</span>'
+               : '<span class="sort-arrow active">↓</span>';
+  }
+
+  // Liga os clicks em <th data-sort> de uma tabela a um state holder.
+  // state = { sortKey, sortAsc, render }. Chamado uma vez após renderizar
+  // os headers com data-sort attributes.
+  function bindSortable(tableEl, state) {
+    if (!tableEl) return;
+    tableEl.querySelectorAll("th[data-sort]").forEach((th) => {
+      th.classList.add("sortable");
+      th.addEventListener("click", () => {
+        const k = th.dataset.sort;
+        if (state.sortKey === k) state.sortAsc = !state.sortAsc;
+        else { state.sortKey = k; state.sortAsc = true; }
+        if (typeof state.render === "function") state.render();
+      });
+    });
+  }
+
   return {
     esc, fmt, fmtDate, statusBadge, fetchJSON, renderLayout, loadMe,
     loadProducts, loadWarehouses, productSelectOptions, clearCache,
+    sortRows, sortArrow, bindSortable,
   };
 })();

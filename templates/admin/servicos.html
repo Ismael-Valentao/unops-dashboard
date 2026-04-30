@@ -70,12 +70,8 @@
       </div>
 
       <div class="tbl-wrap">
-        <table class="adm-table">
-          <thead><tr>
-            <th>Nº Serviço</th><th>Estado</th><th>Província</th><th>Distrito</th>
-            <th>Matrícula</th><th>Origem</th><th class="num">Benef.</th>
-            <th class="num">Itens</th><th class="num">Total kg</th><th>Criado</th><th></th>
-          </tr></thead>
+        <table class="adm-table" id="svc-table">
+          <thead><tr id="svc-thead-row"></tr></thead>
           <tbody id="tbl-body"></tbody>
         </table>
       </div>
@@ -85,13 +81,30 @@
   <script src="/static/admin.js"></script>
   <script>
     (function () {
-      const { fetchJSON, fmt, fmtDate, esc } = window.AdminUI;
+      const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable } = window.AdminUI;
       const $ = (s) => document.querySelector(s);
 
       const STATUS_LABELS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
 
+      // Definição das colunas — usada para o header sortable e para o sort
+      const COLS = [
+        { key: "service_number",   label: "Nº Serviço",  sortable: true,  type: "string" },
+        { key: "status",           label: "Estado",      sortable: true,  type: "string" },
+        { key: "province",         label: "Província",   sortable: true,  type: "string" },
+        { key: "district",         label: "Distrito",    sortable: true,  type: "string" },
+        { key: "truck_plate",      label: "Matrícula",   sortable: true,  type: "string" },
+        { key: "origem_supplier",  label: "Origem",      sortable: true,  type: "string" },
+        { key: "n_beneficiaries",  label: "Benef.",      sortable: true,  type: "number", numCol: true },
+        { key: "n_items",          label: "Itens",       sortable: true,  type: "number", numCol: true },
+        { key: "total_kg",         label: "Total kg",    sortable: true,  type: "number", numCol: true },
+        { key: "created_at",       label: "Criado",      sortable: true,  type: "date" },
+        { key: null,               label: "",            sortable: false, type: null },
+      ];
+
       let activeStatus = "";
       let timer = null;
+      let allRows = [];
+      const sort = { sortKey: "created_at", sortAsc: false, render: () => render() };
 
       function renderCounts(counts) {
         const total = Object.values(counts).reduce((s, v) => s + v.n, 0);
@@ -120,9 +133,19 @@
         });
       }
 
+      function renderHeader() {
+        const html = COLS.map((c) => {
+          const cls = c.numCol ? "num" : "";
+          if (!c.sortable) return `<th class="${cls}">${esc(c.label)}</th>`;
+          return `<th class="${cls}" data-sort="${c.key}" data-sort-type="${c.type}">${esc(c.label)}${sortArrow(c.key, sort.sortKey, sort.sortAsc)}</th>`;
+        }).join("");
+        $("#svc-thead-row").innerHTML = html;
+        bindSortable($("#svc-table"), sort);
+      }
+
       function renderRows(rows) {
         if (!rows.length) {
-          $("#tbl-body").innerHTML = `<tr><td colspan="11" style="text-align:center;color:#94a3b8;padding:2rem">Sem serviços com este filtro.</td></tr>`;
+          $("#tbl-body").innerHTML = `<tr><td colspan="${COLS.length}" style="text-align:center;color:#94a3b8;padding:2rem">Sem serviços com este filtro.</td></tr>`;
           return;
         }
         $("#tbl-body").innerHTML = rows.map((r) => `<tr>
@@ -140,6 +163,13 @@
         </tr>`).join("");
       }
 
+      function render() {
+        renderHeader();
+        const col = COLS.find((c) => c.key === sort.sortKey);
+        const sorted = sortRows(allRows, sort.sortKey, sort.sortAsc, col?.type);
+        renderRows(sorted);
+      }
+
       async function load() {
         const params = new URLSearchParams();
         const status = $("#f-status").value; if (status) params.set("status", status);
@@ -150,9 +180,10 @@
         try {
           const data = await fetchJSON("/admin/api/distribution/services?" + params);
           renderCounts(data.counts || {});
-          renderRows(data.rows || []);
+          allRows = data.rows || [];
+          render();
         } catch (e) {
-          $("#tbl-body").innerHTML = `<tr><td colspan="11" style="color:#dc2626;padding:1rem">Erro: ${esc(e.message)}</td></tr>`;
+          $("#tbl-body").innerHTML = `<tr><td colspan="${COLS.length}" style="color:#dc2626;padding:1rem">Erro: ${esc(e.message)}</td></tr>`;
         }
       }
 
