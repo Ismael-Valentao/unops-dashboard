@@ -1295,6 +1295,11 @@ router.get("/api/distribution/in-transit", ah(async (_req, res) => {
   res.json({ rows: await DistServices.inTransit() });
 }));
 
+// Resumo agregado da frota — aceita os mesmos filtros que /services.
+router.get("/api/distribution/fleet-summary", ah(async (req, res) => {
+  res.json(await DistServices.fleetSummary(req.query));
+}));
+
 router.get("/api/distribution/by-plate", ah(async (req, res) => {
   const plate = String(req.query.plate || "").trim();
   if (!plate) return res.json({ rows: [] });

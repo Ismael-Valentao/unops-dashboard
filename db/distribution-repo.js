@@ -404,6 +404,15 @@ const Services = {
     }
     if (opts.supplier) { where.push("origem_supplier LIKE ?"); params.push("%" + opts.supplier + "%"); }
     if (opts.source)   { where.push("source = ?");   params.push(opts.source); }
+    if (opts.min_kg != null && opts.min_kg !== "") {
+      where.push("total_kg >= ?"); params.push(Number(opts.min_kg));
+    }
+    if (opts.max_kg != null && opts.max_kg !== "") {
+      where.push("total_kg <= ?"); params.push(Number(opts.max_kg));
+    }
+    if (opts.driver) {
+      where.push("driver_name LIKE ?"); params.push("%" + opts.driver + "%");
+    }
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
     const limit = opts.limit ? `LIMIT ${Number(opts.limit)}` : "LIMIT 500";
     return query(
@@ -570,6 +579,57 @@ const Services = {
     } finally {
       conn.release();
     }
+  },
+
+  // Resumo da frota — aceita os mesmos filtros que list().
+  // Devolve: nº camiões, nº beneficiários cobertos, total kg, capacidade
+  // total, capacidade média, distritos cobertos, fornecedores envolvidos.
+  async fleetSummary(opts = {}) {
+    const where = [];
+    const params = [];
+    if (opts.status)   { where.push("s.status = ?");   params.push(opts.status); }
+    if (opts.province) { where.push("s.province = ?"); params.push(opts.province); }
+    if (opts.district) { where.push("s.district = ?"); params.push(opts.district); }
+    if (opts.plate)    {
+      where.push("(s.truck_plate LIKE ? OR s.truck_plate_2 LIKE ?)");
+      params.push("%" + opts.plate.toUpperCase() + "%", "%" + opts.plate.toUpperCase() + "%");
+    }
+    if (opts.supplier) { where.push("s.origem_supplier LIKE ?"); params.push("%" + opts.supplier + "%"); }
+    if (opts.min_kg != null && opts.min_kg !== "") { where.push("s.total_kg >= ?"); params.push(Number(opts.min_kg)); }
+    if (opts.max_kg != null && opts.max_kg !== "") { where.push("s.total_kg <= ?"); params.push(Number(opts.max_kg)); }
+    if (opts.driver)   { where.push("s.driver_name LIKE ?"); params.push("%" + opts.driver + "%"); }
+    const w = where.length ? "WHERE " + where.join(" AND ") : "";
+    const rows = await query(
+      `SELECT
+         COUNT(*) AS n_trucks,
+         COALESCE(SUM(s.total_kg), 0) AS total_kg,
+         COALESCE(SUM(s.truck_capacity_kg), 0) AS total_capacity_kg,
+         COALESCE(AVG(NULLIF(s.truck_capacity_kg, 0)), 0) AS avg_capacity_kg,
+         COUNT(DISTINCT s.district) AS n_districts,
+         COUNT(DISTINCT s.origem_supplier) AS n_suppliers,
+         COUNT(DISTINCT s.truck_plate) AS n_plates,
+         (SELECT COUNT(DISTINCT i.extensionist_id)
+            FROM delivery_service_items i
+            JOIN delivery_services s2 ON s2.id = i.service_id
+            ${w.replace(/s\./g, "s2.")}
+         ) AS n_beneficiaries
+       FROM delivery_services s
+       ${w}`,
+      [...params, ...params]
+    );
+    const r = rows[0] || {};
+    return {
+      n_trucks: Number(r.n_trucks) || 0,
+      total_kg: Number(r.total_kg) || 0,
+      total_capacity_kg: Number(r.total_capacity_kg) || 0,
+      avg_capacity_kg: Number(r.avg_capacity_kg) || 0,
+      utilization_pct: r.total_capacity_kg > 0
+        ? +((r.total_kg / r.total_capacity_kg) * 100).toFixed(1) : 0,
+      n_districts: Number(r.n_districts) || 0,
+      n_suppliers: Number(r.n_suppliers) || 0,
+      n_plates: Number(r.n_plates) || 0,
+      n_beneficiaries: Number(r.n_beneficiaries) || 0,
+    };
   },
 
   async dashboardCounts() {

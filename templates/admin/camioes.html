@@ -6,22 +6,55 @@
   <title>AQI — Camiões</title>
   <link rel="stylesheet" href="/static/admin.css">
   <style>
+    /* ── Filtros ────────────────────────────────────────────── */
+    .fleet-filters{display:grid;grid-template-columns:repeat(6,1fr);gap:.6rem;align-items:end}
+    .fleet-filters label{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;
+      color:#64748b;font-weight:700;margin-bottom:.25rem}
+    .fleet-filters select,.fleet-filters input{
+      width:100%;padding:.45rem .55rem;border:1px solid #cbd5e1;border-radius:6px;
+      font-size:.82rem;font-family:inherit;background:#fff;box-sizing:border-box}
+    .fleet-filters select:focus,.fleet-filters input:focus{outline:none;border-color:#0f4c75;
+      box-shadow:0 0 0 2px rgba(15,76,117,.12)}
+    .fleet-presets{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.5rem}
+    .preset-chip{padding:.3rem .65rem;border:1px solid #cbd5e1;background:#fff;border-radius:99px;
+      font-size:.7rem;font-weight:600;cursor:pointer;color:#475569}
+    .preset-chip:hover{border-color:#0f4c75;color:#0f4c75;background:#f0f9ff}
+    .preset-chip.active{background:#0f4c75;color:#fff;border-color:#0f4c75}
+
+    /* ── Cards resumo ───────────────────────────────────────── */
+    .fleet-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.65rem;margin-top:1rem}
+    .f-sum{background:#f8fafc;border-radius:8px;padding:.65rem .85rem;border-left:3px solid #0f4c75}
+    .f-sum-lbl{font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:700}
+    .f-sum-val{font-size:1.3rem;font-weight:800;color:#0f172a;margin-top:.15rem;line-height:1.1;font-variant-numeric:tabular-nums}
+    .f-sum-sub{font-size:.7rem;color:#94a3b8;margin-top:.15rem}
+    .f-sum-amber{border-left-color:#d97706}.f-sum-amber .f-sum-val{color:#b45309}
+    .f-sum-green{border-left-color:#16a34a}.f-sum-green .f-sum-val{color:#15803d}
+
+    /* ── Truck cards ────────────────────────────────────────── */
     .truck-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.85rem;margin-top:1rem}
     .truck-card{background:#fff;border-radius:10px;padding:1rem 1.15rem;border:1px solid #e2e8f0;
       border-left:4px solid #d97706;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+    .truck-card.s-delivered{border-left-color:#16a34a}
+    .truck-card.s-draft{border-left-color:#64748b}
+    .truck-card.s-cancelled{border-left-color:#dc2626;opacity:.65}
     .truck-card h3{margin:0;font-size:1.1rem;letter-spacing:.04em;font-family:ui-monospace,monospace}
     .truck-route{color:#475569;font-size:.78rem;margin-top:.2rem}
-    .truck-stats{display:flex;justify-content:space-between;margin-top:.6rem;padding-top:.6rem;border-top:1px dashed #e2e8f0;
-      font-size:.75rem}
+    .truck-stats{display:flex;justify-content:space-between;margin-top:.6rem;padding-top:.6rem;
+      border-top:1px dashed #e2e8f0;font-size:.75rem}
     .truck-stats .stat{text-align:center}
     .truck-stats .v{font-size:1.05rem;font-weight:800;color:#1e293b}
-    .truck-stats .l{color:#64748b;text-transform:uppercase;font-size:.62rem;letter-spacing:.04em;font-weight:600;margin-top:.1rem}
+    .truck-stats .l{color:#64748b;text-transform:uppercase;font-size:.62rem;letter-spacing:.04em;
+      font-weight:600;margin-top:.1rem}
+    .truck-cap-bar{height:5px;background:#e2e8f0;border-radius:3px;margin:.5rem 0;overflow:hidden}
+    .truck-cap-fill{height:100%;background:linear-gradient(90deg,#16a34a 0%,#84cc16 75%,#f59e0b 90%,#dc2626 100%)}
+    .truck-cap-text{font-size:.7rem;color:#64748b;display:flex;justify-content:space-between}
     .truck-actions{display:flex;gap:.4rem;margin-top:.7rem;flex-wrap:wrap}
     .truck-actions .btn{font-size:.75rem;padding:.35rem .65rem}
+    .truck-meta-row{font-size:.72rem;color:#64748b;margin-top:.4rem;display:flex;justify-content:space-between;gap:.5rem}
 
-    .empty-state{padding:3rem;text-align:center;color:#94a3b8}
-    .empty-state .ico{font-size:3rem;margin-bottom:.5rem}
+    .empty-state{padding:3rem;text-align:center;color:#94a3b8;grid-column:1/-1}
 
+    /* ── Pesquisa por matrícula ─────────────────────────────── */
     .plate-search{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
     .plate-search input{flex:0 1 320px;min-width:200px;padding:.55rem .7rem;border:1px solid #cbd5e1;
       border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.95rem;
@@ -30,6 +63,7 @@
     .plate-hint{color:#64748b;font-size:.78rem}
     #plate-results{margin-top:1rem}
     #plate-results:empty{margin:0}
+
     .section-title-row{display:flex;justify-content:space-between;align-items:center}
     .section-counter{font-weight:400;color:#64748b;font-size:.75rem}
 
@@ -38,6 +72,10 @@
     .badge-in_transit{background:#fef3c7;color:#92400e}
     .badge-delivered{background:#dcfce7;color:#166534}
     .badge-cancelled{background:#fee2e2;color:#991b1b}
+
+    @media(max-width:980px){
+      .fleet-filters{grid-template-columns:repeat(2,1fr)}
+    }
   </style>
 </head>
 <body class="admin-body">
@@ -59,11 +97,66 @@
     </section>
 
     <section class="admin-section">
+      <h2>Filtros</h2>
+      <div class="fleet-filters">
+        <div>
+          <label for="f-status">Estado</label>
+          <select id="f-status">
+            <option value="in_transit" selected>Em Trânsito</option>
+            <option value="delivered">Entregue</option>
+            <option value="draft">Rascunho</option>
+            <option value="cancelled">Cancelado</option>
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <div>
+          <label for="f-province">Província</label>
+          <select id="f-province"><option value="">Todas</option></select>
+        </div>
+        <div>
+          <label for="f-district">Distrito</label>
+          <select id="f-district"><option value="">Todos</option></select>
+        </div>
+        <div>
+          <label for="f-supplier">Origem (fornecedor)</label>
+          <input id="f-supplier" type="text" placeholder="Ex: SeedCo, Phoenix">
+        </div>
+        <div>
+          <label for="f-min-kg">Carga ≥ (kg)</label>
+          <input id="f-min-kg" type="number" min="0" step="100" placeholder="0">
+        </div>
+        <div>
+          <label for="f-max-kg">Carga ≤ (kg)</label>
+          <input id="f-max-kg" type="number" min="0" step="100" placeholder="∞">
+        </div>
+      </div>
+
+      <!-- Atalhos / chips de tonelagem -->
+      <div class="fleet-presets" id="presets">
+        <button class="preset-chip" data-min="0" data-max="2000">≤ 2T</button>
+        <button class="preset-chip" data-min="2000" data-max="10000">2–10T</button>
+        <button class="preset-chip" data-min="10000" data-max="20000">10–20T</button>
+        <button class="preset-chip" data-min="20000" data-max="30000">20–30T</button>
+        <button class="preset-chip" data-min="30000" data-max="">&gt; 30T</button>
+        <button class="preset-chip" id="preset-clear">Limpar tonelagem</button>
+      </div>
+
+      <!-- Resumo -->
+      <div class="fleet-summary" id="summary">
+        <div class="f-sum f-sum-amber"><div class="f-sum-lbl">Camiões</div><div class="f-sum-val" id="s-trucks">—</div><div class="f-sum-sub" id="s-trucks-sub">—</div></div>
+        <div class="f-sum"><div class="f-sum-lbl">Total Carga</div><div class="f-sum-val" id="s-kg">—</div><div class="f-sum-sub">kg</div></div>
+        <div class="f-sum"><div class="f-sum-lbl">Capacidade</div><div class="f-sum-val" id="s-cap">—</div><div class="f-sum-sub" id="s-cap-sub">—</div></div>
+        <div class="f-sum f-sum-green"><div class="f-sum-lbl">Beneficiários</div><div class="f-sum-val" id="s-benef">—</div><div class="f-sum-sub" id="s-benef-sub">— distritos</div></div>
+        <div class="f-sum"><div class="f-sum-lbl">Matrículas únicas</div><div class="f-sum-val" id="s-plates">—</div><div class="f-sum-sub" id="s-plates-sub">— fornecedores</div></div>
+      </div>
+    </section>
+
+    <section class="admin-section">
       <h2 class="section-title-row">
-        <span>Em Trânsito Agora</span>
-        <span class="section-counter" id="transit-count">A carregar…</span>
+        <span id="board-title">Camiões em Trânsito</span>
+        <span class="section-counter" id="board-count">A carregar…</span>
       </h2>
-      <div id="transit-grid" class="truck-grid"></div>
+      <div id="truck-grid" class="truck-grid"></div>
     </section>
   </main>
 
@@ -72,55 +165,146 @@
     (function () {
       const { fetchJSON, fmt, fmtDate, esc } = window.AdminUI;
       const STATUS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
+      const STATUS_TITLE = {
+        in_transit: "Camiões em Trânsito",
+        delivered:  "Camiões Entregues",
+        draft:      "Camiões em Rascunho",
+        cancelled:  "Camiões Cancelados",
+        "":         "Todos os Camiões",
+      };
 
-      function renderTransitCard(t) {
-        return `<div class="truck-card">
-          <h3>${esc(t.truck_plate || "—")}</h3>
-          <div class="truck-route">${esc(t.origem_supplier || "—")} → <strong>${esc(t.district)}</strong> (${esc(t.province)})</div>
+      const $ = (s) => document.querySelector(s);
+      const $$ = (s) => [...document.querySelectorAll(s)];
+
+      let geoCache = null;          // { province: { district: count } }
+      let timer = null;
+
+      function getFilters() {
+        return {
+          status:   $("#f-status").value,
+          province: $("#f-province").value.trim(),
+          district: $("#f-district").value.trim(),
+          supplier: $("#f-supplier").value.trim(),
+          min_kg:   $("#f-min-kg").value.trim(),
+          max_kg:   $("#f-max-kg").value.trim(),
+        };
+      }
+      function buildQuery(extra = {}) {
+        const f = { ...getFilters(), ...extra };
+        const p = new URLSearchParams();
+        Object.entries(f).forEach(([k, v]) => { if (v) p.set(k, v); });
+        return p;
+      }
+
+      // ── Geography (province/district dropdowns) ─────────────
+      async function loadGeo() {
+        if (!geoCache) geoCache = await fetchJSON("/admin/api/distribution/geography");
+        const provs = Object.keys(geoCache).sort();
+        $("#f-province").innerHTML = '<option value="">Todas</option>' +
+          provs.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
+        loadDistrictOptions();
+      }
+      function loadDistrictOptions() {
+        const prov = $("#f-province").value;
+        const sel = $("#f-district");
+        if (!prov || !geoCache[prov]) {
+          sel.innerHTML = '<option value="">Todos</option>';
+          return;
+        }
+        const dists = Object.keys(geoCache[prov]).sort();
+        sel.innerHTML = '<option value="">Todos</option>' +
+          dists.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
+      }
+
+      // ── Fleet summary cards ─────────────────────────────────
+      async function loadSummary() {
+        const data = await fetchJSON("/admin/api/distribution/fleet-summary?" + buildQuery());
+        $("#s-trucks").textContent = fmt(data.n_trucks);
+        $("#s-trucks-sub").textContent = data.n_trucks
+          ? STATUS[$("#f-status").value] || "todos os estados"
+          : "(nenhum)";
+        $("#s-kg").textContent = fmt(data.total_kg);
+        $("#s-cap").textContent = fmt(data.total_capacity_kg);
+        const util = data.utilization_pct;
+        $("#s-cap-sub").textContent = data.total_capacity_kg
+          ? "kg • Utilização " + util + "%"
+          : "kg";
+        $("#s-benef").textContent = fmt(data.n_beneficiaries);
+        $("#s-benef-sub").textContent = fmt(data.n_districts) + " distrito" + (data.n_districts === 1 ? "" : "s");
+        $("#s-plates").textContent = fmt(data.n_plates);
+        $("#s-plates-sub").textContent = fmt(data.n_suppliers) + " fornecedor" + (data.n_suppliers === 1 ? "" : "es");
+      }
+
+      // ── Truck cards ─────────────────────────────────────────
+      function renderCard(t) {
+        const cap = Number(t.truck_capacity_kg) || 0;
+        const used = Number(t.total_kg) || 0;
+        const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
+        const dispatchedAt = t.dispatched_at ? fmtDate(t.dispatched_at) : "—";
+        const deliveredAt  = t.delivered_at  ? fmtDate(t.delivered_at)  : null;
+        const stKey = t.status || "draft";
+        return `<div class="truck-card s-${stKey}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem">
+            <h3>${esc(t.truck_plate || "—")}</h3>
+            <span class="badge badge-${esc(stKey)}">${STATUS[stKey] || stKey}</span>
+          </div>
+          <div class="truck-route">${esc(t.origem_supplier || "—")} → <strong>${esc(t.district || "—")}</strong>${t.province ? " (" + esc(t.province) + ")" : ""}</div>
+          ${cap > 0 ? `
+            <div class="truck-cap-bar"><div class="truck-cap-fill" style="width:${pct}%"></div></div>
+            <div class="truck-cap-text"><span>${fmt(used)} / ${fmt(cap)} kg</span><span>${pct}%</span></div>
+          ` : `
+            <div style="font-size:.75rem;color:#64748b;margin-top:.4rem">${fmt(used)} kg (capacidade não definida)</div>
+          `}
           <div class="truck-stats">
-            <div class="stat"><div class="v">${fmt(t.total_kg)}</div><div class="l">kg</div></div>
             <div class="stat"><div class="v">${fmt(t.n_beneficiaries)}</div><div class="l">benef.</div></div>
             <div class="stat"><div class="v">${fmt(t.n_items)}</div><div class="l">itens</div></div>
+            <div class="stat"><div class="v">${esc(t.driver_name || "—").split(" ")[0] || "—"}</div><div class="l">motorista</div></div>
           </div>
-          <div style="font-size:.75rem;color:#64748b;margin-top:.5rem">Saiu: ${fmtDate(t.dispatched_at)}</div>
-          <div style="font-size:.75rem;color:#64748b">Motorista: ${esc(t.driver_name || "—")}</div>
+          <div class="truck-meta-row"><span>Saiu: ${dispatchedAt}</span>${deliveredAt ? `<span>Entregue: ${deliveredAt}</span>` : ""}</div>
           <div class="truck-actions">
-            <a href="/admin/servicos/${t.id}" class="btn">Detalhe</a>
-            <button class="btn btn-success" data-deliver="${t.id}" data-num="${esc(t.service_number)}">Marcar Entregue</button>
+            <a href="/admin/servicos/${t.id}" class="btn">Ver detalhe</a>
+            ${stKey === "in_transit" ? `<button class="btn btn-success btn-deliver" data-id="${t.id}" data-num="${esc(t.service_number)}">Marcar Entregue</button>` : ""}
           </div>
         </div>`;
       }
 
-      async function loadTransit() {
+      async function loadBoard() {
+        const status = $("#f-status").value;
+        $("#board-title").textContent = STATUS_TITLE[status] || "Camiões";
         try {
-          const data = await fetchJSON("/admin/api/distribution/in-transit");
-          $("#transit-count").textContent = data.rows.length + " camião(ões)";
-          if (!data.rows.length) {
-            $("#transit-grid").innerHTML = `<div class="empty-state">
+          const data = await fetchJSON("/admin/api/distribution/services?" + buildQuery());
+          const rows = data.rows || [];
+          $("#board-count").textContent = rows.length + " camião(ões)";
+          if (!rows.length) {
+            $("#truck-grid").innerHTML = `<div class="empty-state">
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:.5rem">
                 <path d="M1 17h2a2 2 0 0 0 4 0h6a2 2 0 0 0 4 0h2v-5l-3-4h-3V5H1z"/>
                 <circle cx="5" cy="17" r="2"/><circle cx="15" cy="17" r="2"/>
               </svg>
-              <div>Nenhum camião em trânsito.</div>
+              <div>Nenhum camião neste filtro.</div>
             </div>`;
             return;
           }
-          $("#transit-grid").innerHTML = data.rows.map(renderTransitCard).join("");
+          $("#truck-grid").innerHTML = rows.map(renderCard).join("");
           // Bind deliver buttons
-          document.querySelectorAll("[data-deliver]").forEach((b) => {
+          $$(".btn-deliver").forEach((b) => {
             b.addEventListener("click", async () => {
               if (!confirm(`Marcar ${b.dataset.num} como ENTREGUE?`)) return;
               try {
-                await fetchJSON(`/admin/api/distribution/services/${b.dataset.deliver}/delivered`, { method: "POST", body: {} });
-                loadTransit();
+                await fetchJSON(`/admin/api/distribution/services/${b.dataset.id}/delivered`, { method: "POST", body: {} });
+                refresh();
               } catch (e) { alert("Erro: " + e.message); }
             });
           });
         } catch (e) {
-          $("#transit-grid").innerHTML = `<div class="empty-state" style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
+          $("#truck-grid").innerHTML = `<div class="empty-state" style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
         }
       }
 
+      function refresh() { loadSummary(); loadBoard(); }
+      function debounced(fn) { return () => { clearTimeout(timer); timer = setTimeout(fn, 250); }; }
+
+      // ── Plate search (mantém comportamento antigo) ──────────
       async function searchPlate() {
         const plate = $("#plate-input").value.trim();
         if (!plate) { $("#plate-results").innerHTML = ""; return; }
@@ -155,12 +339,43 @@
         }
       }
 
-      function $(s) { return document.querySelector(s); }
-
-      document.addEventListener("DOMContentLoaded", () => {
-        loadTransit();
+      // ── Init ────────────────────────────────────────────────
+      document.addEventListener("DOMContentLoaded", async () => {
+        // Plate search
         $("#btn-search").addEventListener("click", searchPlate);
         $("#plate-input").addEventListener("keypress", (e) => { if (e.key === "Enter") searchPlate(); });
+
+        // Filtros — change/input handlers
+        ["f-status", "f-province", "f-district"].forEach((id) =>
+          $("#" + id).addEventListener("change", () => {
+            if (id === "f-province") loadDistrictOptions();
+            refresh();
+          })
+        );
+        ["f-supplier", "f-min-kg", "f-max-kg"].forEach((id) =>
+          $("#" + id).addEventListener("input", debounced(refresh))
+        );
+
+        // Tonelagem presets
+        $$("#presets .preset-chip").forEach((b) => {
+          if (b.id === "preset-clear") return;
+          b.addEventListener("click", () => {
+            $$("#presets .preset-chip").forEach((x) => x.classList.remove("active"));
+            b.classList.add("active");
+            $("#f-min-kg").value = b.dataset.min || "";
+            $("#f-max-kg").value = b.dataset.max || "";
+            refresh();
+          });
+        });
+        $("#preset-clear").addEventListener("click", () => {
+          $$("#presets .preset-chip").forEach((x) => x.classList.remove("active"));
+          $("#f-min-kg").value = "";
+          $("#f-max-kg").value = "";
+          refresh();
+        });
+
+        await loadGeo();
+        refresh();
       });
     })();
     AdminUI.renderLayout("camioes");
