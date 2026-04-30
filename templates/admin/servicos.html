@@ -6,7 +6,7 @@
   <title>AQI — Serviços de Entrega</title>
   <link rel="stylesheet" href="/static/admin.css">
   <style>
-    .svc-counts{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem}
+    .svc-counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem;margin-bottom:1rem}
     .svc-count{background:#f8fafc;border-radius:8px;padding:.75rem .9rem;border-left:3px solid #0f4c75;cursor:pointer;transition:all .15s}
     .svc-count:hover{background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.06)}
     .svc-count.active{background:#fff;border-left-width:5px}
@@ -33,7 +33,7 @@
   <div id="layout"></div>
   <main class="admin-main">
     <header class="admin-header">
-      <h1>🚚 Serviços de Entrega</h1>
+      <h1>Serviços de Entrega</h1>
       <span class="admin-sub">Tudo o que foi e está a ser entregue</span>
     </header>
 
@@ -95,7 +95,8 @@
 
       function renderCounts(counts) {
         const total = Object.values(counts).reduce((s, v) => s + v.n, 0);
-        $("#counts").innerHTML = ["draft", "in_transit", "delivered", "cancelled"].map((k) => {
+        const totalKg = Object.values(counts).reduce((s, v) => s + (v.kg || 0), 0);
+        const cards = ["draft", "in_transit", "delivered", "cancelled"].map((k) => {
           const c = counts[k] || { n: 0, kg: 0 };
           const sel = activeStatus === k ? "active" : "";
           return `<div class="svc-count svc-count-${k} ${sel}" data-status="${k}">
@@ -103,11 +104,13 @@
             <div class="svc-count-val">${fmt(c.n)}</div>
             <div class="svc-count-sub">${fmt(c.kg)} kg</div>
           </div>`;
-        }).join("") + `<div class="svc-count" data-status="" ${activeStatus === "" ? 'class="svc-count active"' : ""}>
+        });
+        cards.push(`<div class="svc-count ${activeStatus === '' ? 'active' : ''}" data-status="">
           <div class="svc-count-lbl">Total</div>
           <div class="svc-count-val">${fmt(total)}</div>
-          <div class="svc-count-sub">todos os serviços</div>
-        </div>`;
+          <div class="svc-count-sub">${fmt(totalKg)} kg</div>
+        </div>`);
+        $("#counts").innerHTML = cards.join("");
         document.querySelectorAll(".svc-count").forEach((el) => {
           el.addEventListener("click", () => {
             activeStatus = el.dataset.status || "";

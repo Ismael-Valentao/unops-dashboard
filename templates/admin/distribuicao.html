@@ -22,25 +22,26 @@
     .dist-sum-done .dist-sum-val{color:#16a34a}
 
     /* Truck capacity panel */
-    .truck-panel{background:linear-gradient(to right,#fef3c7,#fff);border-radius:10px;padding:1rem 1.15rem;
-      border:1px solid #fcd34d;margin-bottom:1rem}
-    .truck-panel h3{margin:0 0 .55rem;font-size:.85rem;color:#92400e;display:flex;align-items:center;gap:.4rem}
-    .cap-buttons{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.6rem}
-    .cap-btn{padding:.4rem .8rem;border:1.5px solid #cbd5e1;background:#fff;border-radius:6px;font-weight:700;
-      font-size:.78rem;cursor:pointer;color:#475569;font-family:inherit}
-    .cap-btn:hover{border-color:#0f4c75;background:#f0f9ff}
+    .truck-panel{background:#f8fafc;border-radius:10px;padding:1rem 1.15rem;
+      border:1px solid #e2e8f0;margin-bottom:1rem}
+    .truck-panel h3{margin:0 0 .65rem;font-size:.78rem;color:#475569;font-weight:700;
+      text-transform:uppercase;letter-spacing:.05em}
+    .cap-buttons{display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.7rem}
+    .cap-btn{padding:.4rem .85rem;border:1.5px solid #cbd5e1;background:#fff;border-radius:6px;font-weight:700;
+      font-size:.78rem;cursor:pointer;color:#475569;font-family:inherit;transition:all .12s}
+    .cap-btn:hover{border-color:#0f4c75;background:#f0f9ff;color:#0f4c75}
     .cap-btn.active{background:#0f4c75;color:#fff;border-color:#0f4c75}
-    .cap-bar{height:24px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;position:relative;margin-bottom:.5rem}
-    .cap-fill{height:100%;background:linear-gradient(90deg,#16a34a 0%,#84cc16 75%,#facc15 90%,#dc2626 100%);transition:width .25s}
-    .cap-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;color:#1e293b;text-shadow:0 0 4px #fff}
+    .cap-bar{height:26px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;position:relative;margin-bottom:.7rem}
+    .cap-fill{height:100%;background:linear-gradient(90deg,#16a34a 0%,#84cc16 75%,#f59e0b 92%,#dc2626 100%);transition:width .25s}
+    .cap-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;color:#1e293b;text-shadow:0 0 4px #fff,0 0 4px #fff}
     .cap-actions{display:flex;gap:.5rem;flex-wrap:wrap}
     .btn-fill{background:#0f4c75;color:#fff}
     .btn-fill:hover{background:#0c3a5c}
     .btn-create{background:#16a34a;color:#fff}
     .btn-create:hover{background:#15803d}
-    .btn-create:disabled{background:#94a3b8;cursor:not-allowed}
-    .btn-clear{background:#fff;color:#dc2626;border:1px solid #dc2626}
-    .btn-clear:hover{background:#fef2f2}
+    .btn-create:disabled{background:#cbd5e1;color:#94a3b8;cursor:not-allowed}
+    .btn-clear{background:#fff;color:#475569;border:1px solid #cbd5e1}
+    .btn-clear:hover{background:#f1f5f9;color:#1e293b;border-color:#94a3b8}
 
     /* Balance table */
     .bal-tbl{width:100%;font-size:.78rem;border-collapse:collapse}
@@ -87,13 +88,13 @@
   <div id="layout"></div>
   <main class="admin-main">
     <header class="admin-header">
-      <h1>🎯 Saldo &amp; Despachar</h1>
+      <h1>Saldo &amp; Despachar</h1>
       <span class="admin-sub">Selecciona quem entregar; o sistema bloqueia o saldo automaticamente</span>
     </header>
 
     <!-- First-run bootstrap panel — shown only when DB has no data yet -->
     <section class="admin-section" id="bootstrap-panel" style="display:none;border-left:4px solid #d97706;background:linear-gradient(to right,#fffbeb,#fff)">
-      <h2 style="display:flex;align-items:center;gap:.4rem;color:#92400e">⚠ Sistema vazio — importe os dados de arranque</h2>
+      <h2 style="color:#92400e;margin-top:0">Sistema vazio — importar dados de arranque</h2>
       <p style="font-size:.85rem;color:#475569;margin:.5rem 0 1rem">
         Antes de começar a despachar, importe os dois ficheiros Excel:
         <strong>(1)</strong> o Planeamento (define quem deve receber o quê) e
@@ -101,14 +102,14 @@
       </p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
         <div style="background:#fff;padding:1rem;border-radius:8px;border:1px solid #e2e8f0">
-          <h3 style="margin:0 0 .4rem;font-size:.95rem">1️⃣ Planeamento</h3>
+          <h3 style="margin:0 0 .4rem;font-size:.95rem">Passo 1 — Planeamento</h3>
           <div style="font-size:.78rem;color:#64748b;margin-bottom:.5rem">Ficheiro <code>Planeamento_Actualizado_*.xlsx</code></div>
           <input type="file" id="bs-planning-file" accept=".xlsx" style="width:100%;font-size:.85rem">
           <button class="btn btn-fill" id="bs-planning-btn" style="margin-top:.5rem;width:100%">Importar Planeamento</button>
           <div id="bs-planning-result" style="margin-top:.5rem;font-size:.78rem"></div>
         </div>
         <div style="background:#fff;padding:1rem;border-radius:8px;border:1px solid #e2e8f0">
-          <h3 style="margin:0 0 .4rem;font-size:.95rem">2️⃣ Serviços (histórico)</h3>
+          <h3 style="margin:0 0 .4rem;font-size:.95rem">Passo 2 — Serviços (histórico)</h3>
           <div style="font-size:.78rem;color:#64748b;margin-bottom:.5rem">Ficheiro <code>servicos*.xlsx</code> (TRANSITO/FINALIZADO/CRIADO)</div>
           <input type="file" id="bs-services-file" accept=".xlsx" style="width:100%;font-size:.85rem">
           <button class="btn btn-fill" id="bs-services-btn" style="margin-top:.5rem;width:100%">Importar Serviços</button>
@@ -135,7 +136,7 @@
           </select>
         </div>
         <div style="display:flex;align-items:end">
-          <button id="btn-refresh" class="btn">↻ Refrescar</button>
+          <button id="btn-refresh" class="btn">Refrescar</button>
         </div>
       </div>
 
@@ -149,7 +150,7 @@
 
       <!-- Truck panel -->
       <div class="truck-panel">
-        <h3>🚛 Camião</h3>
+        <h3>Camião</h3>
         <div class="cap-buttons" id="cap-btns">
           <button class="cap-btn" data-cap="1000">1T</button>
           <button class="cap-btn" data-cap="2000">2T</button>
@@ -163,9 +164,9 @@
           <div class="cap-text" id="cap-text">0 / 30.000 kg • 0 itens</div>
         </div>
         <div class="cap-actions">
-          <button id="btn-autofill" class="btn btn-fill">⚡ Auto-preencher</button>
-          <button id="btn-create" class="btn btn-create" disabled>💾 Criar Serviço</button>
-          <button id="btn-clear-sel" class="btn btn-clear">🗑 Limpar Selecção</button>
+          <button id="btn-autofill" class="btn btn-fill">Auto-preencher</button>
+          <button id="btn-create" class="btn btn-create" disabled>Criar Serviço</button>
+          <button id="btn-clear-sel" class="btn btn-clear">Limpar Selecção</button>
         </div>
       </div>
     </section>
@@ -237,8 +238,8 @@
 
       <div class="modal-actions">
         <button class="btn btn-clear" id="m-cancel">Cancelar</button>
-        <button class="btn btn-create" id="m-confirm">✓ Criar (rascunho)</button>
-        <button class="btn btn-create" id="m-confirm-transit">🚛 Criar e Pôr em Trânsito</button>
+        <button class="btn btn-create" id="m-confirm">Criar (rascunho)</button>
+        <button class="btn btn-create" id="m-confirm-transit">Criar e pôr em trânsito</button>
       </div>
     </div>
   </div>

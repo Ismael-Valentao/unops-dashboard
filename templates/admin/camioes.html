@@ -37,20 +37,20 @@
   <div id="layout"></div>
   <main class="admin-main">
     <header class="admin-header">
-      <h1>🛻 Camiões</h1>
+      <h1>Camiões</h1>
       <span class="admin-sub">Em trânsito agora &amp; histórico por matrícula</span>
     </header>
 
     <section class="admin-section">
       <h2 style="display:flex;justify-content:space-between;align-items:center">
-        <span>🚛 Em Trânsito Agora</span>
+        <span>Em Trânsito Agora</span>
         <span style="font-weight:400;color:#64748b;font-size:.75rem" id="transit-count">A carregar…</span>
       </h2>
       <div id="transit-grid" class="truck-grid"></div>
     </section>
 
     <section class="admin-section">
-      <h2>🔍 Pesquisa por Matrícula</h2>
+      <h2>Pesquisa por Matrícula</h2>
       <div class="plate-search">
         <input id="plate-input" type="text" placeholder="AAB 450 MP" autocomplete="off">
         <button class="btn" id="btn-search">Pesquisar</button>
@@ -79,7 +79,7 @@
           <div style="font-size:.75rem;color:#64748b">Motorista: ${esc(t.driver_name || "—")}</div>
           <div class="truck-actions">
             <a href="/admin/servicos/${t.id}" class="btn">Detalhe</a>
-            <button class="btn" data-deliver="${t.id}" data-num="${esc(t.service_number)}">✓ Marcar Entregue</button>
+            <button class="btn" data-deliver="${t.id}" data-num="${esc(t.service_number)}">Marcar Entregue</button>
           </div>
         </div>`;
       }
@@ -89,7 +89,13 @@
           const data = await fetchJSON("/admin/api/distribution/in-transit");
           $("#transit-count").textContent = data.rows.length + " camião(ões)";
           if (!data.rows.length) {
-            $("#transit-grid").innerHTML = `<div class="empty-state"><div class="ico">🌴</div>Nenhum camião em trânsito.</div>`;
+            $("#transit-grid").innerHTML = `<div class="empty-state">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:.5rem">
+                <path d="M1 17h2a2 2 0 0 0 4 0h6a2 2 0 0 0 4 0h2v-5l-3-4h-3V5H1z"/>
+                <circle cx="5" cy="17" r="2"/><circle cx="15" cy="17" r="2"/>
+              </svg>
+              <div>Nenhum camião em trânsito.</div>
+            </div>`;
             return;
           }
           $("#transit-grid").innerHTML = data.rows.map(renderTransitCard).join("");

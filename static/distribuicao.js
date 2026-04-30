@@ -106,8 +106,10 @@
   function renderRows() {
     const body = $("#bal-body");
     if (!allRows.length) {
-      body.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="ico">✓</div>
-        Nada a entregar nesta selecção. Tudo cumprido!</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="9"><div class="empty-state">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:.4rem"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <div>Nada a entregar nesta selecção. Tudo cumprido.</div>
+      </div></td></tr>`;
       $("#row-count").textContent = "0 itens";
       return;
     }
@@ -217,7 +219,7 @@
     const districts = new Set(sel.map((r) => r.district).filter(Boolean));
     const provinces = new Set(sel.map((r) => r.province).filter(Boolean));
     if (districts.size > 1 || provinces.size > 1) {
-      alert("⚠ Selecciona apenas beneficiários do mesmo distrito para um serviço");
+      alert("Selecciona apenas beneficiários do mesmo distrito para um serviço.");
       return;
     }
     const beneficiaries = new Set(sel.map((r) => r.extensionist_id));
@@ -295,7 +297,7 @@
       selectedKeys.clear();
       await Promise.all([loadBalances(), loadSummary()]);
       // Toast-like alert
-      alert(`✓ Serviço ${result.service_number} criado (${fmt(result.total_kg)} kg)${putInTransit ? " e em trânsito" : ""}.\nVer em /admin/servicos.`);
+      alert(`Serviço ${result.service_number} criado (${fmt(result.total_kg)} kg)${putInTransit ? " e em trânsito" : ""}.\nVer em /admin/servicos.`);
     } catch (e) {
       errBox.textContent = "Erro: " + e.message; errBox.classList.add("show");
     }
@@ -325,7 +327,7 @@
       const res = await fetch(endpoint, { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
-      resultEl.innerHTML = '<div style="background:#dcfce7;color:#166534;padding:.5rem;border-radius:6px"><strong>✓ Importado:</strong><br>' +
+      resultEl.innerHTML = '<div style="background:#dcfce7;color:#166534;padding:.5rem;border-radius:6px"><strong>Importado com sucesso:</strong><br>' +
         Object.entries(data).map(([k, v]) => `${k} = ${typeof v === "object" ? JSON.stringify(v) : v}`).join("<br>") + "</div>";
       await loadGeo();
       await refresh();

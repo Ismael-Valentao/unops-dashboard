@@ -43,6 +43,11 @@
     .attach-list{font-size:.78rem;margin-top:.4rem;line-height:1.5;max-height:280px;overflow:auto;
       background:rgba(255,255,255,.7);padding:.5rem;border-radius:6px}
     .attach-list code{font-size:.72rem;background:#f1f5f9;padding:1px 4px;border-radius:3px}
+    .tag{display:inline-block;font-size:.65rem;font-weight:700;padding:.1rem .4rem;border-radius:3px;
+      letter-spacing:.04em;text-transform:uppercase;margin-right:.3rem;vertical-align:1px}
+    .tag-ok{background:#16a34a;color:#fff}
+    .tag-warn{background:#d97706;color:#fff}
+    .tag-err{background:#dc2626;color:#fff}
 
     /* Print mode */
     @media print {
@@ -69,7 +74,7 @@
   <!-- Attach Guia modal -->
   <div class="attach-modal" id="attach-modal">
     <div class="attach-box">
-      <h2>📎 Anexar Guia de Transporte ADICIONAL (PDF)</h2>
+      <h2>Anexar Guia de Transporte ADICIONAL (PDF)</h2>
       <p style="font-size:.82rem;color:#475569;margin:0 0 .85rem">
         Carregue o PDF gerado pela ADICIONAL Logistics quando o serviço foi colocado em trânsito.
         O sistema extrai automaticamente os <strong>códigos ADSN</strong> e <strong>GTU</strong> de
@@ -117,12 +122,12 @@
                 ${svc.source === "imported" ? '<span class="badge" style="background:#e0e7ff;color:#3730a3;margin-left:.4rem">Importado</span>' : ''}</div>
             </div>
             <div class="actions no-print">
-              <button class="btn btn-print" onclick="window.print()">🖨 Imprimir Guia</button>
-              ${svc.status === "draft" ? `<button class="btn btn-transit" id="btn-transit">🚛 Pôr em Trânsito</button>` : ""}
-              ${(svc.status === "in_transit" || svc.status === "delivered") ? `<button class="btn btn-attach" id="btn-attach">📎 Anexar Guia ADICIONAL (PDF)</button>` : ""}
-              ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-deliver" id="btn-deliver">✓ Marcar Entregue</button>` : ""}
-              ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-cancel" id="btn-cancel">✗ Cancelar</button>` : ""}
-              <a href="/admin/servicos" class="btn">← Voltar</a>
+              <button class="btn btn-print" onclick="window.print()">Imprimir Guia</button>
+              ${svc.status === "draft" ? `<button class="btn btn-transit" id="btn-transit">Pôr em Trânsito</button>` : ""}
+              ${(svc.status === "in_transit" || svc.status === "delivered") ? `<button class="btn btn-attach" id="btn-attach">Anexar Guia ADICIONAL</button>` : ""}
+              ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-deliver" id="btn-deliver">Marcar Entregue</button>` : ""}
+              ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-cancel" id="btn-cancel">Cancelar</button>` : ""}
+              <a href="/admin/servicos" class="btn">Voltar</a>
             </div>
           </div>
 
@@ -249,7 +254,7 @@
             const stats = data.parsed.stats;
             const agg = data.parsed.aggregator;
             out.innerHTML = `<div class="attach-result attach-warn">
-              <strong>Dry run — extracção bem sucedida</strong> (nada foi gravado)
+              <span class="tag tag-warn">Dry run</span><strong>Extracção bem sucedida</strong> (nada foi gravado)
               <div style="margin-top:.4rem;font-size:.8rem">
                 <strong>Capa do camião (não conta como entrega):</strong><br>
                 ${agg ? `<code>${esc(agg.adse)}</code> · ${fmt(agg.qty||0)} kg · ${esc(agg.matricula||"")} · ${esc(agg.destinatario||"")}` : "(sem capa detectada)"}
@@ -257,10 +262,10 @@
               <div style="margin-top:.5rem;font-size:.8rem">
                 <strong>Páginas:</strong> ${stats.total_pages} (capa: ${stats.aggregator_pages}, ADICIONAL: ${stats.adicional_pages}, AQI: ${stats.aqi_pages})<br>
                 <strong>Únicos após dedup das 3 cópias:</strong> ${stats.unique_adsn} ADSN · ${stats.unique_gtu} GTU · ${stats.with_nuit} com NUIT
-                ${stats.incomplete_copies > 0 ? `<br><span style="color:#dc2626">⚠ ${stats.incomplete_copies} entrega(s) com cópias incompletas (Original/Duplicado/Triplicado)</span>` : ""}
+                ${stats.incomplete_copies > 0 ? `<br><span class="tag tag-err">Aviso</span>${stats.incomplete_copies} entrega(s) com cópias incompletas (Original/Duplicado/Triplicado)` : ""}
               </div>
               <div class="attach-list">${data.parsed.deliveries.slice(0, 30).map((d) =>
-                `<div>• <code>${esc(d.adsn)}</code> / <code>${esc(d.gtu||"—")}</code> / NUIT <code>${esc(d.nuit||"—")}</code> · ${esc(d.destinatario||"?")} · ${fmt(d.qty||0)} kg · ${esc(d.estado||"")}` +
+                `<div><code>${esc(d.adsn)}</code> / <code>${esc(d.gtu||"—")}</code> / NUIT <code>${esc(d.nuit||"—")}</code> · ${esc(d.destinatario||"?")} · ${fmt(d.qty||0)} kg · ${esc(d.estado||"")}` +
                 ` <small style="color:#94a3b8">[ADIC ${d.copies_adicional.length}/3 · AQI ${d.copies_aqi.length}/3]</small></div>`
               ).join("")}</div>
             </div>`;
@@ -272,25 +277,25 @@
           const unmatched = data.unmatched.length;
           const skipped = data.skipped_status.length;
           let html = `<div class="attach-result attach-ok">
-            <strong>✓ ${matched} item(ns) actualizado(s)</strong> com códigos ADSN+GTU
+            <span class="tag tag-ok">OK</span><strong>${matched} item(ns) actualizado(s)</strong> com códigos ADSN+GTU
             ${data.aggregator ? `<br><small>Capa do camião (info): <code>${esc(data.aggregator.adse)}</code> · ${fmt(data.aggregator.qty || 0)} kg · ${esc(data.aggregator.matricula || "")}</small>` : ""}
           </div>`;
           if (skipped > 0) {
-            html += `<div class="attach-result attach-warn"><strong>⊘ ${skipped} ignorado(s)</strong> por estado DESCARTADO/CANCELADO no sistema externo:
-              <div class="attach-list">${data.skipped_status.map((s) => `<div>• <code>${esc(s.adsn)}</code> · ${esc(s.name||"?")} · ${esc(s.estado)}</div>`).join("")}</div>
+            html += `<div class="attach-result attach-warn"><span class="tag tag-warn">Saltado</span><strong>${skipped} ignorado(s)</strong> por estado DESCARTADO/CANCELADO no sistema externo:
+              <div class="attach-list">${data.skipped_status.map((s) => `<div><code>${esc(s.adsn)}</code> · ${esc(s.name||"?")} · ${esc(s.estado)}</div>`).join("")}</div>
             </div>`;
           }
           if (unmatched > 0) {
-            html += `<div class="attach-result attach-err"><strong>⚠ ${unmatched} sem match</strong> — verifique manualmente:
+            html += `<div class="attach-result attach-err"><span class="tag tag-err">Sem match</span><strong>${unmatched} sem correspondência</strong> — verifique manualmente:
               <div class="attach-list">${data.unmatched.map((u) =>
-                `<div>• <code>${esc(u.adsn)}</code> · ${esc(u.destinatario||"?")} (NUIT ${esc(u.nuit||"—")}) · ${esc(u.sku||"")} · ${fmt(u.qty||0)}kg → <em>${esc(u.reason)}</em></div>`
+                `<div><code>${esc(u.adsn)}</code> · ${esc(u.destinatario||"?")} (NUIT ${esc(u.nuit||"—")}) · ${esc(u.sku||"")} · ${fmt(u.qty||0)}kg → <em>${esc(u.reason)}</em></div>`
               ).join("")}</div>
             </div>`;
           }
           if (data.plate_mismatch) {
-            html += `<div class="attach-result attach-warn">⚠ A matrícula no PDF não bate exactamente com a do serviço — confirme se carregou o PDF correcto.</div>`;
+            html += `<div class="attach-result attach-warn"><span class="tag tag-warn">Atenção</span>A matrícula no PDF não bate exactamente com a do serviço — confirme se carregou o PDF correcto.</div>`;
           }
-          html += `<div style="margin-top:.85rem;text-align:right"><button class="btn" onclick="location.reload()">↻ Recarregar página</button></div>`;
+          html += `<div style="margin-top:.85rem;text-align:right"><button class="btn" onclick="location.reload()">Recarregar página</button></div>`;
           out.innerHTML = html;
         } catch (e) {
           out.innerHTML = `<div class="attach-result attach-err">Erro: ${esc(e.message)}</div>`;
