@@ -22,9 +22,16 @@
     .empty-state{padding:3rem;text-align:center;color:#94a3b8}
     .empty-state .ico{font-size:3rem;margin-bottom:.5rem}
 
-    .plate-search{margin-top:1rem;background:#f8fafc;padding:1rem;border-radius:8px}
-    .plate-search input{width:300px;padding:.55rem .7rem;border:1px solid #cbd5e1;border-radius:6px;font-family:ui-monospace,monospace;font-size:.95rem}
-    .plate-search button{margin-left:.5rem}
+    .plate-search{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+    .plate-search input{flex:0 1 320px;min-width:200px;padding:.55rem .7rem;border:1px solid #cbd5e1;
+      border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.95rem;
+      letter-spacing:.04em;text-transform:uppercase}
+    .plate-search input:focus{outline:none;border-color:#0f4c75;box-shadow:0 0 0 3px rgba(15,76,117,.12)}
+    .plate-hint{color:#64748b;font-size:.78rem}
+    #plate-results{margin-top:1rem}
+    #plate-results:empty{margin:0}
+    .section-title-row{display:flex;justify-content:space-between;align-items:center}
+    .section-counter{font-weight:400;color:#64748b;font-size:.75rem}
 
     .badge{display:inline-block;padding:.18rem .55rem;border-radius:4px;font-size:.7rem;font-weight:700}
     .badge-draft{background:#f1f5f9;color:#475569}
@@ -42,21 +49,21 @@
     </header>
 
     <section class="admin-section">
-      <h2 style="display:flex;justify-content:space-between;align-items:center">
-        <span>Em Trânsito Agora</span>
-        <span style="font-weight:400;color:#64748b;font-size:.75rem" id="transit-count">A carregar…</span>
-      </h2>
-      <div id="transit-grid" class="truck-grid"></div>
-    </section>
-
-    <section class="admin-section">
       <h2>Pesquisa por Matrícula</h2>
       <div class="plate-search">
         <input id="plate-input" type="text" placeholder="AAB 450 MP" autocomplete="off">
-        <button class="btn" id="btn-search">Pesquisar</button>
-        <span style="color:#64748b;font-size:.78rem;margin-left:.6rem">Procura em todos os serviços (qualquer estado)</span>
+        <button class="btn btn-primary" id="btn-search">Pesquisar</button>
+        <span class="plate-hint">Procura em todos os serviços (qualquer estado)</span>
       </div>
-      <div id="plate-results" style="margin-top:1rem"></div>
+      <div id="plate-results"></div>
+    </section>
+
+    <section class="admin-section">
+      <h2 class="section-title-row">
+        <span>Em Trânsito Agora</span>
+        <span class="section-counter" id="transit-count">A carregar…</span>
+      </h2>
+      <div id="transit-grid" class="truck-grid"></div>
     </section>
   </main>
 
@@ -79,7 +86,7 @@
           <div style="font-size:.75rem;color:#64748b">Motorista: ${esc(t.driver_name || "—")}</div>
           <div class="truck-actions">
             <a href="/admin/servicos/${t.id}" class="btn">Detalhe</a>
-            <button class="btn" data-deliver="${t.id}" data-num="${esc(t.service_number)}">Marcar Entregue</button>
+            <button class="btn btn-success" data-deliver="${t.id}" data-num="${esc(t.service_number)}">Marcar Entregue</button>
           </div>
         </div>`;
       }

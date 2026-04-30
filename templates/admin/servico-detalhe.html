@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/static/admin.css">
   <style>
     .svc-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;margin-bottom:1rem}
-    .svc-hdr h1{margin:0;font-size:1.6rem}
+    .svc-num{margin:0;font-size:1.5rem;font-weight:800;color:#0f172a;letter-spacing:-.01em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
     .svc-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin-bottom:1rem}
     .meta-cell{background:#f8fafc;border-radius:8px;padding:.6rem .85rem}
     .meta-lbl{font-size:.65rem;text-transform:uppercase;color:#64748b;font-weight:700;letter-spacing:.04em}
@@ -117,7 +117,7 @@
         <section class="admin-section">
           <div class="svc-hdr">
             <div>
-              <h1>${esc(svc.service_number)}</h1>
+              <div class="svc-num">${esc(svc.service_number)}</div>
               <div style="margin-top:.4rem"><span class="badge badge-${esc(svc.status)}">${STATUS[svc.status] || svc.status}</span>
                 ${svc.source === "imported" ? '<span class="badge" style="background:#e0e7ff;color:#3730a3;margin-left:.4rem">Importado</span>' : ''}</div>
             </div>
