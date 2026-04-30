@@ -70,7 +70,48 @@ const Beneficiaries = {
     );
   },
   async byId(extId) {
-    return queryOne("SELECT * FROM beneficiaries WHERE extensionist_id = ?", [extId]);
+    return queryOne(
+      `SELECT *, CASE WHEN extensionist_id LIKE 'EXT-%' THEN 1 ELSE 0 END AS is_extra
+       FROM beneficiaries WHERE extensionist_id = ?`,
+      [extId]
+    );
+  },
+
+  // Perfil completo: dados + saldos por SKU + histórico de service items
+  async profile(extId) {
+    const benef = await queryOne(
+      `SELECT *, CASE WHEN extensionist_id LIKE 'EXT-%' THEN 1 ELSE 0 END AS is_extra
+       FROM beneficiaries WHERE extensionist_id = ?`,
+      [extId]
+    );
+    if (!benef) return null;
+    const balances = await query(
+      `SELECT sku, product_name, unit, planned_original, realocado_recebido,
+              planned_qty, committed_qty, delivered_qty,
+              GREATEST(0, planned_qty - committed_qty) AS available_qty
+       FROM delivery_balances
+       WHERE extensionist_id = ?
+       ORDER BY product_name`,
+      [extId]
+    );
+    const history = await query(
+      `SELECT i.id, i.sku, i.product_name, i.unit, i.qty,
+              i.external_adsn, i.external_gtu,
+              s.id AS service_id, s.service_number, s.status, s.truck_plate,
+              s.driver_name, s.origem_supplier, s.created_at, s.dispatched_at,
+              s.delivered_at, s.cancelled_at, s.province, s.district
+       FROM delivery_service_items i
+       JOIN delivery_services s ON s.id = i.service_id
+       WHERE i.extensionist_id = ?
+       ORDER BY s.created_at DESC, s.id DESC`,
+      [extId]
+    );
+    // Aggregations
+    const totalsByStatus = { draft: 0, in_transit: 0, delivered: 0, cancelled: 0 };
+    history.forEach((h) => {
+      if (totalsByStatus[h.status] != null) totalsByStatus[h.status] += Number(h.qty) || 0;
+    });
+    return { beneficiary: benef, balances, history, totals_by_status: totalsByStatus };
   },
   async geography() {
     const rows = await query(

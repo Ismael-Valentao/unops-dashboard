@@ -1232,6 +1232,12 @@ router.get("/api/distribution/beneficiaries", ah(async (req, res) => {
   res.json({ rows });
 }));
 
+router.get("/api/distribution/beneficiaries/:id", ah(async (req, res) => {
+  const profile = await Beneficiaries.profile(req.params.id);
+  if (!profile) return jsonError(res, 404, "Beneficiário não encontrado");
+  res.json(profile);
+}));
+
 router.get("/api/distribution/balances", ah(async (req, res) => {
   const { province, district, sku, only_available } = req.query;
   const rows = await Balances.list({

@@ -5,23 +5,227 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AQI — Beneficiário</title>
   <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    .ben-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;margin-bottom:1rem}
+    .ben-name{font-size:1.5rem;font-weight:800;color:#0f172a;letter-spacing:-.01em;margin:0}
+    .ben-tags{margin-top:.4rem;display:flex;gap:.4rem;flex-wrap:wrap}
+    .ben-tag{display:inline-block;font-size:.65rem;font-weight:700;padding:.15rem .55rem;border-radius:99px;
+      text-transform:uppercase;letter-spacing:.04em}
+    .ben-tag-extra{background:#ede9fe;color:#6d28d9}
+    .ben-tag-plan{background:#dcfce7;color:#166534}
+
+    .ben-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin-bottom:1rem}
+    .meta-cell{background:#f8fafc;border-radius:8px;padding:.6rem .85rem}
+    .meta-lbl{font-size:.65rem;text-transform:uppercase;color:#64748b;font-weight:700;letter-spacing:.04em}
+    .meta-val{font-size:.92rem;font-weight:700;color:#1e293b;margin-top:.15rem}
+    .meta-val code{font-size:.85em;color:#475569;font-family:ui-monospace,SFMono-Regular,monospace}
+
+    .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:.65rem;margin-bottom:1rem}
+    .b-stat{background:#f8fafc;border-radius:8px;padding:.65rem .85rem;border-left:3px solid #0f4c75}
+    .b-stat-lbl{font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:700}
+    .b-stat-val{font-size:1.3rem;font-weight:800;color:#0f172a;margin-top:.15rem;font-variant-numeric:tabular-nums}
+    .b-stat-amber{border-left-color:#d97706}.b-stat-amber .b-stat-val{color:#b45309}
+    .b-stat-green{border-left-color:#16a34a}.b-stat-green .b-stat-val{color:#15803d}
+    .b-stat-red{border-left-color:#dc2626}.b-stat-red .b-stat-val{color:#b91c1c}
+
+    .badge{display:inline-block;padding:.18rem .55rem;border-radius:4px;font-size:.7rem;font-weight:700}
+    .badge-draft{background:#f1f5f9;color:#475569}
+    .badge-in_transit{background:#fef3c7;color:#92400e}
+    .badge-delivered{background:#dcfce7;color:#166534}
+    .badge-cancelled{background:#fee2e2;color:#991b1b}
+
+    .pill{display:inline-block;padding:.1rem .45rem;border-radius:99px;font-size:.65rem;font-weight:700;
+      background:#f1f5f9;color:#475569}
+    .pill-warn{background:#fef3c7;color:#92400e}
+  </style>
 </head>
 <body class="admin-body">
   <div id="layout"></div>
   <main class="admin-main">
     <header class="admin-header">
-      <h1>Beneficiário</h1>
-      <span class="admin-sub" id="ben-id">…</span>
+      <h1 id="page-title">Beneficiário</h1>
+      <span class="admin-sub" id="page-sub">…</span>
     </header>
-    <section class="admin-section">
-      <p style="color:#64748b;font-size:.9rem">Página de detalhe em construção (Fase 2).</p>
-      <p style="color:#94a3b8;font-size:.82rem;margin-top:.5rem">Vai mostrar perfil, saldo por produto e histórico de entregas.</p>
-      <p style="margin-top:1rem"><a href="/admin/beneficiarios" class="btn">Voltar à lista</a></p>
-    </section>
+    <div id="content">
+      <div class="empty">A carregar perfil…</div>
+    </div>
   </main>
+
   <script src="/static/admin.js"></script>
   <script>
-    document.getElementById("ben-id").textContent = decodeURIComponent(location.pathname.split("/").pop());
+    (function () {
+      const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable } = window.AdminUI;
+      const STATUS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
+      const $ = (s) => document.querySelector(s);
+      const id = decodeURIComponent(location.pathname.split("/").pop());
+
+      const BAL_COLS = [
+        { key: "product_name",       label: "Produto",           sortable: true,  type: "string" },
+        { key: "planned_original",   label: "Plano Original",    sortable: true,  type: "number", numCol: true },
+        { key: "realocado_recebido", label: "Realoc. Recebido",  sortable: true,  type: "number", numCol: true },
+        { key: "planned_qty",        label: "Plano Ajustado",    sortable: true,  type: "number", numCol: true },
+        { key: "committed_qty",      label: "Entregue",          sortable: true,  type: "number", numCol: true },
+        { key: "available_qty",      label: "Falta",             sortable: true,  type: "number", numCol: true },
+      ];
+      const HIST_COLS = [
+        { key: "service_number",  label: "Nº Serviço",  sortable: true,  type: "string" },
+        { key: "status",          label: "Estado",      sortable: true,  type: "string" },
+        { key: "product_name",    label: "Produto",     sortable: true,  type: "string" },
+        { key: "qty",             label: "Qtd",         sortable: true,  type: "number", numCol: true },
+        { key: "truck_plate",     label: "Matrícula",   sortable: true,  type: "string" },
+        { key: "origem_supplier", label: "Origem",      sortable: true,  type: "string" },
+        { key: "created_at",      label: "Criado",      sortable: true,  type: "date" },
+        { key: "delivered_at",    label: "Entregue",    sortable: true,  type: "date" },
+        { key: "external_adsn",   label: "ADSN",        sortable: true,  type: "string" },
+        { key: "external_gtu",    label: "GTU",         sortable: true,  type: "string" },
+        { key: null,              label: "",            sortable: false },
+      ];
+      const balSort  = { sortKey: "available_qty", sortAsc: false, render: () => renderBalances() };
+      const histSort = { sortKey: "created_at",    sortAsc: false, render: () => renderHistory() };
+
+      let profile = null;
+
+      function renderProfile() {
+        const b = profile.beneficiary;
+        const tag = b.is_extra
+          ? '<span class="ben-tag ben-tag-extra">Extra (auto-criado)</span>'
+          : '<span class="ben-tag ben-tag-plan">No plano oficial</span>';
+        const t = profile.totals_by_status;
+        const totalPlanado = profile.balances.reduce((s, b) => s + Number(b.planned_qty), 0);
+        const totalCommitted = profile.balances.reduce((s, b) => s + Number(b.committed_qty), 0);
+        const totalFalta = profile.balances.reduce((s, b) => s + Number(b.available_qty), 0);
+
+        document.getElementById("page-title").textContent = b.name || id;
+        document.getElementById("page-sub").innerHTML = `<code>${esc(b.extensionist_id)}</code>${b.nuit ? ` &middot; NUIT <code>${esc(b.nuit)}</code>` : ""}`;
+
+        $("#content").innerHTML = `
+          <section class="admin-section">
+            <div class="ben-hdr">
+              <div>
+                <h2 class="ben-name">${esc(b.name)}</h2>
+                <div class="ben-tags">${tag}</div>
+              </div>
+              <a href="/admin/beneficiarios" class="btn">Voltar à lista</a>
+            </div>
+
+            <div class="ben-meta">
+              <div class="meta-cell"><div class="meta-lbl">Extensionist ID</div><div class="meta-val"><code>${esc(b.extensionist_id)}</code></div></div>
+              <div class="meta-cell"><div class="meta-lbl">NUIT</div><div class="meta-val"><code>${esc(b.nuit || "—")}</code></div></div>
+              <div class="meta-cell"><div class="meta-lbl">Província</div><div class="meta-val">${esc(b.province || "—")}</div></div>
+              <div class="meta-cell"><div class="meta-lbl">Distrito</div><div class="meta-val">${esc(b.district || "—")}</div></div>
+              <div class="meta-cell"><div class="meta-lbl">Posto Administrativo</div><div class="meta-val">${esc(b.posto || "—")}</div></div>
+              <div class="meta-cell"><div class="meta-lbl">Contacto</div><div class="meta-val">${esc(b.contact || "—")}</div></div>
+              <div class="meta-cell"><div class="meta-lbl">Supervisor</div><div class="meta-val">${esc(b.supervisor_name || "—")}</div></div>
+              <div class="meta-cell"><div class="meta-lbl">Tel. Supervisor</div><div class="meta-val">${esc(b.supervisor_phone || "—")}</div></div>
+            </div>
+
+            <div class="stat-row">
+              <div class="b-stat"><div class="b-stat-lbl">Plano Total</div><div class="b-stat-val">${fmt(totalPlanado)}</div></div>
+              <div class="b-stat b-stat-green"><div class="b-stat-lbl">Recebido</div><div class="b-stat-val">${fmt(totalCommitted)}</div></div>
+              <div class="b-stat b-stat-red"><div class="b-stat-lbl">Falta</div><div class="b-stat-val">${fmt(totalFalta)}</div></div>
+              <div class="b-stat b-stat-amber"><div class="b-stat-lbl">Em Trânsito</div><div class="b-stat-val">${fmt(t.in_transit || 0)}</div></div>
+            </div>
+          </section>
+
+          <section class="admin-section">
+            <h2>Saldo por produto</h2>
+            <div class="tbl-wrap">
+              <table class="adm-table" id="bal-table">
+                <thead><tr id="bal-thead"></tr></thead>
+                <tbody id="bal-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="admin-section">
+            <h2>Histórico de Entregas (${profile.history.length})</h2>
+            <div class="tbl-wrap">
+              <table class="adm-table" id="hist-table">
+                <thead><tr id="hist-thead"></tr></thead>
+                <tbody id="hist-body"></tbody>
+              </table>
+            </div>
+          </section>
+        `;
+      }
+
+      function renderBalances() {
+        const headerHtml = BAL_COLS.map((c) => {
+          const cls = c.numCol ? "num" : "";
+          if (!c.sortable) return `<th class="${cls}">${esc(c.label)}</th>`;
+          return `<th class="${cls}" data-sort="${c.key}" data-sort-type="${c.type}">${esc(c.label)}${sortArrow(c.key, balSort.sortKey, balSort.sortAsc)}</th>`;
+        }).join("");
+        $("#bal-thead").innerHTML = headerHtml;
+        const col = BAL_COLS.find((c) => c.key === balSort.sortKey);
+        const sorted = sortRows(profile.balances, balSort.sortKey, balSort.sortAsc, col?.type);
+        if (!sorted.length) {
+          $("#bal-body").innerHTML = `<tr><td colspan="${BAL_COLS.length}" class="empty">Sem produtos no plano para este beneficiário.</td></tr>`;
+          bindSortable($("#bal-table"), balSort);
+          return;
+        }
+        $("#bal-body").innerHTML = sorted.map((b) => {
+          const planned = Number(b.planned_qty) || 0;
+          const committed = Number(b.committed_qty) || 0;
+          const available = Number(b.available_qty) || 0;
+          const realoc = Number(b.realocado_recebido) || 0;
+          const realocCell = realoc > 0
+            ? `<span style="color:#7c3aed;font-weight:700">${fmt(realoc)} ${esc(b.unit)}</span>`
+            : '<span style="color:#cbd5e1">—</span>';
+          return `<tr>
+            <td><strong>${esc(b.product_name)}</strong> <span style="color:#94a3b8;font-size:.75rem">(${esc(b.unit)})</span></td>
+            <td class="num" style="color:#64748b">${fmt(b.planned_original)}</td>
+            <td class="num">${realocCell}</td>
+            <td class="num" style="font-weight:700">${fmt(planned)}</td>
+            <td class="num" style="color:#16a34a">${fmt(committed)}</td>
+            <td class="num" style="color:#dc2626;font-weight:700">${fmt(available)}</td>
+          </tr>`;
+        }).join("");
+        bindSortable($("#bal-table"), balSort);
+      }
+
+      function renderHistory() {
+        const headerHtml = HIST_COLS.map((c) => {
+          const cls = c.numCol ? "num" : "";
+          if (!c.sortable) return `<th class="${cls}">${esc(c.label)}</th>`;
+          return `<th class="${cls}" data-sort="${c.key}" data-sort-type="${c.type}">${esc(c.label)}${sortArrow(c.key, histSort.sortKey, histSort.sortAsc)}</th>`;
+        }).join("");
+        $("#hist-thead").innerHTML = headerHtml;
+        const col = HIST_COLS.find((c) => c.key === histSort.sortKey);
+        const sorted = sortRows(profile.history, histSort.sortKey, histSort.sortAsc, col?.type);
+        if (!sorted.length) {
+          $("#hist-body").innerHTML = `<tr><td colspan="${HIST_COLS.length}" class="empty">Sem entregas registadas para este beneficiário.</td></tr>`;
+          bindSortable($("#hist-table"), histSort);
+          return;
+        }
+        $("#hist-body").innerHTML = sorted.map((h) => `<tr>
+          <td><a href="/admin/servicos/${h.service_id}" style="color:#0f4c75;font-weight:600">${esc(h.service_number)}</a></td>
+          <td><span class="badge badge-${esc(h.status)}">${STATUS[h.status] || h.status}</span></td>
+          <td>${esc(h.product_name)}</td>
+          <td class="num">${fmt(h.qty)} ${esc(h.unit)}</td>
+          <td><code style="font-size:.72rem">${esc(h.truck_plate || "—")}</code></td>
+          <td>${esc(h.origem_supplier || "—")}</td>
+          <td>${fmtDate(h.created_at)}</td>
+          <td>${h.delivered_at ? fmtDate(h.delivered_at) : "—"}</td>
+          <td><code style="font-size:.7rem">${esc(h.external_adsn || "—")}</code></td>
+          <td><code style="font-size:.7rem">${esc(h.external_gtu || "—")}</code></td>
+          <td><a href="/admin/servicos/${h.service_id}" class="btn btn-sm">Ver</a></td>
+        </tr>`).join("");
+        bindSortable($("#hist-table"), histSort);
+      }
+
+      async function load() {
+        try {
+          profile = await fetchJSON("/admin/api/distribution/beneficiaries/" + encodeURIComponent(id));
+          renderProfile();
+          renderBalances();
+          renderHistory();
+        } catch (e) {
+          $("#content").innerHTML = `<div class="empty" style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", load);
+    })();
     AdminUI.renderLayout("beneficiarios");
   </script>
 </body>
