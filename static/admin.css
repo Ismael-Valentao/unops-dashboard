@@ -117,6 +117,36 @@ a{color:inherit;text-decoration:none}
 .adm-table tbody tr:nth-child(even):hover{background:#f0f9ff}
 .empty{text-align:center;color:#94a3b8;padding:1.5rem;font-style:italic}
 
+/* ── Global search overlay (Cmd+K) ──────────────────────────── */
+#gsearch-modal{position:fixed;inset:0;display:none;z-index:9999;align-items:flex-start;justify-content:center;padding-top:8vh}
+#gsearch-modal.show{display:flex}
+#gsearch-modal .gs-overlay{position:absolute;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(2px)}
+#gsearch-modal .gs-box{position:relative;background:#fff;border-radius:14px;width:100%;max-width:680px;
+  box-shadow:0 20px 60px rgba(15,23,42,.25);overflow:hidden;display:flex;flex-direction:column;max-height:80vh}
+#gsearch-modal .gs-input-wrap{display:flex;align-items:center;gap:.6rem;padding:1rem 1.25rem;border-bottom:1px solid #e2e8f0}
+#gsearch-modal .gs-input-wrap input{flex:1;border:0;outline:0;font-size:1rem;font-family:inherit;color:#1e293b;background:transparent}
+#gsearch-modal .gs-esc{background:#f1f5f9;color:#475569;font-size:.65rem;font-weight:700;padding:.2rem .5rem;border-radius:4px;
+  font-family:ui-monospace,SFMono-Regular,monospace;border:1px solid #e2e8f0}
+#gsearch-modal .gs-results{overflow-y:auto;padding:.5rem 0}
+#gsearch-modal .gs-section-title{font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;
+  font-weight:700;padding:.6rem 1.25rem .25rem;background:#fafbfc}
+#gsearch-modal .gs-item{display:flex;align-items:flex-start;gap:.75rem;padding:.65rem 1.25rem;text-decoration:none;color:#1e293b;
+  border-left:3px solid transparent}
+#gsearch-modal .gs-item:hover{background:#f0f9ff;border-left-color:#0f4c75}
+#gsearch-modal .gs-item-icon{display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;border-radius:6px;background:#f1f5f9;color:#0f4c75;flex-shrink:0;margin-top:1px}
+#gsearch-modal .gs-item:hover .gs-item-icon{background:#dbeafe}
+#gsearch-modal .gs-item-body{flex:1;min-width:0}
+#gsearch-modal .gs-item-meta{font-size:.72rem;color:#64748b;margin-top:.15rem}
+#gsearch-modal .gs-item-meta code{font-size:.85em;background:#f1f5f9;padding:1px 4px;border-radius:3px}
+#gsearch-modal .gs-tag{display:inline-block;font-size:.6rem;font-weight:700;padding:.05rem .35rem;border-radius:3px;
+  background:#ede9fe;color:#6d28d9;margin-left:.4rem;text-transform:uppercase;letter-spacing:.04em;vertical-align:1px}
+#gsearch-modal .gs-tag-draft{background:#f1f5f9;color:#475569}
+#gsearch-modal .gs-tag-in_transit{background:#fef3c7;color:#92400e}
+#gsearch-modal .gs-tag-delivered{background:#dcfce7;color:#166534}
+#gsearch-modal .gs-tag-cancelled{background:#fee2e2;color:#991b1b}
+#gsearch-modal .gs-hint{padding:1.5rem 1.25rem;color:#94a3b8;font-size:.85rem;text-align:center}
+
 /* Sortable table headers — used by AdminUI.sortRows / bindSortable */
 th.sortable{cursor:pointer;user-select:none;transition:background .12s}
 th.sortable:hover{background:#e2e8f0!important}

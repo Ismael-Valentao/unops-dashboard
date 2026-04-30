@@ -200,9 +200,128 @@ window.AdminUI = (function () {
     });
   }
 
+  // ── Global search (Cmd+K / Ctrl+K) ──────────────────────────
+  // Mounts a floating overlay that searches services, beneficiaries
+  // and plates simultaneously. Triggered by ⌘K / Ctrl+K from any page.
+  function mountGlobalSearch() {
+    if (document.getElementById("gsearch-modal")) return; // already mounted
+    const STATUS_LABEL = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
+    const wrap = document.createElement("div");
+    wrap.id = "gsearch-modal";
+    wrap.innerHTML = `
+      <div class="gs-overlay"></div>
+      <div class="gs-box">
+        <div class="gs-input-wrap">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#94a3b8">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input id="gs-input" type="text" placeholder="Pesquisar serviços, beneficiários, matrículas… (mínimo 2 caracteres)" autocomplete="off">
+          <kbd class="gs-esc">Esc</kbd>
+        </div>
+        <div id="gs-results" class="gs-results">
+          <div class="gs-hint">
+            Comece a escrever para procurar.
+            <div style="margin-top:.5rem;font-size:.72rem;color:#94a3b8">
+              Ex: nome de beneficiário, NUIT, número de serviço (SRV-…), ADSN, GTU, matrícula.
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+    const input = document.getElementById("gs-input");
+    const results = document.getElementById("gs-results");
+    let lastQuery = "";
+    let timer = null;
+
+    function open() { wrap.classList.add("show"); setTimeout(() => input.focus(), 50); }
+    function close() { wrap.classList.remove("show"); input.value = ""; lastQuery = ""; results.innerHTML = ""; }
+
+    const ICO_USER = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+    const ICO_PKG  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>';
+    const ICO_TRK  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 17h2a2 2 0 0 0 4 0h6a2 2 0 0 0 4 0h2v-5l-3-4h-3V5H1z"/><circle cx="5" cy="17" r="2"/><circle cx="15" cy="17" r="2"/></svg>';
+
+    async function doSearch(q) {
+      if (q.length < 2) {
+        results.innerHTML = '<div class="gs-hint">Mínimo 2 caracteres.</div>';
+        return;
+      }
+      try {
+        const data = await fetchJSON("/admin/api/distribution/search?q=" + encodeURIComponent(q));
+        const sections = [];
+        if (data.beneficiaries?.length) {
+          sections.push(`<div class="gs-section-title">Beneficiários (${data.beneficiaries.length})</div>` +
+            data.beneficiaries.map((b) => `<a class="gs-item" href="/admin/beneficiarios/${encodeURIComponent(b.extensionist_id)}">
+              <span class="gs-item-icon">${ICO_USER}</span>
+              <div class="gs-item-body">
+                <div><strong>${esc(b.name)}</strong>${b.is_extra ? '<span class="gs-tag">Extra</span>' : ''}</div>
+                <div class="gs-item-meta"><code>${esc(b.extensionist_id)}</code> · NUIT <code>${esc(b.nuit || "—")}</code> · ${esc(b.province || "")}/${esc(b.district || "")}</div>
+              </div>
+            </a>`).join(""));
+        }
+        if (data.services?.length) {
+          sections.push(`<div class="gs-section-title">Serviços (${data.services.length})</div>` +
+            data.services.map((s) => `<a class="gs-item" href="/admin/servicos/${s.id}">
+              <span class="gs-item-icon">${ICO_PKG}</span>
+              <div class="gs-item-body">
+                <div><strong>${esc(s.service_number)}</strong> <span class="gs-tag gs-tag-${esc(s.status)}">${STATUS_LABEL[s.status] || s.status}</span></div>
+                <div class="gs-item-meta">${esc(s.province || "")}/${esc(s.district || "")} · <code>${esc(s.truck_plate || "—")}</code> · ${fmt(s.total_kg)} kg</div>
+              </div>
+            </a>`).join(""));
+        }
+        if (data.plates?.length) {
+          sections.push(`<div class="gs-section-title">Matrículas (${data.plates.length})</div>` +
+            data.plates.map((p) => `<a class="gs-item" href="/admin/camioes#plate=${encodeURIComponent(p.truck_plate || '')}" data-plate="${esc(p.truck_plate || '')}">
+              <span class="gs-item-icon">${ICO_TRK}</span>
+              <div class="gs-item-body">
+                <div><strong><code>${esc(p.truck_plate)}</code></strong></div>
+                <div class="gs-item-meta">${fmt(p.n_services)} serviços · último uso ${fmtDate(p.last_used)}</div>
+              </div>
+            </a>`).join(""));
+        }
+        if (!sections.length) {
+          results.innerHTML = `<div class="gs-hint">Nenhum resultado para "${esc(q)}".</div>`;
+        } else {
+          results.innerHTML = sections.join("");
+        }
+      } catch (e) {
+        results.innerHTML = `<div class="gs-hint" style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
+      }
+    }
+
+    input.addEventListener("input", (e) => {
+      const q = e.target.value.trim();
+      if (q === lastQuery) return;
+      lastQuery = q;
+      clearTimeout(timer);
+      timer = setTimeout(() => doSearch(q), 200);
+    });
+    wrap.addEventListener("click", (e) => {
+      if (e.target.classList.contains("gs-overlay")) close();
+    });
+    document.addEventListener("keydown", (e) => {
+      const isTyping = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
+      if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        if (wrap.classList.contains("show")) close();
+        else open();
+      } else if (e.key === "Escape" && wrap.classList.contains("show")) {
+        close();
+      } else if (e.key === "/" && !isTyping && !wrap.classList.contains("show")) {
+        e.preventDefault();
+        open();
+      }
+    });
+  }
+
   return {
     esc, fmt, fmtDate, statusBadge, fetchJSON, renderLayout, loadMe,
     loadProducts, loadWarehouses, productSelectOptions, clearCache,
-    sortRows, sortArrow, bindSortable,
+    sortRows, sortArrow, bindSortable, mountGlobalSearch,
   };
 })();
+
+// Auto-mount the global search on every admin page
+document.addEventListener("DOMContentLoaded", () => {
+  if (window.AdminUI && window.AdminUI.mountGlobalSearch) window.AdminUI.mountGlobalSearch();
+});

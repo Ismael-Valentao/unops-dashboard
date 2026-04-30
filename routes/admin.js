@@ -1238,6 +1238,46 @@ router.get("/api/distribution/beneficiaries/:id", ah(async (req, res) => {
   res.json(profile);
 }));
 
+// Busca global: pesquisa em paralelo benefs (nome/NUIT/ID), serviços
+// (Nº/ADSN/GTU), matrículas. Devolve até 5 hits por categoria.
+router.get("/api/distribution/search", ah(async (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (!q || q.length < 2) return res.json({ beneficiaries: [], services: [], plates: [] });
+  const { query } = require("../db/mysql");
+  const like = "%" + q + "%";
+  const [benefs, services, plates] = await Promise.all([
+    query(
+      `SELECT extensionist_id, nuit, name, province, district,
+              CASE WHEN extensionist_id LIKE 'EXT-%' THEN 1 ELSE 0 END AS is_extra
+       FROM beneficiaries
+       WHERE name LIKE ? OR nuit LIKE ? OR extensionist_id LIKE ?
+       ORDER BY name LIMIT 8`,
+      [like, like, like]
+    ),
+    query(
+      `SELECT s.id, s.service_number, s.status, s.province, s.district,
+              s.truck_plate, s.total_kg, s.created_at
+       FROM delivery_services s
+       WHERE s.service_number LIKE ?
+          OR EXISTS (
+            SELECT 1 FROM delivery_service_items i
+            WHERE i.service_id = s.id AND (i.external_adsn LIKE ? OR i.external_gtu LIKE ?)
+          )
+       ORDER BY s.created_at DESC LIMIT 8`,
+      [like, like, like]
+    ),
+    query(
+      `SELECT DISTINCT truck_plate, COUNT(*) AS n_services, MAX(created_at) AS last_used
+       FROM delivery_services
+       WHERE truck_plate LIKE ? OR truck_plate_2 LIKE ?
+       GROUP BY truck_plate
+       ORDER BY last_used DESC LIMIT 5`,
+      [like, like]
+    ),
+  ]);
+  res.json({ beneficiaries: benefs, services, plates });
+}));
+
 router.get("/api/distribution/balances", ah(async (req, res) => {
   const { province, district, sku, only_available } = req.query;
   const rows = await Balances.list({
