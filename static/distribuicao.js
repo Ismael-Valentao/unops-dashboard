@@ -45,27 +45,74 @@
   }
 
   // ── Summary ────────────────────────────────────────────────
+  // Quando há filtro por SKU, todos os cards passam a mostrar a unidade
+  // desse SKU (kg/L/un). Sem filtro, agrega tudo e mostra kg como "principal"
+  // + L/un como complemento (consistente com o que se vê no /admin/distribuicao
+  // sem filtro).
   async function loadSummary() {
     const province = $("#f-province").value;
     const district = $("#f-district").value;
+    const sku = $("#f-sku").value;
     const params = new URLSearchParams();
     if (province) params.set("province", province);
     if (district) params.set("district", district);
+    if (sku)      params.set("sku", sku);
     const data = await fetchJSON("/admin/api/distribution/summary?" + params);
 
-    $("#s-benef").textContent = fmt(data.beneficiaries);
     const kg = data.kg || {};
     const L  = data.L  || {};
     const un = data.un || {};
-    $("#s-planned").textContent   = fmtKg(kg.planned   || 0);
-    $("#s-planned-other").textContent =
-      [(L.planned   ? fmtL(L.planned) : null), (un.planned   ? fmtUn(un.planned)   : null)].filter(Boolean).join(" • ") || "—";
-    $("#s-delivered").textContent = fmtKg(kg.delivered || 0);
-    const pct = kg.planned > 0 ? ((kg.delivered / kg.planned) * 100).toFixed(1) + "%" : "—";
-    $("#s-delivered-pct").textContent = "Taxa: " + pct;
-    $("#s-available").textContent = fmtKg(kg.available || 0);
-    $("#s-available-other").textContent =
-      [(L.available ? fmtL(L.available) : null), (un.available ? fmtUn(un.available) : null)].filter(Boolean).join(" • ") || "—";
+
+    // Beneficiários com saldo > 0 / total
+    const totalBenef = data.beneficiaries_total || 0;
+    const withSaldo  = data.beneficiaries || 0;
+    if (totalBenef && withSaldo !== totalBenef) {
+      $("#s-benef").textContent = fmt(withSaldo);
+      $("#s-benef-sub").textContent = "de " + fmt(totalBenef) + " no plano";
+    } else {
+      $("#s-benef").textContent = fmt(withSaldo);
+      $("#s-benef-sub").textContent = "com saldo > 0";
+    }
+
+    // Quando filtrado por SKU, a unidade vem implícita pelo SKU.
+    // Determina a unidade dominante (a com 'rows > 0').
+    const units = [
+      ["kg", kg], ["L", L], ["un", un],
+    ].filter(([, v]) => v.rows > 0);
+
+    if (sku) {
+      // Filtro por SKU → usa só a unidade dessa categoria.
+      const [unit, v] = units[0] || ["kg", { planned: 0, committed: 0, available: 0 }];
+      const fmtU = unit === "L" ? fmtL : unit === "un" ? fmtUn : fmtKg;
+      $("#s-planned-label").textContent = "Plano (" + unit + ")";
+      $("#s-delivered-label").textContent = "Entregue (" + unit + ")";
+      $("#s-available-label").textContent = "Falta (" + unit + ")";
+      $("#s-planned").textContent   = fmtU(v.planned   || 0);
+      $("#s-delivered").textContent = fmtU(v.committed || 0);
+      $("#s-available").textContent = fmtU(v.available || 0);
+      const pct = v.planned > 0 ? ((v.committed / v.planned) * 100).toFixed(1) + "%" : "—";
+      $("#s-delivered-pct").textContent = "Taxa: " + pct;
+      // Sub-rows (planeamento original, realocado) em vez do "outros un"
+      const realocText = v.realocado_recebido > 0 ? "Realoc. recebido: " + fmtU(v.realocado_recebido) : "";
+      $("#s-planned-other").textContent = v.planned_original
+        ? "Original: " + fmtU(v.planned_original) + (realocText ? "  •  " + realocText : "")
+        : "—";
+      $("#s-available-other").textContent = "—";
+    } else {
+      // Sem filtro SKU — modo agregado (kg principal, L/un secundários).
+      $("#s-planned-label").textContent = "Plano (kg)";
+      $("#s-delivered-label").textContent = "Entregue (kg)";
+      $("#s-available-label").textContent = "Falta (kg)";
+      $("#s-planned").textContent   = fmtKg(kg.planned   || 0);
+      $("#s-delivered").textContent = fmtKg(kg.committed || 0);
+      $("#s-available").textContent = fmtKg(kg.available || 0);
+      const pct = kg.planned > 0 ? ((kg.committed / kg.planned) * 100).toFixed(1) + "%" : "—";
+      $("#s-delivered-pct").textContent = "Taxa: " + pct;
+      $("#s-planned-other").textContent =
+        [(L.planned   ? fmtL(L.planned) : null), (un.planned   ? fmtUn(un.planned)   : null)].filter(Boolean).join("  •  ") || "—";
+      $("#s-available-other").textContent =
+        [(L.available ? fmtL(L.available) : null), (un.available ? fmtUn(un.available) : null)].filter(Boolean).join("  •  ") || "—";
+    }
   }
 
   // ── Balance table ──────────────────────────────────────────
@@ -91,14 +138,16 @@
   }
 
   function populateSkuOptions(rows) {
+    // Agrupa por nome amigável (Feijão, Milho, Arroz, Sacos Hermeticos, etc.)
+    // — esconde o código SKU técnico do operador.
     const set = new Map();
     rows.forEach((r) => {
       if (!set.has(r.sku)) set.set(r.sku, r.product_name || r.sku);
     });
     const cur = $("#f-sku").value;
-    const opts = ['<option value="">Todos</option>']
+    const opts = ['<option value="">Todos os produtos</option>']
       .concat([...set.entries()].sort((a, b) => a[1].localeCompare(b[1], "pt"))
-        .map(([sku, name]) => `<option value="${esc(sku)}"${sku === cur ? " selected" : ""}>${esc(name)} (${esc(sku)})</option>`))
+        .map(([sku, name]) => `<option value="${esc(sku)}"${sku === cur ? " selected" : ""}>${esc(name)}</option>`))
       .join("");
     $("#f-sku").innerHTML = opts;
   }
@@ -355,10 +404,10 @@
       truckCapacity = Number(b.dataset.cap);
       updateCapBar();
     }));
-    // Filter changes
+    // Filter changes — SKU change actualiza tanto a tabela como os cards
     $("#f-province").addEventListener("change", () => { loadDistrictOptions(); refresh(); });
     $("#f-district").addEventListener("change", refresh);
-    $("#f-sku").addEventListener("change", loadBalances);
+    $("#f-sku").addEventListener("change", refresh);
     $("#btn-refresh").addEventListener("click", refresh);
 
     // Truck panel actions

@@ -1235,8 +1235,8 @@ router.get("/api/distribution/balances", ah(async (req, res) => {
 }));
 
 router.get("/api/distribution/summary", ah(async (req, res) => {
-  const { province, district } = req.query;
-  res.json(await Balances.summary({ province, district }));
+  const { province, district, sku } = req.query;
+  res.json(await Balances.summary({ province, district, sku }));
 }));
 
 // Cria um serviço de entrega.

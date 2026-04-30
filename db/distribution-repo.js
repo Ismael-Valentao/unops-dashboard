@@ -78,39 +78,51 @@ const Balances = {
     );
   },
 
-  // Resumo agregado para uma seleção: total kg/L/un por unidade.
+  // Resumo agregado para uma seleção: total kg/L/un por unidade. Aceita
+  // filtros province/district/sku — se filtrado por SKU, devolve só dados
+  // da unidade desse SKU.
   async summary(opts = {}) {
-    const where = [];
+    const where = ["planned_qty > 0"];
     const params = [];
     if (opts.province) { where.push("province = ?"); params.push(opts.province); }
     if (opts.district) { where.push("district = ?"); params.push(opts.district); }
-    const w = where.length ? "WHERE " + where.join(" AND ") : "";
-    const rows = await query(
+    if (opts.sku)      { where.push("sku = ?");      params.push(opts.sku); }
+    const w = "WHERE " + where.join(" AND ");
+    const aggRows = await query(
       `SELECT unit,
+              SUM(planned_original)         AS planned_original,
+              SUM(realocado_recebido)       AS realocado_recebido,
               SUM(planned_qty)              AS planned,
               SUM(committed_qty)            AS committed,
               SUM(delivered_qty)            AS delivered,
-              SUM(planned_qty - committed_qty) AS available,
-              COUNT(*)                      AS rows
+              SUM(GREATEST(0, planned_qty - committed_qty)) AS available,
+              COUNT(*)                      AS n_rows
        FROM delivery_balances ${w} GROUP BY unit`,
       params
     );
     const out = { kg: {}, L: {}, un: {} };
-    rows.forEach((r) => {
+    aggRows.forEach((r) => {
       out[r.unit] = {
+        planned_original: Number(r.planned_original) || 0,
+        realocado_recebido: Number(r.realocado_recebido) || 0,
         planned: Number(r.planned) || 0,
         committed: Number(r.committed) || 0,
         delivered: Number(r.delivered) || 0,
         available: Number(r.available) || 0,
-        rows: Number(r.rows) || 0,
+        rows: Number(r.n_rows) || 0,
       };
     });
-    // Number of distinct beneficiaries (count once across SKUs)
+    // Distinct beneficiaries (only those with saldo > 0 to match the table view)
     const benRows = await query(
-      `SELECT COUNT(DISTINCT extensionist_id) AS n FROM delivery_balances ${w}`,
+      `SELECT COUNT(DISTINCT extensionist_id) AS n
+       FROM delivery_balances ${w} AND (planned_qty - committed_qty) > 0`,
       params
     );
     out.beneficiaries = Number(benRows[0]?.n) || 0;
+    out.beneficiaries_total = (await query(
+      `SELECT COUNT(DISTINCT extensionist_id) AS n FROM delivery_balances ${w}`,
+      params
+    ))[0]?.n || 0;
     return out;
   },
 };
