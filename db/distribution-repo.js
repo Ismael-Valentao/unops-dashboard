@@ -12,6 +12,17 @@ const { getPool, query, queryOne } = require("./mysql");
 
 const now = () => new Date().toISOString().slice(0, 19).replace("T", " ");
 
+// Conversão de qty (na unidade nativa do produto) para kg físico no camião.
+//   • kg  → kg directo (sementes)
+//   • L   → kg ≈ 1L (químicos; ~densidade da água, aproximação aceitável p/ logística)
+//   • un  → kg = qty × 0.3 (saco hermético = 0.3 kg cada)
+const SACO_KG_PER_UNIT = 0.3;
+function qtyToKg(qty, unit) {
+  const n = Number(qty) || 0;
+  if (unit === "un") return n * SACO_KG_PER_UNIT;
+  return n; // kg ou L tratam-se como kg p/ peso do camião
+}
+
 const Beneficiaries = {
   async list(opts = {}) {
     const where = [];
@@ -161,8 +172,18 @@ const Services = {
         return { error: "Saldo insuficiente", insufficient };
       }
 
-      // Validar capacidade do camião
-      const totalKg = items.reduce((s, it) => s + Number(it.qty), 0);
+      // Validar capacidade do camião — peso REAL em kg (sacos × 0.3, etc.)
+      const balKeys2 = items.map((it) => [it.extensionist_id, it.sku]);
+      const ph2 = balKeys2.map(() => "(?,?)").join(",");
+      const [unitRows] = await conn.query(
+        `SELECT extensionist_id, sku, unit FROM delivery_balances WHERE (extensionist_id, sku) IN (${ph2})`,
+        balKeys2.flat()
+      );
+      const unitMap = new Map(unitRows.map((u) => [`${u.extensionist_id}|${u.sku}`, u.unit]));
+      const totalKg = items.reduce((s, it) => {
+        const u = unitMap.get(`${it.extensionist_id}|${it.sku}`) || "kg";
+        return s + qtyToKg(it.qty, u);
+      }, 0);
       if (totalKg > capacity) {
         await conn.rollback();
         return {
@@ -548,4 +569,30 @@ const Services = {
   },
 };
 
-module.exports = { Beneficiaries, Balances, Services };
+// ── Manutenção ──────────────────────────────────────────────
+const Maintenance = {
+  // Recompute delivery_services.total_kg a partir dos items (com qtyToKg).
+  // Útil depois de imports históricos onde a soma de qty bruta misturava
+  // unidades (sacos contavam como kg, etc.).
+  async recomputeAllTotalKg() {
+    const conn = await getPool().getConnection();
+    let updated = 0;
+    try {
+      // Recalcular em SQL (CASE WHEN unit) é mais rápido que iterar.
+      const [r] = await conn.query(
+        `UPDATE delivery_services s
+         SET total_kg = COALESCE((
+           SELECT SUM(CASE WHEN i.unit = 'un' THEN i.qty * ${SACO_KG_PER_UNIT} ELSE i.qty END)
+           FROM delivery_service_items i
+           WHERE i.service_id = s.id
+         ), 0)`
+      );
+      updated = r.affectedRows || r.changedRows || 0;
+    } finally {
+      conn.release();
+    }
+    return { updated };
+  },
+};
+
+module.exports = { Beneficiaries, Balances, Services, Maintenance, qtyToKg };
