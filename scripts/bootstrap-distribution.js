@@ -2,33 +2,55 @@
 /**
  * CLI runner for the distribution bootstrap.
  *
- *   node scripts/bootstrap-distribution.js <planning.xlsx> [services.xlsx]
+ *   node scripts/bootstrap-distribution.js <planning.xlsx> [services.xlsx] [por-cumprir.xlsx]
  *
- * Idempotente — pode correr-se de novo. O planeamento UPSERTs;
- * o histórico de serviços salta os ADSNs já importados.
+ *   --balances-only <por-cumprir.xlsx>    importa só o saldo (re-baseline)
  *
- * Sem argumentos faz dry-run com os ficheiros default em data/ e Downloads/.
+ * Idempotente — pode correr-se de novo. Todas as operações são UPSERT.
  */
 require("dotenv").config();
 const path = require("path");
 const fs = require("fs");
 const { init } = require("../db/mysql");
-const { importPlanning, importServices } = require("../lib/distribution-bootstrap");
+const { importPlanning, importServices, importBalances, cleanAll } = require("../lib/distribution-bootstrap");
 
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
-  const positional = args.filter((a) => !a.startsWith("--"));
+  const cleanFlag = args.includes("--clean");
+  const balancesOnlyIdx = args.indexOf("--balances-only");
+  const positional = args.filter((a, i) => !a.startsWith("--") && (i !== balancesOnlyIdx + 1 || balancesOnlyIdx < 0));
 
-  let planningPath, servicesPath;
-  if (positional.length >= 1) {
-    planningPath = path.resolve(positional[0]);
-    if (positional.length >= 2) servicesPath = path.resolve(positional[1]);
-  } else {
-    // Defaults
+  console.log(`[bootstrap] Mode: ${dryRun ? "DRY-RUN" : "LIVE"}${cleanFlag ? " (CLEAN)" : ""}`);
+  console.log("[bootstrap] Connecting to MySQL...");
+  await init();
+
+  if (cleanFlag && !dryRun) {
+    console.log("[bootstrap] Limpando todas as tabelas distribution…");
+    const r = await cleanAll();
+    console.log("  ", r);
+  }
+
+  // Modo --balances-only: só re-importa o saldo (não toca em planning/services)
+  if (balancesOnlyIdx >= 0) {
+    const file = path.resolve(args[balancesOnlyIdx + 1]);
+    if (!fs.existsSync(file)) { console.error("[ERR] file not found:", file); process.exit(2); }
+    console.log(`[bootstrap] === IMPORTING BALANCES (por cumprir) ===\n  File: ${file}`);
+    const t = Date.now();
+    const r = await importBalances(file, { dryRun });
+    console.log(JSON.stringify(r, null, 2));
+    console.log(`Took ${((Date.now() - t) / 1000).toFixed(1)}s`);
+    process.exit(0);
+  }
+
+  let planningPath, servicesPath, balancesPath;
+  if (positional.length >= 1) planningPath = path.resolve(positional[0]);
+  if (positional.length >= 2) servicesPath = path.resolve(positional[1]);
+  if (positional.length >= 3) balancesPath = path.resolve(positional[2]);
+  if (!planningPath) {
     planningPath = path.join(__dirname, "..", "data", "Planeamento_Actualizado.xlsx");
     const homeDownloads = path.join(process.env.USERPROFILE || process.env.HOME || "", "Downloads");
-    servicesPath = path.join(homeDownloads, "servicos (53).xlsx");
+    servicesPath = servicesPath || path.join(homeDownloads, "servicos (53).xlsx");
   }
 
   if (!fs.existsSync(planningPath)) {
@@ -36,15 +58,11 @@ async function main() {
     process.exit(2);
   }
 
-  console.log(`[bootstrap] Mode: ${dryRun ? "DRY-RUN" : "LIVE"}`);
   console.log(`[bootstrap] Planning: ${planningPath}`);
   if (servicesPath) console.log(`[bootstrap] Services: ${servicesPath}`);
+  if (balancesPath) console.log(`[bootstrap] Balances:  ${balancesPath}`);
 
-  // DB needed even for dry-run (NUIT→extensionist_id lookup happens in importServices).
-  console.log("[bootstrap] Connecting to MySQL...");
-  await init();
-
-  console.log("\n[bootstrap] === IMPORTING PLANNING ===");
+  console.log("\n[bootstrap] === IMPORTING PLANNING (metadata) ===");
   const t0 = Date.now();
   const r1 = await importPlanning(planningPath, { dryRun });
   console.log(JSON.stringify(r1, null, 2));
@@ -56,8 +74,14 @@ async function main() {
     const r2 = await importServices(servicesPath, { dryRun });
     console.log(JSON.stringify(r2, null, 2));
     console.log(`Took ${((Date.now() - t1) / 1000).toFixed(1)}s`);
-  } else if (servicesPath) {
-    console.warn(`[bootstrap] Services file missing: ${servicesPath} — skipping`);
+  }
+
+  if (balancesPath && fs.existsSync(balancesPath)) {
+    console.log("\n[bootstrap] === IMPORTING BALANCES (por cumprir, fonte de verdade) ===");
+    const t2 = Date.now();
+    const r3 = await importBalances(balancesPath, { dryRun });
+    console.log(JSON.stringify(r3, null, 2));
+    console.log(`Took ${((Date.now() - t2) / 1000).toFixed(1)}s`);
   }
 
   console.log("\n[bootstrap] Done.");
