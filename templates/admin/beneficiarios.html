@@ -58,10 +58,12 @@
             <option value="extra">Extras (auto-criados)</option>
           </select>
         </div>
-        <div style="display:flex;align-items:end">
+        <div style="display:flex;align-items:end;gap:.5rem">
           <button id="btn-clear" class="btn">Limpar filtros</button>
+          <button id="btn-export-csv" class="btn">Exportar CSV</button>
         </div>
       </div>
+      <div class="filter-chips" id="filter-chips" style="margin-top:.5rem"></div>
 
       <div class="ben-stats" id="stats">
         <div class="b-stat"><div class="b-stat-lbl">Beneficiários</div><div class="b-stat-val" id="s-total">—</div></div>
@@ -88,7 +90,8 @@
   <script src="/static/admin.js"></script>
   <script>
     (function () {
-      const { fetchJSON, fmt, esc, sortRows, sortArrow, bindSortable } = window.AdminUI;
+      const { fetchJSON, fmt, esc, sortRows, sortArrow, bindSortable,
+              exportCSV, urlState, renderFilterChips } = window.AdminUI;
       const $ = (s) => document.querySelector(s);
 
       const COLS = [
@@ -133,6 +136,54 @@
         const dist   = $("#f-district").value;     if (dist)   p.set("district", dist);
         const kind   = $("#f-kind").value;          if (kind)   p.set("kind", kind);
         return p;
+      }
+
+      // Fase 6 — URL sync + chips + export
+      const urlSync = urlState({
+        "f-search":   "search",
+        "f-province": "province",
+        "f-district": "district",
+        "f-kind":     "kind",
+      }, { onPopState: () => load() });
+
+      function renderChips() {
+        const KIND_LBL = { plan: "Do plano", extra: "Extras" };
+        renderFilterChips($("#filter-chips"), [
+          { key: "f-search",   label: "Pesquisa",   value: $("#f-search").value.trim() },
+          { key: "f-province", label: "Província",  value: $("#f-province").value },
+          { key: "f-district", label: "Distrito",   value: $("#f-district").value },
+          { key: "f-kind",     label: "Tipo",       value: KIND_LBL[$("#f-kind").value] || $("#f-kind").value },
+        ], (key) => {
+          if (key === "__all__") {
+            ["f-search","f-province","f-district","f-kind"].forEach((id) => $("#" + id).value = "");
+            loadDistrictOptions();
+          } else {
+            $("#" + key).value = "";
+            if (key === "f-province") loadDistrictOptions();
+          }
+          load();
+        });
+      }
+
+      function doExportCSV() {
+        const col = COLS.find((c) => c.key === sort.sortKey);
+        const sorted = sortRows(allRows, sort.sortKey, sort.sortAsc, col?.type);
+        exportCSV(sorted, {
+          filename: "beneficiarios",
+          columns: [
+            { key: "extensionist_id", label: "Extens. ID" },
+            { key: "nuit",            label: "NUIT" },
+            { key: "name",            label: "Nome" },
+            { key: "province",        label: "Província" },
+            { key: "district",        label: "Distrito" },
+            { key: "is_extra",        label: "Extra", format: (v) => v ? "Sim" : "Não" },
+            { key: "n_products",      label: "Produtos" },
+            { key: "planned_total",   label: "Plano Total" },
+            { key: "committed_total", label: "Entregue Total" },
+            { key: "available_total", label: "Falta Total" },
+            { key: "n_services",      label: "Serviços" },
+          ],
+        });
       }
 
       function renderHeader() {
@@ -185,6 +236,8 @@
       }
 
       async function load() {
+        urlSync.write();
+        renderChips();
         try {
           const data = await fetchJSON("/admin/api/distribution/beneficiaries?" + buildQuery());
           allRows = data.rows || [];
@@ -211,7 +264,12 @@
           load();
         });
 
+        $("#btn-export-csv").addEventListener("click", doExportCSV);
+
         await loadGeo();
+        urlSync.read();
+        loadDistrictOptions();
+        urlSync.read();
         await load();
       });
     })();

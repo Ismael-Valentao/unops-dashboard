@@ -1,6 +1,7 @@
 /* ── Distribuição (saldo + criar serviço) ──────────────────── */
 (function () {
-  const { fetchJSON, fmt, esc, sortRows, sortArrow, bindSortable } = window.AdminUI;
+  const { fetchJSON, fmt, esc, sortRows, sortArrow, bindSortable,
+          exportCSV, urlState, renderFilterChips } = window.AdminUI;
 
   // State
   let geo = {};                        // { province: { district: count } }
@@ -398,8 +399,67 @@
     }
   }
 
+  // ── URL state + filter chips + CSV export (Fase 6) ─────────
+  const urlSync = urlState({
+    "f-province": "province",
+    "f-district": "district",
+    "f-sku":      "sku",
+  }, { onPopState: () => refresh() });
+
+  function renderChips() {
+    const province = $("#f-province").value;
+    const district = $("#f-district").value;
+    const skuValue = $("#f-sku").value;
+    const skuOption = skuValue ? document.querySelector(`#f-sku option[value="${skuValue}"]`) : null;
+    const productLabel = skuOption ? skuOption.textContent.trim() : skuValue;
+    renderFilterChips($("#dist-filter-chips"), [
+      { key: "f-province", label: "Província", value: province },
+      { key: "f-district", label: "Distrito",  value: district },
+      { key: "f-sku",      label: "Produto",   value: productLabel },
+    ], (key) => {
+      if (key === "__all__") {
+        $("#f-province").value = "";
+        $("#f-district").value = "";
+        $("#f-sku").value = "";
+        loadDistrictOptions();
+      } else {
+        $("#" + key).value = "";
+        if (key === "f-province") loadDistrictOptions();
+      }
+      refresh();
+    });
+  }
+
+  function doExportCSV() {
+    const sorted = (() => {
+      const col = BAL_COLS.find((c) => c.key === balSort.sortKey);
+      return sortRows(allRows, balSort.sortKey, balSort.sortAsc, col?.type);
+    })();
+    const rows = selectedKeys.size > 0
+      ? sorted.filter((r) => selectedKeys.has(rowKey(r)))
+      : sorted;
+    exportCSV(rows, {
+      filename: "saldos",
+      columns: [
+        { key: "extensionist_id",    label: "Extens. ID" },
+        { key: "beneficiary_name",   label: "Beneficiário" },
+        { key: "province",           label: "Província" },
+        { key: "district",           label: "Distrito" },
+        { key: "product_name",       label: "Produto" },
+        { key: "unit",               label: "Unidade" },
+        { key: "planned_original",   label: "Plano Original" },
+        { key: "realocado_recebido", label: "Realoc. Recebido" },
+        { key: "planned_qty",        label: "Plano Ajustado" },
+        { key: "committed_qty",      label: "Entregue" },
+        { key: "available_qty",      label: "Falta" },
+      ],
+    });
+  }
+
   // ── Init ───────────────────────────────────────────────────
   async function refresh() {
+    urlSync.write();
+    renderChips();
     await Promise.all([loadSummary(), loadBalances()]);
     // Toggle bootstrap panel based on whether geography returned anything
     const hasData = Object.keys(geo).length > 0;
@@ -481,6 +541,9 @@
     });
     function clickCap(cap) { const b = $(`.cap-btn[data-cap="${cap}"]`); if (b) b.click(); }
 
+    // CSV export
+    $("#btn-export-csv").addEventListener("click", doExportCSV);
+
     // Bootstrap upload buttons
     const bsPlanBtn = $("#bs-planning-btn");
     if (bsPlanBtn) bsPlanBtn.addEventListener("click", () =>
@@ -492,6 +555,10 @@
         $("#bs-services-file"), $("#bs-services-result"), bsSvcBtn));
 
     await loadGeo();
+    // Restore filtros do URL APÓS geo carregar (precisamos das províncias)
+    urlSync.read();
+    loadDistrictOptions();
+    urlSync.read(); // re-read porque distrito só agora está no DOM
     await refresh();
   });
 })();

@@ -131,6 +131,11 @@
         </div>
       </div>
 
+      <div class="filter-chips" id="filter-chips" style="margin-top:.5rem"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:.5rem">
+        <button class="btn" id="btn-export-csv">Exportar CSV</button>
+      </div>
+
       <!-- Atalhos / chips de tonelagem -->
       <div class="fleet-presets" id="presets">
         <button class="preset-chip" data-min="0" data-max="2000">≤ 2T</button>
@@ -163,7 +168,8 @@
   <script src="/static/admin.js"></script>
   <script>
     (function () {
-      const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable } = window.AdminUI;
+      const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable,
+              exportCSV, urlState, renderFilterChips } = window.AdminUI;
       const STATUS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
       const STATUS_TITLE = {
         in_transit: "Camiões em Trânsito",
@@ -229,6 +235,70 @@
           dists.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
       }
 
+      // ── URL ↔ filter sync (Fase 6) ──────────────────────────
+      const urlSync = urlState({
+        "f-status":   "status",
+        "f-province": "province",
+        "f-district": "district",
+        "f-supplier": "supplier",
+        "f-min-kg":   "min_kg",
+        "f-max-kg":   "max_kg",
+      }, { onPopState: () => refresh() });
+
+      function renderChips() {
+        const f = getFilters();
+        const STATUS_LBL = { in_transit: "Em Trânsito", delivered: "Entregue", draft: "Rascunho", cancelled: "Cancelado" };
+        renderFilterChips($("#filter-chips"), [
+          { key: "f-status",   label: "Estado",   value: f.status ? (STATUS_LBL[f.status] || f.status) : "" },
+          { key: "f-province", label: "Província", value: f.province },
+          { key: "f-district", label: "Distrito",  value: f.district },
+          { key: "f-supplier", label: "Origem",    value: f.supplier },
+          { key: "f-min-kg",   label: "Carga ≥",   value: f.min_kg ? f.min_kg + " kg" : "" },
+          { key: "f-max-kg",   label: "Carga ≤",   value: f.max_kg ? f.max_kg + " kg" : "" },
+        ], (key) => {
+          if (key === "__all__") {
+            ["f-status","f-province","f-district","f-supplier","f-min-kg","f-max-kg"].forEach((id) => {
+              const el = $("#" + id);
+              if (id === "f-status") el.value = "in_transit"; else el.value = "";
+            });
+            $$("#presets .preset-chip").forEach((c) => c.classList.remove("active"));
+            loadDistrictOptions();
+          } else {
+            $("#" + key).value = "";
+            if (key === "f-province") loadDistrictOptions();
+          }
+          refresh();
+        });
+      }
+
+      function doExportCSV() {
+        // Exporta todos os camiões visíveis no board
+        const rows = currentBoardRows();
+        const STATUS_LBL = { in_transit: "Em Trânsito", delivered: "Entregue", draft: "Rascunho", cancelled: "Cancelado" };
+        exportCSV(rows, {
+          filename: "camioes",
+          columns: [
+            { key: "service_number",  label: "Nº Serviço" },
+            { key: "status",          label: "Estado", format: (v) => STATUS_LBL[v] || v },
+            { key: "province",        label: "Província" },
+            { key: "district",        label: "Distrito" },
+            { key: "truck_plate",     label: "Matrícula" },
+            { key: "truck_plate_2",   label: "Reboque" },
+            { key: "driver_name",     label: "Motorista" },
+            { key: "driver_phone",    label: "Telefone" },
+            { key: "origem_supplier", label: "Origem" },
+            { key: "n_beneficiaries", label: "Beneficiários" },
+            { key: "n_items",         label: "Itens" },
+            { key: "total_kg",        label: "Total kg" },
+            { key: "truck_capacity_kg", label: "Capacidade kg" },
+            { key: "dispatched_at",   label: "Saída", format: (v) => v ? fmtDate(v) : "" },
+            { key: "delivered_at",    label: "Entregue", format: (v) => v ? fmtDate(v) : "" },
+          ],
+        });
+      }
+      let _lastBoardRows = [];
+      function currentBoardRows() { return _lastBoardRows; }
+
       // ── Fleet summary cards ─────────────────────────────────
       async function loadSummary() {
         const data = await fetchJSON("/admin/api/distribution/fleet-summary?" + buildQuery());
@@ -287,6 +357,7 @@
         try {
           const data = await fetchJSON("/admin/api/distribution/services?" + buildQuery());
           const rows = data.rows || [];
+          _lastBoardRows = rows;
           $("#board-count").textContent = rows.length + " camião(ões)";
           if (!rows.length) {
             $("#truck-grid").innerHTML = `<div class="empty-state">
@@ -314,7 +385,12 @@
         }
       }
 
-      function refresh() { loadSummary(); loadBoard(); }
+      function refresh() {
+        urlSync.write();
+        renderChips();
+        loadSummary();
+        loadBoard();
+      }
       function debounced(fn) { return () => { clearTimeout(timer); timer = setTimeout(fn, 250); }; }
 
       // ── Plate search (sortable results) ─────────────────────
@@ -398,7 +474,13 @@
           refresh();
         });
 
+        $("#btn-export-csv").addEventListener("click", doExportCSV);
+
         await loadGeo();
+        // Restore filtros do URL após geo carregar
+        urlSync.read();
+        loadDistrictOptions();
+        urlSync.read();
         refresh();
       });
     })();

@@ -314,10 +314,103 @@ window.AdminUI = (function () {
     });
   }
 
+  // ── CSV/Excel export ────────────────────────────────────────
+  // Exporta um array de objectos para CSV. Aceita opções:
+  //   columns: [{key, label, format(value, row)?}]  // se omitido, usa keys do 1º obj
+  //   filename: nome do download (auto sufixo de timestamp)
+  function exportCSV(rows, opts = {}) {
+    if (!rows || !rows.length) return alert("Nada para exportar.");
+    const columns = opts.columns || Object.keys(rows[0]).map((k) => ({ key: k, label: k }));
+    const escape = (v) => {
+      if (v == null) return "";
+      const s = typeof v === "string" ? v : String(v);
+      if (/[",\n;\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    };
+    const header = columns.map((c) => escape(c.label)).join(";");
+    const body = rows.map((r) => columns.map((c) => {
+      const raw = c.format ? c.format(r[c.key], r) : r[c.key];
+      return escape(raw);
+    }).join(";")).join("\r\n");
+    // BOM utf-8 + ; separator (compatível Excel PT-PT)
+    const csv = "﻿" + header + "\r\n" + body;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    const ts = new Date().toISOString().slice(0, 10);
+    a.download = (opts.filename || "export") + "_" + ts + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+  }
+
+  // ── URL state sync ──────────────────────────────────────────
+  // Sincroniza um conjunto de inputs de filtro com URLSearchParams.
+  // Permite que o utilizador faça bookmark/share de "/admin/servicos?status=in_transit&province=Gaza"
+  // e que recarregar a página preserve os filtros.
+  //
+  //   syncFiltersToUrl({
+  //     "f-status":   "status",
+  //     "f-province": "province",
+  //     ...
+  //   }, onChange)  // chamado quando URL muda (back/forward)
+  //
+  // Devolve { read(), write() } — write actualiza URL com valores actuais.
+  function urlState(elementToParam, opts = {}) {
+    const ids = Object.keys(elementToParam);
+    function read() {
+      const params = new URLSearchParams(location.search);
+      ids.forEach((id) => {
+        const param = elementToParam[id];
+        const v = params.get(param);
+        const el = document.getElementById(id);
+        if (el && v != null) el.value = v;
+      });
+    }
+    function write() {
+      const params = new URLSearchParams();
+      ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && el.value && el.value.trim()) params.set(elementToParam[id], el.value.trim());
+      });
+      const qs = params.toString();
+      const newUrl = location.pathname + (qs ? "?" + qs : "") + location.hash;
+      if (newUrl !== location.pathname + location.search + location.hash) {
+        history.replaceState(null, "", newUrl);
+      }
+    }
+    if (opts.onPopState) {
+      window.addEventListener("popstate", () => { read(); opts.onPopState(); });
+    }
+    return { read, write };
+  }
+
+  // ── Filter chips ────────────────────────────────────────────
+  // Renderiza chips removíveis para os filtros activos numa página.
+  //   renderFilterChips(containerEl, filters, onRemove)
+  //   filters = [{ key, label, value }]   só renderiza os com value
+  function renderFilterChips(container, filters, onRemove) {
+    if (!container) return;
+    const active = filters.filter((f) => f.value && String(f.value).trim());
+    if (!active.length) { container.innerHTML = ""; return; }
+    container.innerHTML = active.map((f) => `<span class="filter-chip">
+      <span class="filter-chip-label">${esc(f.label)}:</span>
+      <span class="filter-chip-value">${esc(f.value)}</span>
+      <button class="filter-chip-x" data-key="${esc(f.key)}" title="Remover">×</button>
+    </span>`).join("") +
+      `<button class="filter-chip-clear" id="chip-clear-all">Limpar todos</button>`;
+    container.querySelectorAll(".filter-chip-x").forEach((b) => {
+      b.addEventListener("click", () => onRemove(b.dataset.key));
+    });
+    const clearAll = container.querySelector("#chip-clear-all");
+    if (clearAll) clearAll.addEventListener("click", () => onRemove("__all__"));
+  }
+
   return {
     esc, fmt, fmtDate, statusBadge, fetchJSON, renderLayout, loadMe,
     loadProducts, loadWarehouses, productSelectOptions, clearCache,
     sortRows, sortArrow, bindSortable, mountGlobalSearch,
+    exportCSV, urlState, renderFilterChips,
   };
 })();
 

@@ -100,6 +100,10 @@
           <input id="f-supplier" type="text" placeholder="Fornecedor">
         </div>
       </div>
+      <div class="filter-chips" id="filter-chips"></div>
+      <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.5rem">
+        <button class="btn" id="btn-export-csv">Exportar CSV</button>
+      </div>
 
       <div class="tbl-wrap">
         <table class="adm-table" id="svc-table">
@@ -142,7 +146,8 @@
   <script src="/static/admin.js"></script>
   <script>
     (function () {
-      const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable } = window.AdminUI;
+      const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable,
+              exportCSV, urlState, renderFilterChips } = window.AdminUI;
       const $ = (s) => document.querySelector(s);
 
       const STATUS_LABELS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
@@ -342,13 +347,53 @@
         }
       }
 
+      // URL ↔ filter state sync (Fase 6)
+      const urlSync = urlState({
+        "f-status":   "status",
+        "f-province": "province",
+        "f-district": "district",
+        "f-plate":    "plate",
+        "f-supplier": "supplier",
+      }, { onPopState: () => load() });
+
+      function getFilters() {
+        return {
+          status:   $("#f-status").value,
+          province: $("#f-province").value.trim(),
+          district: $("#f-district").value.trim(),
+          plate:    $("#f-plate").value.trim(),
+          supplier: $("#f-supplier").value.trim(),
+        };
+      }
+
+      function renderChips() {
+        const f = getFilters();
+        renderFilterChips($("#filter-chips"), [
+          { key: "f-status",   label: "Estado",   value: f.status ? (STATUS_LABELS[f.status] || f.status) : "" },
+          { key: "f-province", label: "Província", value: f.province },
+          { key: "f-district", label: "Distrito",  value: f.district },
+          { key: "f-plate",    label: "Matrícula", value: f.plate },
+          { key: "f-supplier", label: "Origem",    value: f.supplier },
+        ], (key) => {
+          if (key === "__all__") {
+            ["f-status","f-province","f-district","f-plate","f-supplier"].forEach((id) => $("#" + id).value = "");
+          } else {
+            $("#" + key).value = "";
+          }
+          load();
+        });
+      }
+
       async function load() {
+        urlSync.write();
         const params = new URLSearchParams();
-        const status = $("#f-status").value; if (status) params.set("status", status);
-        const province = $("#f-province").value.trim(); if (province) params.set("province", province);
-        const district = $("#f-district").value.trim(); if (district) params.set("district", district);
-        const plate    = $("#f-plate").value.trim();    if (plate)    params.set("plate", plate);
-        const supplier = $("#f-supplier").value.trim(); if (supplier) params.set("supplier", supplier);
+        const f = getFilters();
+        if (f.status)   params.set("status", f.status);
+        if (f.province) params.set("province", f.province);
+        if (f.district) params.set("district", f.district);
+        if (f.plate)    params.set("plate", f.plate);
+        if (f.supplier) params.set("supplier", f.supplier);
+        renderChips();
         try {
           const data = await fetchJSON("/admin/api/distribution/services?" + params);
           renderCounts(data.counts || {});
@@ -362,9 +407,42 @@
         }
       }
 
+      function doExportCSV() {
+        const sorted = currentSorted();
+        const visibleSelected = selectedIds.size > 0
+          ? sorted.filter((r) => selectedIds.has(r.id))
+          : sorted;
+        exportCSV(visibleSelected, {
+          filename: "servicos",
+          columns: [
+            { key: "service_number",  label: "Nº Serviço" },
+            { key: "status",          label: "Estado", format: (v) => STATUS_LABELS[v] || v },
+            { key: "province",        label: "Província" },
+            { key: "district",        label: "Distrito" },
+            { key: "truck_plate",     label: "Matrícula" },
+            { key: "truck_plate_2",   label: "Matrícula Reboque" },
+            { key: "driver_name",     label: "Motorista" },
+            { key: "driver_phone",    label: "Telefone" },
+            { key: "origem_supplier", label: "Origem" },
+            { key: "n_beneficiaries", label: "Beneficiários" },
+            { key: "n_items",         label: "Itens" },
+            { key: "total_kg",        label: "Total kg" },
+            { key: "truck_capacity_kg", label: "Capacidade kg" },
+            { key: "created_at",      label: "Criado", format: (v) => v ? fmtDate(v) : "" },
+            { key: "dispatched_at",   label: "Saída", format: (v) => v ? fmtDate(v) : "" },
+            { key: "delivered_at",    label: "Entregue", format: (v) => v ? fmtDate(v) : "" },
+            { key: "cancellation_category", label: "Motivo Cancel." },
+          ],
+        });
+      }
+
       function debounced(fn) { return () => { clearTimeout(timer); timer = setTimeout(fn, 250); }; }
 
       document.addEventListener("DOMContentLoaded", async () => {
+        // Restore filters from URL (suporta links bookmarkáveis)
+        urlSync.read();
+        activeStatus = $("#f-status").value;
+
         $("#f-status").addEventListener("change", () => { activeStatus = $("#f-status").value; load(); });
         ["f-province", "f-district", "f-plate", "f-supplier"].forEach((id) =>
           $("#" + id).addEventListener("input", debounced(load))
@@ -379,6 +457,9 @@
           if (e.target.id === "cm-modal") e.target.classList.remove("show");
         });
         $("#cm-confirm").addEventListener("click", bulkCancelConfirm);
+
+        // Export
+        $("#btn-export-csv").addEventListener("click", doExportCSV);
 
         await load();
       });
