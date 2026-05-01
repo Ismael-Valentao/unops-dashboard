@@ -34,7 +34,9 @@ const COLUMN_KEYS = [
   "is_locked", "phone", "phone_alt", "verification_status",
 ];
 
-let cache = { data: [], lastUpdated: null };
+// Cache partilhada com routes/admin (lib/sheet-cache.js para reconciliação)
+const sheetCache = require("./lib/sheet-cache");
+const cache = sheetCache.cache;
 
 // ── Fetch CSV from Google Sheets ──────────────────────────────
 function fetchCSV(url) {

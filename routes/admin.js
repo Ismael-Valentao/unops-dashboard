@@ -16,7 +16,8 @@ const {
   Products, Warehouses, Departures, Plans,
   PurchaseOrders, Authorizations, StockEntries, ADSN, StockExits,
 } = require("../db/ops-repo");
-const { Beneficiaries, Balances, Services: DistServices } = require("../db/distribution-repo");
+const { Beneficiaries, Balances, Services: DistServices, Reconciliation: DistReconciliation } = require("../db/distribution-repo");
+const sheetCache = require("../lib/sheet-cache");
 const { importPlanning, importServices } = require("../lib/distribution-bootstrap");
 const { parseGuia: parseAdicionalGuia } = require("../lib/parse-adicional-guia");
 const { parsePOExcel } = require("../lib/parse-po-excel");
@@ -1220,6 +1221,8 @@ router.get("/servicos/:id",        (_req, res) => send(res, "servico-detalhe.htm
 router.get("/camioes",             (_req, res) => send(res, "camioes.html"));
 router.get("/beneficiarios",       (_req, res) => send(res, "beneficiarios.html"));
 router.get("/beneficiarios/:id",   (_req, res) => send(res, "beneficiario-detalhe.html"));
+router.get("/anexar-guias",        (_req, res) => send(res, "anexar-guias.html"));
+router.get("/reconciliacao",       (_req, res) => send(res, "reconciliacao.html"));
 
 // ── API ─────────────────────────────────────────────────────
 router.get("/api/distribution/geography", ah(async (_req, res) => {
@@ -1444,6 +1447,84 @@ router.post("/api/distribution/bootstrap/services",
     }
   })
 );
+
+// Multi-PDF upload — auto-routes cada PDF para o serviço em trânsito
+// que tenha matching truck_plate (ou primeiro hit por match parcial).
+router.post("/api/distribution/attach-guias-bulk",
+  auth.requireRole("operator", "admin", "superadmin"),
+  distUpload.array("files", 50),
+  ah(async (req, res) => {
+    if (!req.files || !req.files.length) return jsonError(res, 400, "Nenhum PDF fornecido");
+    const fs = require("fs");
+    const { parseGuia: parseAdicionalGuia } = require("../lib/parse-adicional-guia");
+    const results = [];
+
+    // Carrega serviços in_transit + delivered uma vez
+    const candidates = await DistServices.list({ status: undefined, limit: 5000 });
+    const candArray = Array.isArray(candidates) ? candidates : (candidates.rows || []);
+    const candByPlate = new Map();
+    candArray.forEach((s) => {
+      if (s.truck_plate) {
+        const k = s.truck_plate.replace(/\s+/g, "").toUpperCase();
+        if (!candByPlate.has(k)) candByPlate.set(k, []);
+        candByPlate.get(k).push(s);
+      }
+    });
+
+    for (const file of req.files) {
+      try {
+        const buf = fs.readFileSync(file.path);
+        const parsed = await parseAdicionalGuia(buf);
+        const pdfPlate = (parsed.deliveries[0]?.matricula || "").replace(/\s+/g, "").toUpperCase();
+        // Match: plate exacta primeiro, depois parcial
+        let svc = null;
+        if (pdfPlate) {
+          const exact = candByPlate.get(pdfPlate);
+          if (exact?.length) svc = exact.find((s) => s.status === "in_transit") || exact[0];
+          if (!svc) {
+            // parcial — primeira plate em candidatos cuja primeira placa está contida no pdf
+            for (const [k, arr] of candByPlate.entries()) {
+              if (pdfPlate.includes(k.split("/")[0]) || k.includes(pdfPlate.split("/")[0])) {
+                svc = arr.find((s) => s.status === "in_transit") || arr[0]; break;
+              }
+            }
+          }
+        }
+        if (!svc) {
+          results.push({ file: file.originalname, error: "Nenhum serviço com matrícula matching", pdf_plate: pdfPlate });
+          continue;
+        }
+        const r = await DistServices.attachGuiaDeliveries(svc.id, parsed.deliveries, { aggregator: parsed.aggregator });
+        results.push({
+          file: file.originalname,
+          service_id: svc.id,
+          service_number: svc.service_number,
+          plate: svc.truck_plate,
+          matched: r.matched.length,
+          unmatched: r.unmatched.length,
+          skipped: r.skipped_status.length,
+        });
+      } catch (e) {
+        results.push({ file: file.originalname, error: e.message });
+      }
+    }
+
+    await auth.logAction(req, "attach_guias_bulk", "delivery_service", null,
+      JSON.stringify({ files: req.files.length, ok: results.filter((r) => !r.error).length }));
+    res.json({ results });
+  })
+);
+
+// Reconciliação: cruza GTUs do Google Sheet com nossos service_items
+router.get("/api/distribution/reconcile-gtu", ah(async (_req, res) => {
+  const sheetRows = sheetCache.cache.data || [];
+  const result = await DistReconciliation.vsSheet(sheetRows);
+  res.json({
+    ...result,
+    sheet_last_updated: sheetCache.cache.lastUpdated,
+    sheet_total_rows: sheetRows.length,
+  });
+}));
 
 // Anexar Guia ADICIONAL (PDF) → extrai ADSN+GTU+NUIT e atribui aos items.
 // Usa-se DEPOIS do serviço estar em trânsito (operador descarrega PDF do

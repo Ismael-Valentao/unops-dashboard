@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Anexar Guias em Massa</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    .drop-zone{border:2px dashed #cbd5e1;border-radius:10px;padding:2rem 1.5rem;text-align:center;
+      background:#f8fafc;transition:all .15s;cursor:pointer}
+    .drop-zone:hover,.drop-zone.dragover{border-color:#0f4c75;background:#f0f9ff}
+    .drop-zone .ico{font-size:2rem;margin-bottom:.5rem;color:#94a3b8}
+    .drop-zone-hint{color:#64748b;font-size:.85rem;margin-top:.5rem}
+    .file-list{margin-top:1rem;font-size:.82rem}
+    .file-list .file-row{display:flex;justify-content:space-between;padding:.45rem .65rem;border-bottom:1px solid #f1f5f9;
+      align-items:center;gap:.5rem}
+    .file-list .file-row:hover{background:#f8fafc}
+    .file-status{font-size:.75rem;font-weight:600;padding:.15rem .5rem;border-radius:99px}
+    .file-status-pending{background:#f1f5f9;color:#475569}
+    .file-status-ok{background:#dcfce7;color:#166534}
+    .file-status-err{background:#fee2e2;color:#991b1b}
+    .file-status-warn{background:#fef3c7;color:#92400e}
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Anexar Guias ADICIONAL em Massa</h1>
+      <span class="admin-sub">Carregue múltiplos PDFs — cada um é auto-encaminhado para o serviço com matrícula matching</span>
+    </header>
+
+    <section class="admin-section">
+      <h2>Selecionar PDFs</h2>
+      <div class="drop-zone" id="dropzone">
+        <div class="ico">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="12" y1="11" x2="12" y2="17"/>
+            <line x1="9" y1="14" x2="15" y2="14"/>
+          </svg>
+        </div>
+        <div><strong>Arraste PDFs aqui</strong> ou clique para escolher</div>
+        <div class="drop-zone-hint">Cada PDF deve ser uma Guia ADICIONAL com matrícula identificável</div>
+        <input type="file" id="file-input" multiple accept=".pdf" style="display:none">
+      </div>
+      <div class="file-list" id="file-list"></div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem">
+        <div style="font-size:.85rem;color:#475569" id="summary">—</div>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn" id="btn-clear">Limpar</button>
+          <button class="btn btn-primary" id="btn-upload" disabled>Processar todos</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="admin-section" id="results-section" style="display:none">
+      <h2>Resultados</h2>
+      <div class="tbl-wrap">
+        <table class="adm-table" id="results-table">
+          <thead><tr>
+            <th>Ficheiro</th><th>Estado</th><th>Serviço</th><th>Matrícula</th>
+            <th class="num">Matched</th><th class="num">Saltados</th><th class="num">Sem match</th><th>Mensagem</th>
+          </tr></thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, esc, toast } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+      let pickedFiles = [];
+
+      function renderList() {
+        $("#summary").textContent = pickedFiles.length
+          ? `${pickedFiles.length} ficheiro${pickedFiles.length === 1 ? "" : "s"} pronto${pickedFiles.length === 1 ? "" : "s"}`
+          : "Nenhum ficheiro escolhido";
+        $("#btn-upload").disabled = pickedFiles.length === 0;
+        $("#file-list").innerHTML = pickedFiles.map((f, i) => `<div class="file-row">
+          <span><strong>${esc(f.name)}</strong> <span style="color:#94a3b8">(${(f.size/1024).toFixed(0)} KB)</span></span>
+          <span class="file-status file-status-pending">Pendente</span>
+          <button class="btn btn-sm" data-rm="${i}" style="padding:.15rem .5rem">×</button>
+        </div>`).join("");
+        $("#file-list").querySelectorAll("[data-rm]").forEach((b) => {
+          b.addEventListener("click", () => {
+            pickedFiles.splice(Number(b.dataset.rm), 1);
+            renderList();
+          });
+        });
+      }
+
+      function addFiles(files) {
+        for (const f of files) {
+          if (f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")) {
+            pickedFiles.push(f);
+          }
+        }
+        renderList();
+      }
+
+      const dz = $("#dropzone");
+      const input = $("#file-input");
+      dz.addEventListener("click", () => input.click());
+      input.addEventListener("change", (e) => addFiles(e.target.files));
+      dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("dragover"); });
+      dz.addEventListener("dragleave", () => dz.classList.remove("dragover"));
+      dz.addEventListener("drop", (e) => {
+        e.preventDefault(); dz.classList.remove("dragover");
+        addFiles(e.dataTransfer.files);
+      });
+
+      $("#btn-clear").addEventListener("click", () => { pickedFiles = []; renderList(); $("#results-section").style.display = "none"; });
+
+      $("#btn-upload").addEventListener("click", async () => {
+        if (!pickedFiles.length) return;
+        const btn = $("#btn-upload");
+        btn.disabled = true; btn.textContent = "A processar…";
+        const fd = new FormData();
+        pickedFiles.forEach((f) => fd.append("files", f));
+        try {
+          const res = await fetch("/admin/api/distribution/attach-guias-bulk", { method: "POST", body: fd });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || res.statusText);
+
+          $("#results-section").style.display = "block";
+          $("#results-body").innerHTML = data.results.map((r) => {
+            if (r.error) return `<tr>
+              <td><strong>${esc(r.file)}</strong></td>
+              <td><span class="file-status file-status-err">Erro</span></td>
+              <td colspan="5">—</td>
+              <td style="color:#dc2626">${esc(r.error)}${r.pdf_plate ? ` (PDF tinha matrícula ${esc(r.pdf_plate)})` : ""}</td>
+            </tr>`;
+            const stkind = r.unmatched > 0 ? "warn" : "ok";
+            return `<tr>
+              <td><strong>${esc(r.file)}</strong></td>
+              <td><span class="file-status file-status-${stkind}">${stkind === "ok" ? "OK" : "Parcial"}</span></td>
+              <td><a href="/admin/servicos/${r.service_id}" style="color:#0f4c75;font-weight:600">${esc(r.service_number)}</a></td>
+              <td><code>${esc(r.plate || "—")}</code></td>
+              <td class="num">${fmt(r.matched)}</td>
+              <td class="num">${fmt(r.skipped)}</td>
+              <td class="num">${fmt(r.unmatched)}</td>
+              <td>—</td>
+            </tr>`;
+          }).join("");
+
+          const ok = data.results.filter((r) => !r.error).length;
+          const err = data.results.filter((r) => r.error).length;
+          if (err === 0) toast(`${ok} ficheiro${ok === 1 ? "" : "s"} processado${ok === 1 ? "" : "s"} com sucesso`, { kind: "ok" });
+          else toast(`${ok} OK, ${err} com erro`, { kind: err > ok ? "err" : "warn" });
+        } catch (e) {
+          toast("Erro: " + e.message, { kind: "err" });
+        } finally {
+          btn.disabled = false; btn.textContent = "Processar todos";
+        }
+      });
+
+      renderList();
+    })();
+    AdminUI.renderLayout("anexar-guias");
+  </script>
+</body>
+</html>

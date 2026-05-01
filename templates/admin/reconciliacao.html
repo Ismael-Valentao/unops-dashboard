@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Reconciliação Sheet ↔ DB</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    .recon-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.75rem;margin-bottom:1rem}
+    .r-card{background:#f8fafc;border-radius:8px;padding:.85rem 1rem;border-left:4px solid #0f4c75}
+    .r-card-lbl{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:700}
+    .r-card-val{font-size:1.6rem;font-weight:800;color:#0f172a;margin-top:.2rem}
+    .r-card-sub{font-size:.72rem;color:#94a3b8;margin-top:.15rem}
+    .r-card-ok{border-left-color:#16a34a}.r-card-ok .r-card-val{color:#15803d}
+    .r-card-warn{border-left-color:#d97706}.r-card-warn .r-card-val{color:#b45309}
+    .r-card-info{border-left-color:#0284c7}.r-card-info .r-card-val{color:#075985}
+    .tabs{display:flex;gap:.25rem;border-bottom:2px solid #e2e8f0;margin-bottom:1rem}
+    .tab{padding:.5rem 1rem;cursor:pointer;border-bottom:3px solid transparent;font-size:.85rem;font-weight:600;color:#64748b}
+    .tab.active{color:#0f4c75;border-bottom-color:#0f4c75}
+    .tab-content{display:none}.tab-content.active{display:block}
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Reconciliação Sheet ↔ DB</h1>
+      <span class="admin-sub">Cruzar GTUs do dashboard público com os items dos serviços do nosso DB</span>
+    </header>
+
+    <section class="admin-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem">
+        <div>
+          <strong>GTU = chave de cruzamento</strong>
+          <div style="font-size:.78rem;color:#64748b;margin-top:.15rem" id="meta">A carregar…</div>
+        </div>
+        <button id="btn-refresh" class="btn">Refrescar</button>
+      </div>
+
+      <div class="recon-cards" id="cards"></div>
+
+      <div class="tabs">
+        <div class="tab active" data-tab="matched">Matched</div>
+        <div class="tab" data-tab="db-only">Só no DB</div>
+        <div class="tab" data-tab="sheet-only">Só na Sheet</div>
+      </div>
+
+      <div id="tab-matched" class="tab-content active">
+        <p style="font-size:.82rem;color:#64748b">GTUs que existem em ambos os lados — entregas confirmadas e cruzadas. Devem coincidir nas quantidades.</p>
+        <div class="tbl-wrap" style="margin-top:.5rem">
+          <table class="adm-table" style="font-size:.78rem">
+            <thead><tr>
+              <th>GTU</th><th>Beneficiário (DB)</th><th>Produto (DB)</th><th class="num">Qtd DB</th>
+              <th class="num">Qtd Sheet</th><th>Estado</th><th>Sheet — verificação</th>
+            </tr></thead>
+            <tbody id="tbody-matched"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-db-only" class="tab-content">
+        <p style="font-size:.82rem;color:#64748b">GTUs no nosso DB que não aparecem na Sheet — entregas registadas no nosso sistema mas a Sheet ainda não foi actualizada.</p>
+        <div class="tbl-wrap" style="margin-top:.5rem">
+          <table class="adm-table" style="font-size:.78rem">
+            <thead><tr>
+              <th>GTU</th><th>Serviço</th><th>Beneficiário</th><th>Produto</th><th class="num">Qtd</th><th>Estado</th><th>Matrícula</th>
+            </tr></thead>
+            <tbody id="tbody-db-only"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-sheet-only" class="tab-content">
+        <p style="font-size:.82rem;color:#64748b">GTUs na Sheet que não temos no nosso DB — entregas registadas no terreno (Sheet) mas o nosso sistema não regista o serviço.</p>
+        <div class="tbl-wrap" style="margin-top:.5rem">
+          <table class="adm-table" style="font-size:.78rem">
+            <thead><tr>
+              <th>GTU</th><th>Beneficiário (Sheet)</th><th>Produto</th><th class="num">Qtd Entregue</th><th>Estado Verif.</th><th>Submetido por</th>
+            </tr></thead>
+            <tbody id="tbody-sheet-only"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, fmtDate, esc, toast } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+
+      async function load() {
+        $("#meta").textContent = "A reconciliar…";
+        try {
+          const d = await fetchJSON("/admin/api/distribution/reconcile-gtu");
+          $("#meta").textContent = `Sheet: ${fmt(d.sheet_total_rows)} linhas (${d.sheet_total} GTUs únicos) — última actualização ${d.sheet_last_updated ? fmtDate(d.sheet_last_updated) : "—"}`;
+
+          $("#cards").innerHTML = `
+            <div class="r-card r-card-ok">
+              <div class="r-card-lbl">Cruzados</div>
+              <div class="r-card-val">${fmt(d.matched_count)}</div>
+              <div class="r-card-sub">GTUs em ambos</div>
+            </div>
+            <div class="r-card r-card-warn">
+              <div class="r-card-lbl">Só no DB</div>
+              <div class="r-card-val">${fmt(d.only_in_db_count)}</div>
+              <div class="r-card-sub">precisam de update na Sheet</div>
+            </div>
+            <div class="r-card r-card-info">
+              <div class="r-card-lbl">Só na Sheet</div>
+              <div class="r-card-val">${fmt(d.only_in_sheet_count)}</div>
+              <div class="r-card-sub">não temos no DB</div>
+            </div>
+          `;
+
+          // Matched
+          $("#tbody-matched").innerHTML = d.matched_sample.length
+            ? d.matched_sample.map((m) => {
+                const dbItem = m.db[0];
+                const sheetItem = m.sheet[0];
+                return `<tr>
+                  <td><code>${esc(m.gtu)}</code></td>
+                  <td>${esc(dbItem.beneficiary_name)}</td>
+                  <td>${esc(dbItem.product_name)}</td>
+                  <td class="num">${fmt(dbItem.qty)}</td>
+                  <td class="num">${fmt(sheetItem.delivered_qty || 0)}</td>
+                  <td>${esc(dbItem.status)}</td>
+                  <td><span style="font-size:.72rem">${esc(sheetItem.verification_status || "—")}</span></td>
+                </tr>`;
+              }).join("")
+            : '<tr><td colspan="7" class="empty">Nenhum match.</td></tr>';
+
+          // DB only
+          $("#tbody-db-only").innerHTML = d.only_in_db_sample.length
+            ? d.only_in_db_sample.map((x) => {
+                const it = x.items[0];
+                return `<tr>
+                  <td><code>${esc(x.gtu)}</code></td>
+                  <td><a href="/admin/servicos/${it.service_id}" style="color:#0f4c75;font-weight:600">${esc(it.service_number)}</a></td>
+                  <td>${esc(it.beneficiary_name)}</td>
+                  <td>${esc(it.product_name)}</td>
+                  <td class="num">${fmt(it.qty)}</td>
+                  <td>${esc(it.status)}</td>
+                  <td><code style="font-size:.72rem">${esc(it.truck_plate || "—")}</code></td>
+                </tr>`;
+              }).join("")
+            : '<tr><td colspan="7" class="empty">Sem GTUs só no DB.</td></tr>';
+
+          // Sheet only
+          $("#tbody-sheet-only").innerHTML = d.only_in_sheet_sample.length
+            ? d.only_in_sheet_sample.map((x) => {
+                const r = x.rows[0];
+                return `<tr>
+                  <td><code>${esc(x.gtu)}</code></td>
+                  <td>${esc(r.beneficiary_name || "—")}</td>
+                  <td>${esc(r.product || "—")}</td>
+                  <td class="num">${fmt(r.delivered_qty || 0)}</td>
+                  <td><span style="font-size:.72rem">${esc(r.verification_status || "—")}</span></td>
+                  <td>${esc(r.submitted_by || "—")}</td>
+                </tr>`;
+              }).join("")
+            : '<tr><td colspan="6" class="empty">Sem GTUs só na Sheet.</td></tr>';
+        } catch (e) {
+          toast("Erro: " + e.message, { kind: "err" });
+        }
+      }
+
+      // Tabs
+      document.querySelectorAll(".tab").forEach((t) => {
+        t.addEventListener("click", () => {
+          document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+          document.querySelectorAll(".tab-content").forEach((x) => x.classList.remove("active"));
+          t.classList.add("active");
+          document.getElementById("tab-" + t.dataset.tab).classList.add("active");
+        });
+      });
+
+      $("#btn-refresh").addEventListener("click", load);
+
+      document.addEventListener("DOMContentLoaded", load);
+    })();
+    AdminUI.renderLayout("reconciliacao");
+  </script>
+</body>
+</html>

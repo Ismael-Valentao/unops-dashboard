@@ -1024,6 +1024,65 @@ const Services = {
   },
 };
 
+// ── Reconciliação Sheet ↔ DB por GTU ────────────────────────
+// Cruza os GTUs presentes na Google Sheet (dashboard público) com os
+// nossos delivery_service_items.external_gtu. Reporta quem está em
+// ambos / só na sheet / só na DB. Útil para identificar entregas que
+// já foram registadas pelo terreno mas o nosso DB ainda não actualizou
+// (e vice-versa).
+const Reconciliation = {
+  // sheetRows: [ { delivery_note_number, delivered_qty, beneficiary_name, … } ]
+  async vsSheet(sheetRows) {
+    // Normaliza GTUs do sheet (replace backslash, trim, uppercase)
+    const sheetByGtu = new Map();
+    (sheetRows || []).forEach((r) => {
+      const raw = String(r.delivery_note_number || "").trim().replace(/\\/g, "/").toUpperCase();
+      if (!raw) return;
+      if (!sheetByGtu.has(raw)) sheetByGtu.set(raw, []);
+      sheetByGtu.get(raw).push(r);
+    });
+
+    const dbRows = await query(
+      `SELECT i.id AS item_id, i.external_gtu, i.external_adsn,
+              i.beneficiary_name, i.product_name, i.qty, i.unit,
+              s.id AS service_id, s.service_number, s.status, s.truck_plate,
+              s.dispatched_at, s.delivered_at
+       FROM delivery_service_items i
+       JOIN delivery_services s ON s.id = i.service_id
+       WHERE i.external_gtu IS NOT NULL`
+    );
+    const dbByGtu = new Map();
+    dbRows.forEach((r) => {
+      const k = String(r.external_gtu).trim().toUpperCase();
+      if (!dbByGtu.has(k)) dbByGtu.set(k, []);
+      dbByGtu.get(k).push(r);
+    });
+
+    // Match: GTUs em ambos
+    const matched = [];
+    const onlyInDb = [];
+    for (const [gtu, items] of dbByGtu.entries()) {
+      if (sheetByGtu.has(gtu)) matched.push({ gtu, db: items, sheet: sheetByGtu.get(gtu) });
+      else onlyInDb.push({ gtu, items });
+    }
+    const onlyInSheet = [];
+    for (const [gtu, rows] of sheetByGtu.entries()) {
+      if (!dbByGtu.has(gtu)) onlyInSheet.push({ gtu, rows });
+    }
+
+    return {
+      matched_count: matched.length,
+      only_in_db_count: onlyInDb.length,
+      only_in_sheet_count: onlyInSheet.length,
+      matched_sample: matched.slice(0, 20),
+      only_in_db_sample: onlyInDb.slice(0, 50),
+      only_in_sheet_sample: onlyInSheet.slice(0, 50),
+      sheet_total: sheetByGtu.size,
+      db_total: dbByGtu.size,
+    };
+  },
+};
+
 // ── Manutenção ──────────────────────────────────────────────
 const Maintenance = {
   // Recompute delivery_services.total_kg a partir dos items (com qtyToKg).
@@ -1050,4 +1109,4 @@ const Maintenance = {
   },
 };
 
-module.exports = { Beneficiaries, Balances, Services, Maintenance, qtyToKg };
+module.exports = { Beneficiaries, Balances, Services, Reconciliation, Maintenance, qtyToKg };

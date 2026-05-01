@@ -28,6 +28,8 @@ window.AdminUI = (function () {
     { key: "beneficiarios",   label: "Beneficiários",     icon: ICO.users,      href: "/admin/beneficiarios" },
     { key: "servicos",        label: "Serviços",          icon: ICO.list,       href: "/admin/servicos" },
     { key: "camioes",         label: "Camiões",           icon: ICO.truck,      href: "/admin/camioes" },
+    { key: "anexar-guias",    label: "Anexar Guias",      icon: ICO.file,       href: "/admin/anexar-guias" },
+    { key: "reconciliacao",   label: "Reconciliação",     icon: ICO.shield,     href: "/admin/reconciliacao" },
     { section: "Compras" },
     { key: "purchase-orders", label: "Purchase Orders",   icon: ICO.file,       href: "/admin/purchase-orders" },
     { key: "authorizations",  label: "Autorizações",      icon: ICO.clipboard,  href: "/admin/authorizations" },
