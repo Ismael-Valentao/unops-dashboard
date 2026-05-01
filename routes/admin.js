@@ -16,7 +16,7 @@ const {
   Products, Warehouses, Departures, Plans,
   PurchaseOrders, Authorizations, StockEntries, ADSN, StockExits,
 } = require("../db/ops-repo");
-const { Beneficiaries, Balances, Services: DistServices, Reconciliation: DistReconciliation } = require("../db/distribution-repo");
+const { Beneficiaries, Balances, Services: DistServices, Reconciliation: DistReconciliation, Reports: DistReports } = require("../db/distribution-repo");
 const sheetCache = require("../lib/sheet-cache");
 const { importPlanning, importServices } = require("../lib/distribution-bootstrap");
 const { parseGuia: parseAdicionalGuia } = require("../lib/parse-adicional-guia");
@@ -1224,6 +1224,7 @@ router.get("/beneficiarios/:id",   (_req, res) => send(res, "beneficiario-detalh
 router.get("/anexar-guias",        (_req, res) => send(res, "anexar-guias.html"));
 router.get("/reconciliacao",       (_req, res) => send(res, "reconciliacao.html"));
 router.get("/aprovacoes",          (_req, res) => send(res, "aprovacoes.html"));
+router.get("/relatorio-provincias", (_req, res) => send(res, "relatorio-provincias.html"));
 
 // ── API ─────────────────────────────────────────────────────
 router.get("/api/distribution/geography", ah(async (_req, res) => {
@@ -1403,6 +1404,33 @@ router.post("/api/distribution/services/:id/cancel", express.json(), auth.requir
   if (result.error) return res.status(400).json(result);
   await auth.logAction(req, "cancel", "delivery_service", req.params.id, JSON.stringify(req.body || {}));
   res.json(result);
+}));
+
+// ── Relatórios de distribuição ─────────────────────────────────────────
+// GET /admin/api/distribution/report/by-province
+//   ?from=YYYY-MM-DD &to=YYYY-MM-DD &status=delivered|committed &sku=XYZ &province=Tete
+router.get("/api/distribution/report/by-province", ah(async (req, res) => {
+  const opts = {
+    from: req.query.from || null,
+    to: req.query.to || null,
+    status: req.query.status || "delivered",
+    sku: req.query.sku || null,
+    province: req.query.province || null,
+    district: req.query.district || null,
+  };
+  res.json(await DistReports.byProvince(opts));
+}));
+
+// Drill-down: distritos dentro duma província
+router.get("/api/distribution/report/by-district", ah(async (req, res) => {
+  if (!req.query.province) return res.status(400).json({ error: "province obrigatória" });
+  const opts = {
+    from: req.query.from || null,
+    to: req.query.to || null,
+    status: req.query.status || "delivered",
+    sku: req.query.sku || null,
+  };
+  res.json({ rows: await DistReports.byDistrict(req.query.province, opts) });
 }));
 
 // Lista de categorias de cancelamento (para popular dropdown na UI)

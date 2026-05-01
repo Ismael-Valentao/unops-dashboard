@@ -1193,4 +1193,159 @@ const Maintenance = {
   },
 };
 
-module.exports = { Beneficiaries, Balances, Services, Reconciliation, Maintenance, qtyToKg };
+// ── Relatórios ──────────────────────────────────────────────
+// Ordem geográfica norte→sul de Moçambique para apresentação consistente.
+const PROVINCE_ORDER = [
+  "Cabo Delgado", "Niassa", "Nampula", "Zambézia", "Tete",
+  "Manica", "Sofala", "Inhambane", "Gaza",
+  "Maputo Província", "Maputo Cidade",
+];
+
+const Reports = {
+  PROVINCE_ORDER,
+
+  // Relatório consolidado por província.
+  // opts: { from, to, status='delivered'|'committed', sku, district }
+  //  - status='delivered': só status='delivered'
+  //  - status='committed': inclui in_transit (já carregado, vai chegar)
+  //  - from/to filtra por delivered_at (delivered) ou created_at (committed)
+  async byProvince(opts = {}) {
+    const status = opts.status === "committed" ? "committed" : "delivered";
+    const statuses = status === "committed" ? ["in_transit", "delivered"] : ["delivered"];
+    const dateCol = status === "committed" ? "s.created_at" : "s.delivered_at";
+
+    // mysql2.execute() (prepared) NÃO expande arrays — gera placeholders manualmente
+    const statusPh = statuses.map(() => "?").join(",");
+    const where = [`s.status IN (${statusPh})`];
+    const params = [...statuses];
+    if (opts.from)     { where.push(`${dateCol} >= ?`); params.push(opts.from); }
+    if (opts.to)       { where.push(`${dateCol} <= ?`); params.push(opts.to + " 23:59:59"); }
+    if (opts.sku)      { where.push("i.sku = ?"); params.push(opts.sku); }
+    if (opts.province) { where.push("COALESCE(s.province, i.province) = ?"); params.push(opts.province); }
+    if (opts.district) { where.push("COALESCE(s.district, i.district) = ?"); params.push(opts.district); }
+
+    // Linhas de entrega: província + SKU + unidade
+    const delivered = await query(
+      `SELECT COALESCE(s.province, i.province) AS province,
+              i.sku,
+              i.product_name,
+              i.unit,
+              SUM(i.qty) AS qty,
+              COUNT(DISTINCT i.extensionist_id) AS n_beneficiaries,
+              COUNT(DISTINCT s.id) AS n_services
+       FROM delivery_services s
+       JOIN delivery_service_items i ON i.service_id = s.id
+       WHERE ${where.join(" AND ")}
+       GROUP BY province, i.sku, i.product_name, i.unit
+       ORDER BY province, i.sku`,
+      params
+    );
+
+    // Planeado total por província+SKU (para % progresso). Independente
+    // do filtro de período — planeado é o universo total.
+    const plannedWhere = ["province IS NOT NULL"];
+    const plannedParams = [];
+    if (opts.sku)      { plannedWhere.push("sku = ?"); plannedParams.push(opts.sku); }
+    if (opts.province) { plannedWhere.push("province = ?"); plannedParams.push(opts.province); }
+    if (opts.district) { plannedWhere.push("district = ?"); plannedParams.push(opts.district); }
+
+    const planned = await query(
+      `SELECT province, sku, unit,
+              SUM(planned_qty) AS qty_planned,
+              SUM(delivered_qty) AS qty_delivered_balances,
+              COUNT(*) AS n_beneficiaries_planned
+       FROM delivery_balances
+       WHERE ${plannedWhere.join(" AND ")}
+       GROUP BY province, sku, unit
+       ORDER BY province, sku`,
+      plannedParams
+    );
+
+    // SKUs distintos presentes (para construir colunas no front-end)
+    const skuMap = new Map();
+    for (const r of delivered) {
+      if (!skuMap.has(r.sku)) skuMap.set(r.sku, { sku: r.sku, product_name: r.product_name, unit: r.unit });
+    }
+    for (const r of planned) {
+      if (!skuMap.has(r.sku)) skuMap.set(r.sku, { sku: r.sku, product_name: r.sku, unit: r.unit });
+    }
+    const skus = [...skuMap.values()].sort((a, b) => a.sku.localeCompare(b.sku));
+
+    // Províncias presentes ordenadas geograficamente (e fallback alfabético)
+    const provSet = new Set();
+    for (const r of delivered) if (r.province) provSet.add(r.province);
+    for (const r of planned)   if (r.province) provSet.add(r.province);
+    const provinces = [...provSet].sort((a, b) => {
+      const ia = PROVINCE_ORDER.indexOf(a); const ib = PROVINCE_ORDER.indexOf(b);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return -1;
+      if (ib >= 0) return 1;
+      return a.localeCompare(b);
+    });
+
+    // Totais gerais
+    let totalKg = 0, totalUn = 0;
+    const benefSet = new Set();
+    const svcSet = new Set();
+    for (const r of delivered) {
+      const q = Number(r.qty || 0);
+      if (r.unit === "un") totalUn += q; else totalKg += q;
+    }
+    // n_beneficiaries/n_services únicos não são deduzíveis por GROUP BY normal;
+    // fazemos uma query rápida só para totais distintos.
+    const [totRow] = await query(
+      `SELECT COUNT(DISTINCT i.extensionist_id) AS n_beneficiaries,
+              COUNT(DISTINCT s.id) AS n_services
+       FROM delivery_services s
+       JOIN delivery_service_items i ON i.service_id = s.id
+       WHERE ${where.join(" AND ")}`,
+      params
+    );
+
+    return {
+      filters: { ...opts, status },
+      provinces,
+      skus,
+      delivered,
+      planned,
+      totals: {
+        total_kg: totalKg,
+        total_un: totalUn,
+        n_provinces: provinces.length,
+        n_beneficiaries: Number(totRow?.n_beneficiaries || 0),
+        n_services: Number(totRow?.n_services || 0),
+      },
+    };
+  },
+
+  // Drill-down: distritos dentro de uma província
+  async byDistrict(province, opts = {}) {
+    if (!province) throw new Error("province obrigatória");
+    const status = opts.status === "committed" ? "committed" : "delivered";
+    const statuses = status === "committed" ? ["in_transit", "delivered"] : ["delivered"];
+    const dateCol = status === "committed" ? "s.created_at" : "s.delivered_at";
+
+    const statusPh = statuses.map(() => "?").join(",");
+    const where = [`s.status IN (${statusPh})`, "COALESCE(s.province, i.province) = ?"];
+    const params = [...statuses, province];
+    if (opts.from) { where.push(`${dateCol} >= ?`); params.push(opts.from); }
+    if (opts.to)   { where.push(`${dateCol} <= ?`); params.push(opts.to + " 23:59:59"); }
+    if (opts.sku)  { where.push("i.sku = ?"); params.push(opts.sku); }
+
+    return query(
+      `SELECT COALESCE(s.district, i.district) AS district,
+              i.sku, i.product_name, i.unit,
+              SUM(i.qty) AS qty,
+              COUNT(DISTINCT i.extensionist_id) AS n_beneficiaries,
+              COUNT(DISTINCT s.id) AS n_services
+       FROM delivery_services s
+       JOIN delivery_service_items i ON i.service_id = s.id
+       WHERE ${where.join(" AND ")}
+       GROUP BY district, i.sku, i.product_name, i.unit
+       ORDER BY district, i.sku`,
+      params
+    );
+  },
+};
+
+module.exports = { Beneficiaries, Balances, Services, Reconciliation, Maintenance, Reports, qtyToKg };

@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Relatório por Província</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    .filters-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: .75rem;
+      padding: 1rem;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+    .filters-bar label { display:flex; flex-direction:column; gap:.25rem; font-size:.78rem; color:#475569; font-weight:600 }
+    .filters-bar input, .filters-bar select { padding:.4rem .55rem; font-size:.85rem; border:1px solid #cbd5e1; border-radius:4px; background:#fff }
+    .filters-actions { grid-column: 1 / -1; display:flex; gap:.5rem; justify-content:flex-end; align-items:end; }
+    .cards-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .stat-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #0f4c75;
+      border-radius: 6px;
+      padding: 1rem;
+    }
+    .stat-card .label { font-size:.72rem; color:#64748b; text-transform:uppercase; letter-spacing:.05em; font-weight:700 }
+    .stat-card .value { font-size:1.6rem; font-weight:800; color:#0f172a; margin-top:.25rem }
+    .stat-card .sub   { font-size:.72rem; color:#64748b; margin-top:.15rem }
+    .pivot-tbl { font-size:.82rem; }
+    .pivot-tbl td.num { text-align:right; font-variant-numeric: tabular-nums; }
+    .pivot-tbl td.prov-cell { font-weight:600; color:#0f4c75; cursor:pointer; }
+    .pivot-tbl td.prov-cell:hover { text-decoration: underline; }
+    .progress-mini {
+      display:inline-block; width:60px; height:5px;
+      background:#e2e8f0; border-radius:3px; overflow:hidden; margin-left:.4rem; vertical-align: middle;
+    }
+    .progress-mini > div { height:100%; background:#16a34a; }
+    .pct-label { font-size:.7rem; color:#64748b; }
+    .total-row { background:#f1f5f9; font-weight:700; }
+    .empty-cell { color:#cbd5e1; }
+    .district-drill {
+      background:#f8fafc;
+      border-left: 3px solid #0f4c75;
+      padding: .75rem 1rem;
+      margin: .5rem 0 1.5rem;
+      border-radius: 4px;
+    }
+    .district-drill h3 { font-size:.95rem; margin: 0 0 .5rem; color:#0f4c75; }
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Relatório por Província</h1>
+      <span class="admin-sub">Quantidades entregues consolidadas por província, comparadas com o planeado</span>
+    </header>
+
+    <section class="admin-section">
+      <form class="filters-bar" id="filters">
+        <label>De
+          <input type="date" name="from" id="f-from">
+        </label>
+        <label>Até
+          <input type="date" name="to" id="f-to">
+        </label>
+        <label>Status
+          <select name="status" id="f-status">
+            <option value="delivered">Entregue</option>
+            <option value="committed">Entregue + em trânsito</option>
+          </select>
+        </label>
+        <label>Produto (SKU)
+          <select name="sku" id="f-sku"><option value="">Todos</option></select>
+        </label>
+        <label>Província
+          <select name="province" id="f-province"><option value="">Todas</option></select>
+        </label>
+        <div class="filters-actions">
+          <button type="button" class="btn" id="btn-clear">Limpar</button>
+          <button type="submit" class="btn btn-primary">Aplicar</button>
+          <button type="button" class="btn btn-success" id="btn-csv">Exportar CSV</button>
+        </div>
+      </form>
+
+      <div class="cards-row" id="cards"></div>
+
+      <div id="filter-chips"></div>
+
+      <div class="tbl-wrap">
+        <table class="adm-table pivot-tbl" id="tbl">
+          <thead id="thead"></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+
+      <div id="drill-area"></div>
+
+      <p style="margin-top:1rem;font-size:.72rem;color:#64748b">
+        <strong>Nota:</strong> "% planeado" só aparece quando o filtro de produto/província
+        coincide com baseline em <code>delivery_balances</code>. Para "Entregue + em trânsito"
+        o período filtra por <code>created_at</code>; para "Entregue" filtra por <code>delivered_at</code>.
+      </p>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, esc, toast, exportCSV, urlState, renderFilterChips } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+      const PROVINCE_ORDER = [
+        "Cabo Delgado", "Niassa", "Nampula", "Zambézia", "Tete",
+        "Manica", "Sofala", "Inhambane", "Gaza",
+        "Maputo Província", "Maputo Cidade",
+      ];
+
+      let lastReport = null;
+
+      function pickFilters() {
+        const f = new FormData($("#filters"));
+        const o = {};
+        for (const [k, v] of f.entries()) if (v) o[k] = v;
+        return o;
+      }
+
+      function applyURLToForm() {
+        const st = urlState ? urlState.read() : {};
+        for (const k of ["from", "to", "status", "sku", "province"]) {
+          const el = document.querySelector(`[name="${k}"]`);
+          if (el && st[k]) el.value = st[k];
+        }
+      }
+
+      // Nomes mais legíveis para SKUs comuns
+      const SKU_LABEL = {
+        AGRIFEMMA01L: "Milho",
+        AGRIFEMA01: "Milho",
+        AGRIFEFTINS: "Feijão",
+        AGRIFEFA01: "Feijão",
+        AGRIFEAR01: "Arroz",
+        AGRIFEAS01: "Açúcar",
+        AGRIFEOL01: "Óleo",
+        AGRIFESC01: "Sacos hermét.",
+      };
+      const labelOf = (sku, fallback) => SKU_LABEL[sku] || fallback || sku;
+
+      function provinceSort(arr) {
+        return arr.slice().sort((a, b) => {
+          const ia = PROVINCE_ORDER.indexOf(a); const ib = PROVINCE_ORDER.indexOf(b);
+          if (ia >= 0 && ib >= 0) return ia - ib;
+          if (ia >= 0) return -1;
+          if (ib >= 0) return 1;
+          return a.localeCompare(b);
+        });
+      }
+
+      function renderCards(t) {
+        $("#cards").innerHTML = `
+          <div class="stat-card">
+            <div class="label">Total entregue (kg)</div>
+            <div class="value">${fmt(t.total_kg)}</div>
+            <div class="sub">${fmt(t.total_kg / 1000, 1)} toneladas</div>
+          </div>
+          <div class="stat-card" style="border-left-color:#7c3aed">
+            <div class="label">Sacos hermét. (un)</div>
+            <div class="value">${fmt(t.total_un)}</div>
+            <div class="sub">unidades</div>
+          </div>
+          <div class="stat-card" style="border-left-color:#16a34a">
+            <div class="label">Beneficiários servidos</div>
+            <div class="value">${fmt(t.n_beneficiaries)}</div>
+            <div class="sub">distintos</div>
+          </div>
+          <div class="stat-card" style="border-left-color:#d97706">
+            <div class="label">Serviços</div>
+            <div class="value">${fmt(t.n_services)}</div>
+            <div class="sub">${t.n_provinces} província${t.n_provinces === 1 ? "" : "s"}</div>
+          </div>
+        `;
+      }
+
+      function buildPivot(report) {
+        // mapa province -> sku -> { qty, unit }
+        const matrix = {};
+        for (const p of report.provinces) matrix[p] = {};
+        for (const r of report.delivered) {
+          if (!r.province) continue;
+          if (!matrix[r.province]) matrix[r.province] = {};
+          matrix[r.province][r.sku] = { qty: Number(r.qty || 0), unit: r.unit, n_benefs: r.n_beneficiaries };
+        }
+        // planned matrix
+        const planMatrix = {};
+        for (const r of report.planned) {
+          if (!r.province) continue;
+          if (!planMatrix[r.province]) planMatrix[r.province] = {};
+          planMatrix[r.province][r.sku] = Number(r.qty_planned || 0);
+        }
+        return { matrix, planMatrix };
+      }
+
+      function renderTable(report) {
+        const { matrix, planMatrix } = buildPivot(report);
+        const skus = report.skus;
+        const provs = provinceSort(report.provinces);
+
+        // Cabeçalho: Província | <sku1> kg | <sku1> % | <sku2> ... | Total kg
+        const thead = `<tr>
+          <th>Província</th>
+          ${skus.map((s) => `<th class="num" colspan="2" title="${esc(s.product_name)} (${esc(s.sku)})">${esc(labelOf(s.sku, s.product_name))} <span style="font-weight:400;color:#94a3b8">(${esc(s.unit)})</span></th>`).join("")}
+          <th class="num">Total kg</th>
+        </tr>
+        <tr style="font-size:.7rem;color:#64748b;background:#f8fafc">
+          <th></th>
+          ${skus.map(() => `<th class="num">Qtd</th><th class="num">% planeado</th>`).join("")}
+          <th></th>
+        </tr>`;
+        $("#thead").innerHTML = thead;
+
+        // Linhas
+        let totalsBySku = {};
+        let grandKg = 0;
+        const rowsHtml = provs.map((prov) => {
+          let rowKg = 0;
+          const cells = skus.map((s) => {
+            const cell = matrix[prov]?.[s.sku];
+            const planned = planMatrix[prov]?.[s.sku] || 0;
+            if (!cell) return `<td class="num empty-cell">—</td><td class="num empty-cell">—</td>`;
+            const q = cell.qty;
+            if (s.unit === "kg") rowKg += q;
+            totalsBySku[s.sku] = (totalsBySku[s.sku] || 0) + q;
+            const pct = planned > 0 ? Math.min(100, Math.round((q / planned) * 100)) : null;
+            const pctHtml = pct === null
+              ? '<span class="empty-cell">—</span>'
+              : `<span class="pct-label">${pct}%</span><span class="progress-mini"><div style="width:${pct}%"></div></span>`;
+            return `<td class="num">${fmt(q)}</td><td class="num">${pctHtml}</td>`;
+          }).join("");
+          grandKg += rowKg;
+          return `<tr>
+            <td class="prov-cell" data-province="${esc(prov)}">${esc(prov)}</td>
+            ${cells}
+            <td class="num"><strong>${fmt(rowKg)}</strong></td>
+          </tr>`;
+        }).join("");
+
+        // Linha total
+        const totalCells = skus.map((s) => {
+          const t = totalsBySku[s.sku] || 0;
+          return `<td class="num">${fmt(t)}</td><td class="num empty-cell">—</td>`;
+        }).join("");
+
+        $("#tbody").innerHTML = rowsHtml + `<tr class="total-row">
+          <td>Total</td>
+          ${totalCells}
+          <td class="num"><strong>${fmt(grandKg)}</strong></td>
+        </tr>`;
+
+        // Click na província → drill-down distritos
+        document.querySelectorAll("td.prov-cell").forEach((td) => {
+          td.addEventListener("click", () => drillDown(td.dataset.province));
+        });
+      }
+
+      async function drillDown(province) {
+        const opts = pickFilters();
+        opts.province = province;
+        const qs = new URLSearchParams(opts).toString();
+        const area = $("#drill-area");
+        area.innerHTML = `<div class="district-drill"><h3>Distritos em ${esc(province)}</h3><div class="empty">A carregar…</div></div>`;
+        try {
+          const data = await fetchJSON(`/admin/api/distribution/report/by-district?${qs}`);
+          if (!data.rows.length) {
+            area.innerHTML = `<div class="district-drill"><h3>Distritos em ${esc(province)}</h3>
+              <div class="empty">Sem entregas registadas para os filtros actuais.</div></div>`;
+            return;
+          }
+          // pivot por distrito × sku
+          const distMap = {};
+          const skuSet = new Set();
+          for (const r of data.rows) {
+            if (!distMap[r.district]) distMap[r.district] = {};
+            distMap[r.district][r.sku] = { qty: Number(r.qty), unit: r.unit };
+            skuSet.add(r.sku);
+          }
+          const skuList = [...skuSet].sort();
+          const dists = Object.keys(distMap).sort();
+          area.innerHTML = `<div class="district-drill">
+            <h3>Distritos em ${esc(province)} <button class="btn btn-sm" onclick="document.getElementById('drill-area').innerHTML=''" style="float:right">Fechar</button></h3>
+            <table class="adm-table" style="font-size:.78rem">
+              <thead><tr><th>Distrito</th>${skuList.map((s) => `<th class="num">${esc(SKU_LABEL[s] || s)}</th>`).join("")}</tr></thead>
+              <tbody>${dists.map((d) => `<tr>
+                <td>${esc(d || "—")}</td>
+                ${skuList.map((s) => {
+                  const c = distMap[d][s];
+                  return c ? `<td class="num">${fmt(c.qty)} <span style="color:#94a3b8;font-size:.7rem">${esc(c.unit)}</span></td>` : `<td class="num empty-cell">—</td>`;
+                }).join("")}
+              </tr>`).join("")}</tbody>
+            </table>
+          </div>`;
+        } catch (e) {
+          area.innerHTML = `<div class="district-drill" style="border-left-color:#dc2626">
+            <h3 style="color:#dc2626">Erro</h3><div>${esc(e.message)}</div></div>`;
+        }
+      }
+
+      function renderChips() {
+        const opts = pickFilters();
+        const chips = [];
+        if (opts.from)     chips.push({ key: "from",     label: "De: " + opts.from });
+        if (opts.to)       chips.push({ key: "to",       label: "Até: " + opts.to });
+        if (opts.status === "committed") chips.push({ key: "status", label: "Inclui em trânsito" });
+        if (opts.sku)      chips.push({ key: "sku",      label: "Produto: " + (opts.sku) });
+        if (opts.province) chips.push({ key: "province", label: "Província: " + opts.province });
+        if (renderFilterChips) {
+          renderFilterChips($("#filter-chips"), chips, (k) => {
+            const el = document.querySelector(`[name="${k}"]`);
+            if (el) el.value = k === "status" ? "delivered" : "";
+            load();
+          });
+        }
+      }
+
+      async function load() {
+        const opts = pickFilters();
+        const qs = new URLSearchParams(opts).toString();
+        if (urlState) urlState.write(opts);
+
+        $("#tbody").innerHTML = '<tr><td colspan="20" class="empty">A carregar…</td></tr>';
+        try {
+          const data = await fetchJSON(`/admin/api/distribution/report/by-province?${qs}`);
+          lastReport = data;
+          renderCards(data.totals);
+          renderTable(data);
+          renderChips();
+          // popular filtros (SKU + Província) — só primeira vez
+          const skuSel = $("#f-sku");
+          if (skuSel.options.length === 1 && data.skus.length) {
+            for (const s of data.skus) {
+              const opt = document.createElement("option");
+              opt.value = s.sku; opt.textContent = `${labelOf(s.sku, s.product_name)} (${s.sku})`;
+              skuSel.appendChild(opt);
+            }
+            const saved = urlState ? urlState.read().sku : null;
+            if (saved) skuSel.value = saved;
+          }
+          const provSel = $("#f-province");
+          if (provSel.options.length === 1 && data.provinces.length) {
+            for (const p of provinceSort(data.provinces)) {
+              const opt = document.createElement("option");
+              opt.value = p; opt.textContent = p;
+              provSel.appendChild(opt);
+            }
+            const saved = urlState ? urlState.read().province : null;
+            if (saved) provSel.value = saved;
+          }
+        } catch (e) {
+          $("#tbody").innerHTML = `<tr><td colspan="20" class="empty" style="color:#dc2626">Erro: ${esc(e.message)}</td></tr>`;
+          if (toast) toast("Erro: " + e.message, { kind: "err" });
+        }
+      }
+
+      $("#filters").addEventListener("submit", (e) => { e.preventDefault(); load(); });
+      $("#btn-clear").addEventListener("click", () => {
+        $("#filters").reset();
+        load();
+      });
+
+      $("#btn-csv").addEventListener("click", () => {
+        if (!lastReport || !exportCSV) return;
+        const { matrix, planMatrix } = buildPivot(lastReport);
+        const rows = [];
+        const skuLabels = lastReport.skus.map((s) => `${labelOf(s.sku, s.product_name)} (${s.unit})`);
+        const headers = ["Província", ...skuLabels.flatMap((l) => [l + " - Qtd", l + " - % planeado"]), "Total kg"];
+
+        for (const prov of provinceSort(lastReport.provinces)) {
+          const row = [prov];
+          let rowKg = 0;
+          for (const s of lastReport.skus) {
+            const cell = matrix[prov]?.[s.sku];
+            const planned = planMatrix[prov]?.[s.sku] || 0;
+            if (cell) {
+              row.push(cell.qty);
+              if (s.unit === "kg") rowKg += cell.qty;
+              row.push(planned > 0 ? Math.round((cell.qty / planned) * 100) + "%" : "");
+            } else {
+              row.push(""); row.push("");
+            }
+          }
+          row.push(rowKg);
+          rows.push(row);
+        }
+        exportCSV("relatorio-provincias-" + new Date().toISOString().slice(0, 10) + ".csv", headers, rows);
+      });
+
+      AdminUI.renderLayout("relatorio-provincias");
+      applyURLToForm();
+      load();
+    })();
+  </script>
+</body>
+</html>
