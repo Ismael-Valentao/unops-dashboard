@@ -638,6 +638,33 @@ const Services = {
       where.push("driver_name LIKE ?"); params.push("%" + opts.driver + "%");
     }
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
+
+    // Paginação: page (1-based) + pageSize. Se ambos omitidos, fallback ao
+    // comportamento antigo (LIMIT só, sem total). Quando paginado, devolve
+    // { rows, total, page, pageSize, totalPages }.
+    if (opts.page || opts.pageSize) {
+      const pageSize = Math.max(1, Math.min(500, Number(opts.pageSize) || 50));
+      const page = Math.max(1, Number(opts.page) || 1);
+      const offset = (page - 1) * pageSize;
+      const [{ total }] = await query(
+        `SELECT COUNT(*) AS total FROM delivery_services s ${w}`,
+        params
+      );
+      const rows = await query(
+        `SELECT s.*,
+                (SELECT COUNT(*) FROM delivery_service_items WHERE service_id = s.id) AS n_items,
+                (SELECT COUNT(DISTINCT extensionist_id) FROM delivery_service_items WHERE service_id = s.id) AS n_beneficiaries
+         FROM delivery_services s
+         ${w}
+         ORDER BY created_at DESC
+         LIMIT ${pageSize} OFFSET ${offset}`,
+        params
+      );
+      const totalNum = Number(total) || 0;
+      return { rows, total: totalNum, page, pageSize, totalPages: Math.ceil(totalNum / pageSize) };
+    }
+
+    // Modo legado: simples array
     const limit = opts.limit ? `LIMIT ${Number(opts.limit)}` : "LIMIT 500";
     return query(
       `SELECT s.*,

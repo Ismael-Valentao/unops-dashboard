@@ -147,6 +147,32 @@ a{color:inherit;text-decoration:none}
 #gsearch-modal .gs-tag-cancelled{background:#fee2e2;color:#991b1b}
 #gsearch-modal .gs-hint{padding:1.5rem 1.25rem;color:#94a3b8;font-size:.85rem;text-align:center}
 
+/* ── Paginator ─────────────────────────────────────────────── */
+.paginator{display:flex;justify-content:space-between;align-items:center;margin-top:.75rem;
+  padding:.5rem .25rem;border-top:1px solid #e2e8f0;flex-wrap:wrap;gap:.5rem}
+.paginator-info{font-size:.78rem;color:#64748b}
+.paginator-controls{display:flex;align-items:center;gap:.4rem}
+.paginator-controls .btn-sm{padding:.25rem .55rem;font-size:.78rem}
+.paginator-controls .btn-sm:disabled{opacity:.4;cursor:not-allowed}
+.paginator-current{font-size:.78rem;color:#475569;font-weight:600;padding:0 .4rem}
+.paginator-size{padding:.3rem .55rem;border:1px solid #cbd5e1;border-radius:6px;font-size:.78rem;background:#fff;font-family:inherit}
+
+/* Linha realçada por atalhos J/K */
+tr.kbd-active{background:#dbeafe!important;outline:2px solid #0f4c75;outline-offset:-2px}
+
+/* ── Keyboard help overlay (?) ─────────────────────────────── */
+.kbd-help-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);
+  display:none;align-items:center;justify-content:center;z-index:10001;padding:1rem;opacity:0;transition:opacity .15s}
+.kbd-help-overlay.show{display:flex;opacity:1}
+.kbd-help-box{background:#fff;border-radius:12px;width:100%;max-width:480px;padding:1.5rem;
+  box-shadow:0 20px 60px rgba(15,23,42,.3)}
+.kbd-help-box h3{margin:0 0 .85rem;font-size:1rem}
+.kbd-help-table{width:100%;font-size:.85rem}
+.kbd-help-table td{padding:.35rem .25rem;border-bottom:1px solid #f1f5f9}
+.kbd-help-table td:first-child{width:50%;color:#475569}
+kbd{display:inline-block;background:#f1f5f9;color:#1e293b;border:1px solid #cbd5e1;border-bottom-width:2px;
+  border-radius:4px;padding:.05rem .4rem;font-size:.78em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600}
+
 /* ── Toast notifications ───────────────────────────────────── */
 #toast-container{position:fixed;top:1rem;right:1rem;z-index:10000;display:flex;flex-direction:column;gap:.5rem;
   pointer-events:none;max-width:380px}

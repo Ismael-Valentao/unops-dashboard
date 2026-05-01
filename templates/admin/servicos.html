@@ -111,6 +111,7 @@
           <tbody id="tbl-body"></tbody>
         </table>
       </div>
+      <div id="paginator"></div>
     </section>
   </main>
 
@@ -147,7 +148,8 @@
   <script>
     (function () {
       const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable,
-              exportCSV, urlState, renderFilterChips, toast, confirm: confirmDialog } = window.AdminUI;
+              exportCSV, urlState, renderFilterChips, toast, confirm: confirmDialog,
+              renderPaginator, bindRowShortcuts } = window.AdminUI;
       const $ = (s) => document.querySelector(s);
 
       const STATUS_LABELS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
@@ -174,6 +176,7 @@
       let selectedIds = new Set();
       let cancelCategories = null;
       const sort = { sortKey: "created_at", sortAsc: false, render: () => render() };
+      let pageState = { page: 1, pageSize: 50, total: 0, totalPages: 1 };
 
       function renderCounts(counts) {
         const total = Object.values(counts).reduce((s, v) => s + v.n, 0);
@@ -236,7 +239,7 @@
         }
         $("#tbl-body").innerHTML = rows.map((r) => {
           const checked = selectedIds.has(r.id);
-          return `<tr class="${checked ? "row-selected" : ""}" data-id="${r.id}">
+          return `<tr class="${checked ? "row-selected" : ""}" data-id="${r.id}" data-link="/admin/servicos/${r.id}">
             <td class="check-col-svc"><input type="checkbox" class="row-check" ${checked ? "checked" : ""}></td>
             <td><a href="/admin/servicos/${r.id}" style="color:#0f4c75;font-weight:600">${esc(r.service_number)}</a></td>
             <td><span class="badge badge-${esc(r.status)}">${STATUS_LABELS[r.status] || r.status}</span></td>
@@ -410,15 +413,28 @@
         if (f.district) params.set("district", f.district);
         if (f.plate)    params.set("plate", f.plate);
         if (f.supplier) params.set("supplier", f.supplier);
+        params.set("page", pageState.page);
+        params.set("pageSize", pageState.pageSize);
         renderChips();
         try {
           const data = await fetchJSON("/admin/api/distribution/services?" + params);
           renderCounts(data.counts || {});
           allRows = data.rows || [];
+          pageState = {
+            page: data.page || 1,
+            pageSize: data.pageSize || pageState.pageSize,
+            total: data.total || allRows.length,
+            totalPages: data.totalPages || 1,
+          };
           // Drop selecções que já não estão no resultset actual
           const ids = new Set(allRows.map((r) => r.id));
           selectedIds = new Set([...selectedIds].filter((id) => ids.has(id)));
           render();
+          renderPaginator($("#paginator"), pageState, ({ page, pageSize }) => {
+            pageState.page = page;
+            pageState.pageSize = pageSize;
+            load();
+          });
         } catch (e) {
           $("#tbl-body").innerHTML = `<tr><td colspan="${COLS.length}" style="color:#dc2626;padding:1rem">Erro: ${esc(e.message)}</td></tr>`;
         }
@@ -454,15 +470,16 @@
       }
 
       function debounced(fn) { return () => { clearTimeout(timer); timer = setTimeout(fn, 250); }; }
+      function loadPage1() { pageState.page = 1; load(); }
 
       document.addEventListener("DOMContentLoaded", async () => {
         // Restore filters from URL (suporta links bookmarkáveis)
         urlSync.read();
         activeStatus = $("#f-status").value;
 
-        $("#f-status").addEventListener("change", () => { activeStatus = $("#f-status").value; load(); });
+        $("#f-status").addEventListener("change", () => { activeStatus = $("#f-status").value; loadPage1(); });
         ["f-province", "f-district", "f-plate", "f-supplier"].forEach((id) =>
-          $("#" + id).addEventListener("input", debounced(load))
+          $("#" + id).addEventListener("input", debounced(loadPage1))
         );
 
         // Bulk handlers
@@ -477,6 +494,9 @@
 
         // Export
         $("#btn-export-csv").addEventListener("click", doExportCSV);
+
+        // Atalhos teclado: J/K nav linhas, Enter abre detalhe, ? help
+        bindRowShortcuts({ tableSelector: "#svc-table", rowSelector: "tbody tr[data-link]" });
 
         await load();
       });

@@ -1313,9 +1313,11 @@ router.post("/api/distribution/services", express.json(), auth.requireRole("oper
 }));
 
 router.get("/api/distribution/services", ah(async (req, res) => {
-  const rows = await DistServices.list(req.query);
+  const result = await DistServices.list(req.query);
   const counts = await DistServices.dashboardCounts();
-  res.json({ rows, counts });
+  // Compat: se for paginado (objecto), retorna {rows, total, ...}; se for array (modo legado), embrulha em {rows}
+  if (Array.isArray(result)) res.json({ rows: result, counts });
+  else res.json({ ...result, counts });
 }));
 
 router.get("/api/distribution/services/:id", ah(async (req, res) => {

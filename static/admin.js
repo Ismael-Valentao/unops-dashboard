@@ -485,12 +485,121 @@ window.AdminUI = (function () {
     });
   }
 
+  // ── Paginator ───────────────────────────────────────────────
+  // AdminUI.renderPaginator(container, { page, pageSize, total, totalPages }, onChange)
+  // onChange recebe { page, pageSize }
+  function renderPaginator(container, state, onChange) {
+    if (!container) return;
+    const { page = 1, pageSize = 50, total = 0, totalPages = 1 } = state || {};
+    if (total <= pageSize && page === 1) { container.innerHTML = ""; return; }
+    const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+    const end = Math.min(total, page * pageSize);
+    const canPrev = page > 1;
+    const canNext = page < totalPages;
+    container.innerHTML = `
+      <div class="paginator">
+        <div class="paginator-info">${start}–${end} de ${total.toLocaleString("pt-PT")}</div>
+        <div class="paginator-controls">
+          <button class="btn btn-sm" data-page="1" ${!canPrev ? "disabled" : ""}>«</button>
+          <button class="btn btn-sm" data-page="${page - 1}" ${!canPrev ? "disabled" : ""}>‹</button>
+          <span class="paginator-current">Pág. ${page} / ${totalPages}</span>
+          <button class="btn btn-sm" data-page="${page + 1}" ${!canNext ? "disabled" : ""}>›</button>
+          <button class="btn btn-sm" data-page="${totalPages}" ${!canNext ? "disabled" : ""}>»</button>
+          <select class="paginator-size">
+            ${[20, 50, 100, 200].map((n) => `<option value="${n}" ${n === pageSize ? "selected" : ""}>${n} / pág</option>`).join("")}
+          </select>
+        </div>
+      </div>
+    `;
+    container.querySelectorAll("button[data-page]").forEach((b) => {
+      b.addEventListener("click", () => {
+        if (b.disabled) return;
+        const newPage = Math.max(1, Math.min(totalPages, Number(b.dataset.page)));
+        onChange({ page: newPage, pageSize });
+      });
+    });
+    container.querySelector(".paginator-size").addEventListener("change", (e) => {
+      onChange({ page: 1, pageSize: Number(e.target.value) });
+    });
+  }
+
+  // ── Keyboard shortcuts ─────────────────────────────────────
+  // AdminUI.bindRowShortcuts({ tableSelector, rowSelector, onSelect })
+  // J/K para navegar linhas, Enter para abrir o link da linha activa.
+  // ? para mostrar overlay de ajuda.
+  function bindRowShortcuts(opts) {
+    const { tableSelector, rowSelector = "tr[data-link]", onSelect } = opts || {};
+    let activeIdx = -1;
+    function rows() { return Array.from(document.querySelectorAll(`${tableSelector} ${rowSelector}`)); }
+    function highlight(idx) {
+      const all = rows();
+      all.forEach((r, i) => r.classList.toggle("kbd-active", i === idx));
+      if (all[idx]) all[idx].scrollIntoView({ block: "nearest" });
+    }
+    document.addEventListener("keydown", (e) => {
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+      if (e.key === "?") { showShortcutsHelp(); e.preventDefault(); return; }
+      const all = rows();
+      if (!all.length) return;
+      if (e.key === "j" || e.key === "ArrowDown") {
+        activeIdx = Math.min(all.length - 1, activeIdx + 1);
+        highlight(activeIdx); e.preventDefault();
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        activeIdx = Math.max(0, activeIdx - 1);
+        highlight(activeIdx); e.preventDefault();
+      } else if (e.key === "Enter" && activeIdx >= 0 && all[activeIdx]) {
+        const link = all[activeIdx].dataset.link;
+        if (link) {
+          if (onSelect) onSelect(all[activeIdx], link);
+          else location.href = link;
+          e.preventDefault();
+        }
+      }
+    });
+  }
+
+  // Overlay de ajuda dos atalhos
+  function showShortcutsHelp() {
+    if (document.getElementById("kbd-help")) {
+      document.getElementById("kbd-help").classList.add("show");
+      return;
+    }
+    const wrap = document.createElement("div");
+    wrap.id = "kbd-help";
+    wrap.className = "kbd-help-overlay";
+    wrap.innerHTML = `
+      <div class="kbd-help-box">
+        <h3>Atalhos de teclado</h3>
+        <table class="kbd-help-table">
+          <tr><td><kbd>⌘</kbd>+<kbd>K</kbd> ou <kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Pesquisa global</td></tr>
+          <tr><td><kbd>/</kbd></td><td>Pesquisa global (sem foco em input)</td></tr>
+          <tr><td><kbd>J</kbd> ou <kbd>↓</kbd></td><td>Próxima linha</td></tr>
+          <tr><td><kbd>K</kbd> ou <kbd>↑</kbd></td><td>Linha anterior</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>Abrir linha activa</td></tr>
+          <tr><td><kbd>?</kbd></td><td>Esta ajuda</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Fechar overlay</td></tr>
+        </table>
+        <p style="font-size:.78rem;color:#64748b;margin-top:.85rem">Em <code>/admin/distribuicao</code>: <kbd>1</kbd>–<kbd>6</kbd> escolhem capacidade do camião, <kbd>A</kbd> auto-preenche, <kbd>C</kbd> limpa selecção.</p>
+        <div style="text-align:right;margin-top:1rem"><button class="btn" id="kbd-help-close">Fechar</button></div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+    requestAnimationFrame(() => wrap.classList.add("show"));
+    const close = () => wrap.classList.remove("show");
+    wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+    wrap.querySelector("#kbd-help-close").addEventListener("click", close);
+    document.addEventListener("keydown", function onEsc(e) {
+      if (e.key === "Escape") { close(); document.removeEventListener("keydown", onEsc); }
+    });
+  }
+
   return {
     esc, fmt, fmtDate, statusBadge, fetchJSON, renderLayout, loadMe,
     loadProducts, loadWarehouses, productSelectOptions, clearCache,
     sortRows, sortArrow, bindSortable, mountGlobalSearch,
     exportCSV, urlState, renderFilterChips,
     toast, confirm: confirmDialog,
+    renderPaginator, bindRowShortcuts, showShortcutsHelp,
   };
 })();
 
