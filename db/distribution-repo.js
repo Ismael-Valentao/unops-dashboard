@@ -865,6 +865,136 @@ const Services = {
     rows.forEach((r) => { out[r.status] = { n: Number(r.n) || 0, kg: Number(r.kg) || 0 }; });
     return out;
   },
+
+  // Dashboard agregado — reúne tudo o que o operador quer ver no /admin:
+  // Por produto: planeado, entregue, falta, % cumprimento.
+  // Por estado de serviço: contagens + total kg.
+  // Top distritos com mais saldo. Camiões em trânsito.
+  // Alertas: drafts > 7d, in_transit > 48h, benefs nunca atendidos.
+  // Actividade recente: últimos 10 serviços por created_at.
+  async dashboard() {
+    // 1. Saldos por produto canónico
+    const byProduct = await query(
+      `SELECT sku, product_name, unit,
+              SUM(planned_qty) AS planned,
+              SUM(committed_qty) AS committed,
+              SUM(GREATEST(0, planned_qty - committed_qty)) AS available,
+              COUNT(*) AS n_benefs
+       FROM delivery_balances
+       WHERE planned_qty > 0
+       GROUP BY sku, product_name, unit
+       ORDER BY planned DESC`
+    );
+
+    // 2. Status counts (já tem fleetSummary p/ trânsito; aqui pegamos counts tudo)
+    const counts = await this.dashboardCounts();
+
+    // 3. Top 8 distritos por falta total (kg-equiv: un × 0.3)
+    const topDistricts = await query(
+      `SELECT province, district,
+              SUM(GREATEST(0, planned_qty - committed_qty) *
+                CASE WHEN unit = 'un' THEN 0.3 ELSE 1 END) AS falta_kg_eq,
+              COUNT(DISTINCT extensionist_id) AS n_benefs
+       FROM delivery_balances
+       WHERE planned_qty > 0 AND district IS NOT NULL
+       GROUP BY province, district
+       HAVING falta_kg_eq > 0
+       ORDER BY falta_kg_eq DESC
+       LIMIT 8`
+    );
+
+    // 4. Camiões em trânsito agora (top 6 por dispatched_at desc)
+    const inTransit = await query(
+      `SELECT s.id, s.service_number, s.truck_plate, s.driver_name,
+              s.province, s.district, s.origem_supplier, s.total_kg,
+              s.truck_capacity_kg, s.dispatched_at,
+              (SELECT COUNT(DISTINCT i.extensionist_id) FROM delivery_service_items i WHERE i.service_id = s.id) AS n_beneficiaries
+       FROM delivery_services s
+       WHERE s.status = 'in_transit'
+       ORDER BY s.dispatched_at DESC LIMIT 6`
+    );
+
+    // 5. Alertas
+    const alerts = [];
+    // Drafts criados há > 7 dias (esquecidos)
+    const oldDrafts = await query(
+      `SELECT id, service_number, district, total_kg, created_at,
+              TIMESTAMPDIFF(DAY, created_at, NOW()) AS days_old
+       FROM delivery_services
+       WHERE status = 'draft' AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)
+       ORDER BY created_at LIMIT 5`
+    );
+    if (oldDrafts.length) {
+      alerts.push({
+        kind: "warn",
+        title: `${oldDrafts.length} draft${oldDrafts.length === 1 ? "" : "s"} parado${oldDrafts.length === 1 ? "" : "s"} > 7 dias`,
+        items: oldDrafts.map((d) => ({
+          link: "/admin/servicos/" + d.id,
+          label: `${d.service_number} (${d.district}) — ${d.days_old} dias em rascunho`,
+        })),
+      });
+    }
+    // Trânsitos parados há > 48h
+    const stuckTransit = await query(
+      `SELECT id, service_number, truck_plate, district, total_kg, dispatched_at,
+              TIMESTAMPDIFF(HOUR, dispatched_at, NOW()) AS hours_stuck
+       FROM delivery_services
+       WHERE status = 'in_transit' AND dispatched_at < DATE_SUB(NOW(), INTERVAL 48 HOUR)
+       ORDER BY dispatched_at LIMIT 5`
+    );
+    if (stuckTransit.length) {
+      alerts.push({
+        kind: "err",
+        title: `${stuckTransit.length} cami${stuckTransit.length === 1 ? "ão parado" : "ões parados"} > 48h`,
+        items: stuckTransit.map((t) => ({
+          link: "/admin/servicos/" + t.id,
+          label: `${t.truck_plate || t.service_number} → ${t.district} • há ${t.hours_stuck}h em trânsito`,
+        })),
+      });
+    }
+    // Beneficiários nunca atendidos com saldo elevado (top 5 por saldo)
+    const neverServed = await query(
+      `SELECT b.extensionist_id, b.beneficiary_name, b.district, b.product_name,
+              GREATEST(0, b.planned_qty - b.committed_qty) AS available_qty, b.unit
+       FROM delivery_balances b
+       LEFT JOIN delivery_service_items i ON i.extensionist_id = b.extensionist_id
+       WHERE b.planned_qty > 0 AND (b.planned_qty - b.committed_qty) > 0
+         AND i.id IS NULL
+       ORDER BY available_qty DESC LIMIT 5`
+    );
+    if (neverServed.length) {
+      alerts.push({
+        kind: "info",
+        title: `${neverServed.length} beneficiários com saldo grande nunca atendidos`,
+        items: neverServed.map((b) => ({
+          link: "/admin/beneficiarios/" + encodeURIComponent(b.extensionist_id),
+          label: `${b.beneficiary_name} (${b.district}) — falta ${Number(b.available_qty).toLocaleString("pt-PT")} ${b.unit} de ${b.product_name}`,
+        })),
+      });
+    }
+
+    // 6. Actividade recente — 10 últimos serviços criados ou entregues
+    const recent = await query(
+      `SELECT id, service_number, status, district, truck_plate, total_kg,
+              created_at, dispatched_at, delivered_at
+       FROM delivery_services
+       ORDER BY GREATEST(
+         COALESCE(delivered_at, '1970-01-01'),
+         COALESCE(dispatched_at, '1970-01-01'),
+         COALESCE(created_at, '1970-01-01')
+       ) DESC
+       LIMIT 10`
+    );
+
+    return {
+      by_product: byProduct,
+      counts,
+      top_districts: topDistricts,
+      in_transit: inTransit,
+      alerts,
+      recent_activity: recent,
+    };
+  },
 };
 
 // ── Manutenção ──────────────────────────────────────────────

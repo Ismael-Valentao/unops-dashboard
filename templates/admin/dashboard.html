@@ -11,13 +11,54 @@
   <main class="admin-main">
     <header class="admin-header">
       <h1>Dashboard Operacional</h1>
-      <span class="admin-sub">Visao geral em tempo real</span>
+      <span class="admin-sub">Visão geral em tempo real</span>
     </header>
 
-    <!-- 🚛 Camiões Carregados no Dia -->
+    <!-- ── DISTRIBUIÇÃO (Fase 9) ─────────────────────────── -->
+    <section class="admin-section" id="dist-overview"
+      style="border-left:4px solid #0f4c75;background:linear-gradient(to right,#f0f9ff,#fff)">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem;margin-bottom:.5rem">
+        <h2 style="margin:0">Distribuição — Visão Geral</h2>
+        <div style="display:flex;gap:.5rem">
+          <a href="/admin/distribuicao" class="btn btn-primary">Despachar</a>
+          <a href="/admin/servicos" class="btn">Serviços</a>
+          <a href="/admin/camioes" class="btn">Camiões</a>
+        </div>
+      </div>
+
+      <!-- Cards por estado de serviço -->
+      <div id="dist-counts" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.65rem;margin-top:.75rem">
+        <div class="empty">A carregar…</div>
+      </div>
+
+      <!-- Saldos por produto (cumprimento %) -->
+      <h3 style="margin:1.25rem 0 .5rem;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Cumprimento por produto</h3>
+      <div id="dist-products" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.6rem"></div>
+
+      <!-- Alertas -->
+      <div id="dist-alerts" style="margin-top:1rem"></div>
+
+      <!-- Layout de 2 colunas: top distritos + camiões em trânsito -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1.25rem" id="dist-2col">
+        <div>
+          <h3 style="margin:0 0 .5rem;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Top distritos com saldo</h3>
+          <div id="dist-top-districts"></div>
+        </div>
+        <div>
+          <h3 style="margin:0 0 .5rem;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Em trânsito agora</h3>
+          <div id="dist-in-transit"></div>
+        </div>
+      </div>
+
+      <!-- Actividade recente -->
+      <h3 style="margin:1.25rem 0 .5rem;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Actividade recente</h3>
+      <div id="dist-recent"></div>
+    </section>
+
+    <!-- ── LEGADO (Camiões PO/Auth) ─────────────────────── -->
     <section class="admin-section" style="border-left:4px solid #0f4c75;background:linear-gradient(to right,#f0f9ff,#fff)">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem;margin-bottom:.75rem">
-        <h2 style="margin:0">🚛 Camiões Carregados</h2>
+        <h2 style="margin:0">Camiões Carregados (legado PO/Auth)</h2>
         <div style="display:flex;gap:.5rem;align-items:center">
           <label style="font-size:.85rem;color:#475569">Data:</label>
           <input type="date" id="trucks-today-date" style="padding:.4rem .6rem;border:1px solid #cbd5e1;border-radius:6px">
@@ -156,6 +197,118 @@
     });
 
     loadTrucksToday();
+
+    // ── DISTRIBUIÇÃO (Fase 9) ───────────────────────────────
+    (async function loadDistribution() {
+      try {
+        const d = await AdminUI.fetchJSON("/admin/api/distribution/dashboard");
+        const { esc, fmt, fmtDate } = AdminUI;
+        const STATUS_LBL = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
+        const STATUS_COLOR = { draft: "#64748b", in_transit: "#d97706", delivered: "#16a34a", cancelled: "#dc2626" };
+
+        // 1. Status counts
+        const c = d.counts;
+        document.getElementById("dist-counts").innerHTML = ["draft", "in_transit", "delivered", "cancelled"].map((k) => `
+          <a href="/admin/servicos?status=${k}" style="background:#fff;border-radius:8px;padding:.7rem .9rem;
+             border-left:3px solid ${STATUS_COLOR[k]};text-decoration:none;color:#1e293b;display:block;
+             box-shadow:0 1px 3px rgba(0,0,0,.04);transition:transform .12s">
+            <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:700">${STATUS_LBL[k]}</div>
+            <div style="font-size:1.4rem;font-weight:800;color:${STATUS_COLOR[k]};line-height:1.1;margin-top:.1rem">${fmt(c[k].n)}</div>
+            <div style="font-size:.7rem;color:#94a3b8;margin-top:.15rem">${fmt(c[k].kg)} kg</div>
+          </a>
+        `).join("");
+
+        // 2. Cumprimento por produto
+        document.getElementById("dist-products").innerHTML = (d.by_product || []).map((p) => {
+          const planned = Number(p.planned) || 0;
+          const committed = Number(p.committed) || 0;
+          const available = Number(p.available) || 0;
+          const pct = planned > 0 ? Math.round((committed / planned) * 100) : 0;
+          const barColor = pct >= 80 ? "#16a34a" : pct >= 40 ? "#f59e0b" : "#dc2626";
+          return `<a href="/admin/distribuicao?sku=${encodeURIComponent(p.sku)}"
+              style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.65rem .85rem;
+              text-decoration:none;color:#1e293b;display:block;transition:border-color .12s">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.35rem">
+              <strong style="font-size:.92rem">${esc(p.product_name)}</strong>
+              <span style="font-size:.78rem;color:${barColor};font-weight:700">${pct}%</span>
+            </div>
+            <div style="height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;margin-bottom:.4rem">
+              <div style="height:100%;background:${barColor};width:${Math.min(100, pct)}%"></div>
+            </div>
+            <div style="font-size:.7rem;color:#64748b;display:flex;justify-content:space-between">
+              <span>${fmt(committed)} / ${fmt(planned)} ${esc(p.unit)}</span>
+              <span>${p.n_benefs} benefs</span>
+            </div>
+            ${available > 0 ? `<div style="font-size:.7rem;color:#dc2626;margin-top:.25rem">Falta ${fmt(available)} ${esc(p.unit)}</div>` : ""}
+          </a>`;
+        }).join("");
+
+        // 3. Alertas
+        const alertsEl = document.getElementById("dist-alerts");
+        if (d.alerts && d.alerts.length) {
+          alertsEl.innerHTML = d.alerts.map((a) => {
+            const bg = { warn: "#fef3c7", err: "#fee2e2", info: "#dbeafe" }[a.kind] || "#f1f5f9";
+            const border = { warn: "#d97706", err: "#dc2626", info: "#0284c7" }[a.kind] || "#64748b";
+            return `<div style="background:${bg};border-left:4px solid ${border};border-radius:6px;padding:.65rem .85rem;margin-top:.5rem">
+              <div style="font-weight:700;font-size:.82rem;color:${border};margin-bottom:.3rem">${esc(a.title)}</div>
+              <ul style="margin:0;padding-left:1rem;font-size:.78rem;color:#1e293b">
+                ${a.items.map((it) => `<li><a href="${it.link}" style="color:#0f4c75">${esc(it.label)}</a></li>`).join("")}
+              </ul>
+            </div>`;
+          }).join("");
+        } else {
+          alertsEl.innerHTML = "";
+        }
+
+        // 4. Top distritos
+        document.getElementById("dist-top-districts").innerHTML = (d.top_districts || []).length
+          ? `<table class="adm-table" style="font-size:.78rem">
+              <thead><tr><th>Província / Distrito</th><th class="num">Falta (kg eq)</th><th class="num">Benefs</th></tr></thead>
+              <tbody>${d.top_districts.map((t) => `<tr>
+                <td><a href="/admin/distribuicao?province=${encodeURIComponent(t.province||"")}&district=${encodeURIComponent(t.district||"")}" style="color:#0f4c75;font-weight:600">${esc(t.province||"—")} / ${esc(t.district||"—")}</a></td>
+                <td class="num" style="color:#dc2626;font-weight:700">${fmt(t.falta_kg_eq)}</td>
+                <td class="num">${fmt(t.n_benefs)}</td>
+              </tr>`).join("")}</tbody>
+            </table>`
+          : `<div class="empty">Tudo entregue.</div>`;
+
+        // 5. Em trânsito agora
+        document.getElementById("dist-in-transit").innerHTML = (d.in_transit || []).length
+          ? `<table class="adm-table" style="font-size:.78rem">
+              <thead><tr><th>Matrícula</th><th>Distrito</th><th class="num">kg</th><th class="num">Benefs</th><th>Saiu</th></tr></thead>
+              <tbody>${d.in_transit.map((t) => `<tr>
+                <td><a href="/admin/servicos/${t.id}" style="color:#0f4c75;font-weight:600;font-family:ui-monospace,monospace">${esc(t.truck_plate || "—")}</a></td>
+                <td>${esc(t.district || "—")}</td>
+                <td class="num">${fmt(t.total_kg)}</td>
+                <td class="num">${fmt(t.n_beneficiaries)}</td>
+                <td style="font-size:.72rem">${t.dispatched_at ? fmtDate(t.dispatched_at) : "—"}</td>
+              </tr>`).join("")}</tbody>
+            </table>`
+          : `<div class="empty">Nenhum camião em trânsito.</div>`;
+
+        // 6. Actividade recente
+        document.getElementById("dist-recent").innerHTML = (d.recent_activity || []).length
+          ? `<table class="adm-table" style="font-size:.78rem">
+              <thead><tr><th>Nº</th><th>Estado</th><th>Distrito</th><th>Matrícula</th><th class="num">kg</th><th>Última actividade</th></tr></thead>
+              <tbody>${d.recent_activity.map((r) => {
+                const last = r.delivered_at || r.dispatched_at || r.created_at;
+                const STATUS_BG = { draft: "#f1f5f9", in_transit: "#fef3c7", delivered: "#dcfce7", cancelled: "#fee2e2" };
+                return `<tr>
+                  <td><a href="/admin/servicos/${r.id}" style="color:#0f4c75;font-weight:600">${esc(r.service_number)}</a></td>
+                  <td><span style="background:${STATUS_BG[r.status]};padding:.1rem .5rem;border-radius:3px;font-size:.7rem;font-weight:700">${STATUS_LBL[r.status] || r.status}</span></td>
+                  <td>${esc(r.district || "—")}</td>
+                  <td><code style="font-size:.72rem">${esc(r.truck_plate || "—")}</code></td>
+                  <td class="num">${fmt(r.total_kg)}</td>
+                  <td style="font-size:.72rem">${last ? fmtDate(last) : "—"}</td>
+                </tr>`;
+              }).join("")}</tbody>
+            </table>`
+          : `<div class="empty">Sem actividade recente.</div>`;
+      } catch (e) {
+        console.error("Distribution dashboard load failed:", e);
+        document.getElementById("dist-overview").style.display = "none";
+      }
+    })();
 
     AdminUI.fetchJSON("/admin/api/dashboard").then((d) => {
       document.getElementById("c-expected").textContent = d.trucks.expected;

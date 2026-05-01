@@ -1401,6 +1401,11 @@ router.get("/api/distribution/fleet-summary", ah(async (req, res) => {
   res.json(await DistServices.fleetSummary(req.query));
 }));
 
+// Dashboard agregado — para o /admin home
+router.get("/api/distribution/dashboard", ah(async (_req, res) => {
+  res.json(await DistServices.dashboard());
+}));
+
 router.get("/api/distribution/by-plate", ah(async (req, res) => {
   const plate = String(req.query.plate || "").trim();
   if (!plate) return res.json({ rows: [] });
