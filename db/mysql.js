@@ -136,6 +136,36 @@ async function migrate() {
     ) NOT NULL`
   );
 
+  // delivery_services: aprovação (Fase 12)
+  // requires_approval = decidido por um threshold de operação (kg, etc.)
+  // approval_status = pending | approved | rejected
+  // Útil quando operator cria service mas precisa de admin para libertar p/ trânsito
+  if (!(await columnExists("delivery_services", "approval_status"))) {
+    await getPool().query(
+      "ALTER TABLE delivery_services ADD COLUMN approval_status ENUM('pending','approved','rejected','not_required') NOT NULL DEFAULT 'not_required' AFTER status"
+    );
+    console.log("[DB] migrated delivery_services.approval_status");
+  }
+  if (!(await columnExists("delivery_services", "approved_at"))) {
+    await getPool().query(
+      "ALTER TABLE delivery_services ADD COLUMN approved_at DATETIME NULL AFTER approval_status"
+    );
+    console.log("[DB] migrated delivery_services.approved_at");
+  }
+  if (!(await columnExists("delivery_services", "approved_by"))) {
+    await getPool().query(
+      "ALTER TABLE delivery_services ADD COLUMN approved_by INT NULL AFTER approved_at"
+    );
+    try { await getPool().query("ALTER TABLE delivery_services ADD CONSTRAINT fk_ds_approved_by FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL"); } catch (e) {}
+    console.log("[DB] migrated delivery_services.approved_by");
+  }
+  if (!(await columnExists("delivery_services", "approval_notes"))) {
+    await getPool().query(
+      "ALTER TABLE delivery_services ADD COLUMN approval_notes TEXT NULL"
+    );
+    console.log("[DB] migrated delivery_services.approval_notes");
+  }
+
   // delivery_services: categoria + razão de cancelamento (Fase 5)
   if (!(await columnExists("delivery_services", "cancellation_category"))) {
     await getPool().query(

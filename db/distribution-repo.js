@@ -362,7 +362,17 @@ const Services = {
       }
 
       await conn.commit();
-      return { ok: true, service_id: serviceId, service_number: serviceNumber, total_kg: totalKg };
+      // Decide approval requirement post-commit (separate UPDATE)
+      await this.maybeRequireApproval(serviceId);
+      // Re-fetch approval_status to inform caller
+      const svc = await queryOne("SELECT approval_status FROM delivery_services WHERE id = ?", [serviceId]);
+      return {
+        ok: true,
+        service_id: serviceId,
+        service_number: serviceNumber,
+        total_kg: totalKg,
+        approval_status: svc?.approval_status || "not_required",
+      };
     } catch (e) {
       try { await conn.rollback(); } catch (_) { /* ignore */ }
       throw e;
@@ -448,12 +458,86 @@ const Services = {
     return { ok: errors.length === 0, errors, warnings };
   },
 
+  // Threshold acima do qual um serviço REQUER aprovação admin antes de
+  // poder ir para trânsito. Default: 20 toneladas. Configurável via env.
+  APPROVAL_THRESHOLD_KG: Number(process.env.SERVICE_APPROVAL_KG) || 20000,
+
+  // Marca um serviço como precisando de aprovação se a sua carga
+  // ultrapassar o threshold. Chamado dentro do create.
+  async maybeRequireApproval(serviceId) {
+    const conn = await getPool().getConnection();
+    try {
+      const threshold = this.APPROVAL_THRESHOLD_KG;
+      await conn.query(
+        `UPDATE delivery_services
+         SET approval_status = CASE
+           WHEN total_kg >= ? THEN 'pending'
+           ELSE 'not_required'
+         END
+         WHERE id = ?`,
+        [threshold, serviceId]
+      );
+    } finally { conn.release(); }
+  },
+
+  async approve(serviceId, userId, notes) {
+    const ts = now();
+    const conn = await getPool().getConnection();
+    try {
+      const [r] = await conn.query(
+        `UPDATE delivery_services
+         SET approval_status = 'approved', approved_at = ?, approved_by = ?, approval_notes = ?
+         WHERE id = ? AND approval_status = 'pending'`,
+        [ts, userId || null, notes || null, serviceId]
+      );
+      if (r.affectedRows === 0) return { error: "Serviço não está pendente de aprovação" };
+      return { ok: true };
+    } finally { conn.release(); }
+  },
+
+  async reject(serviceId, userId, reason) {
+    const ts = now();
+    const conn = await getPool().getConnection();
+    try {
+      const [r] = await conn.query(
+        `UPDATE delivery_services
+         SET approval_status = 'rejected', approved_at = ?, approved_by = ?, approval_notes = ?
+         WHERE id = ? AND approval_status = 'pending'`,
+        [ts, userId || null, reason || null, serviceId]
+      );
+      if (r.affectedRows === 0) return { error: "Serviço não está pendente de aprovação" };
+      return { ok: true };
+    } finally { conn.release(); }
+  },
+
+  async listPendingApproval() {
+    return query(
+      `SELECT s.*,
+              (SELECT COUNT(*) FROM delivery_service_items WHERE service_id = s.id) AS n_items,
+              (SELECT COUNT(DISTINCT extensionist_id) FROM delivery_service_items WHERE service_id = s.id) AS n_beneficiaries
+       FROM delivery_services s
+       WHERE s.approval_status = 'pending' AND s.status = 'draft'
+       ORDER BY s.created_at DESC`
+    );
+  },
+
   // Avança estado: draft → in_transit (carregou) → delivered (chegou). Cancelar é noutra função.
   // Aceita opt force=true para bypass de warnings (mas erros sempre bloqueiam).
   async setInTransit(serviceId, opts = {}) {
     // Permite editar campos finais antes do pre-flight (motorista, etc)
     if (opts.truck_plate || opts.driver_name || opts.driver_phone) {
       await this.update(serviceId, opts);
+    }
+    // Bloqueia se aprovação pendente
+    const svcCheck = await queryOne(
+      "SELECT approval_status FROM delivery_services WHERE id = ?",
+      [serviceId]
+    );
+    if (svcCheck && svcCheck.approval_status === "pending") {
+      return { error: "Serviço requer aprovação de admin antes de ir para trânsito" };
+    }
+    if (svcCheck && svcCheck.approval_status === "rejected") {
+      return { error: "Serviço foi rejeitado — não pode ir para trânsito" };
     }
     const check = await this.preflightCheck(serviceId);
     if (check.error) return { error: check.error };

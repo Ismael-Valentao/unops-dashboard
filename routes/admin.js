@@ -1223,6 +1223,7 @@ router.get("/beneficiarios",       (_req, res) => send(res, "beneficiarios.html"
 router.get("/beneficiarios/:id",   (_req, res) => send(res, "beneficiario-detalhe.html"));
 router.get("/anexar-guias",        (_req, res) => send(res, "anexar-guias.html"));
 router.get("/reconciliacao",       (_req, res) => send(res, "reconciliacao.html"));
+router.get("/aprovacoes",          (_req, res) => send(res, "aprovacoes.html"));
 
 // ── API ─────────────────────────────────────────────────────
 router.get("/api/distribution/geography", ah(async (_req, res) => {
@@ -1355,6 +1356,46 @@ router.post("/api/distribution/services/:id/delivered", express.json(), auth.req
   if (result.error) return res.status(400).json(result);
   await auth.logAction(req, "delivered", "delivery_service", req.params.id);
   res.json(result);
+}));
+
+// Aprovação: pendentes + aprovar/rejeitar
+router.get("/api/distribution/services/pending-approval", ah(async (_req, res) => {
+  res.json({ rows: await DistServices.listPendingApproval() });
+}));
+
+router.post("/api/distribution/services/:id/approve",
+  express.json(), auth.requireRole("admin", "superadmin"),
+  ah(async (req, res) => {
+    const r = await DistServices.approve(req.params.id, req.user?.id, req.body?.notes);
+    if (r.error) return res.status(400).json(r);
+    await auth.logAction(req, "approve", "delivery_service", req.params.id, req.body?.notes);
+    res.json(r);
+  })
+);
+
+router.post("/api/distribution/services/:id/reject",
+  express.json(), auth.requireRole("admin", "superadmin"),
+  ah(async (req, res) => {
+    const r = await DistServices.reject(req.params.id, req.user?.id, req.body?.reason);
+    if (r.error) return res.status(400).json(r);
+    await auth.logAction(req, "reject", "delivery_service", req.params.id, req.body?.reason);
+    res.json(r);
+  })
+);
+
+// Audit log granular por serviço (Fase 12)
+router.get("/api/distribution/services/:id/audit", ah(async (req, res) => {
+  const { query } = require("../db/mysql");
+  const rows = await query(
+    `SELECT a.id, a.action, a.details, a.ip, a.created_at,
+            u.name AS user_name, u.email AS user_email, u.role AS user_role
+     FROM audit_log a
+     LEFT JOIN users u ON u.id = a.user_id
+     WHERE a.entity_type = 'delivery_service' AND a.entity_id = ?
+     ORDER BY a.created_at DESC LIMIT 200`,
+    [req.params.id]
+  );
+  res.json({ rows });
 }));
 
 router.post("/api/distribution/services/:id/cancel", express.json(), auth.requireRole("admin", "superadmin"), ah(async (req, res) => {

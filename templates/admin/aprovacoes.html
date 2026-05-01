@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Aprovações Pendentes</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Aprovações Pendentes</h1>
+      <span class="admin-sub">Serviços que requerem aprovação admin antes de irem para trânsito (carga ≥ threshold)</span>
+    </header>
+
+    <section class="admin-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem">
+        <span style="font-size:.85rem;color:#475569" id="meta">A carregar…</span>
+        <button class="btn" id="btn-refresh">Refrescar</button>
+      </div>
+      <div class="tbl-wrap">
+        <table class="adm-table" id="tbl">
+          <thead><tr>
+            <th>Nº</th><th>Distrito</th><th>Matrícula</th><th>Origem</th>
+            <th class="num">Benefs</th><th class="num">Itens</th><th class="num">Total kg</th>
+            <th>Criado</th><th></th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, fmtDate, esc, toast, confirm: confirmDialog } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+
+      async function load() {
+        try {
+          const data = await fetchJSON("/admin/api/distribution/services/pending-approval");
+          $("#meta").textContent = data.rows.length
+            ? `${data.rows.length} serviço${data.rows.length === 1 ? "" : "s"} a aguardar aprovação`
+            : "Nenhum serviço pendente.";
+          $("#tbody").innerHTML = data.rows.length
+            ? data.rows.map((r) => `<tr>
+                <td><a href="/admin/servicos/${r.id}" style="color:#0f4c75;font-weight:600">${esc(r.service_number)}</a></td>
+                <td>${esc(r.district || "—")}</td>
+                <td><code>${esc(r.truck_plate || "—")}</code></td>
+                <td>${esc(r.origem_supplier || "—")}</td>
+                <td class="num">${fmt(r.n_beneficiaries)}</td>
+                <td class="num">${fmt(r.n_items)}</td>
+                <td class="num"><strong>${fmt(r.total_kg)}</strong></td>
+                <td>${fmtDate(r.created_at)}</td>
+                <td>
+                  <button class="btn btn-success btn-sm" data-act="approve" data-id="${r.id}" data-num="${esc(r.service_number)}">Aprovar</button>
+                  <button class="btn btn-danger btn-sm" data-act="reject" data-id="${r.id}" data-num="${esc(r.service_number)}">Rejeitar</button>
+                </td>
+              </tr>`).join("")
+            : '<tr><td colspan="9" class="empty">Nada a aprovar.</td></tr>';
+
+          document.querySelectorAll("button[data-act]").forEach((b) => {
+            b.addEventListener("click", async () => {
+              const id = b.dataset.id;
+              const num = b.dataset.num;
+              if (b.dataset.act === "approve") {
+                const ok = await confirmDialog(`Aprovar ${num}?`,
+                  { title: "Aprovar serviço", confirmLabel: "Aprovar",
+                    details: "O serviço fica disponível para o operador pôr em trânsito." });
+                if (!ok) return;
+                try {
+                  await fetchJSON(`/admin/api/distribution/services/${id}/approve`, { method: "POST", body: {} });
+                  toast(`✓ ${num} aprovado`, { kind: "ok" });
+                  load();
+                } catch (e) { toast("Erro: " + e.message, { kind: "err" }); }
+              } else {
+                const reason = prompt(`Motivo da rejeição de ${num}?`);
+                if (reason === null) return;
+                try {
+                  await fetchJSON(`/admin/api/distribution/services/${id}/reject`, { method: "POST", body: { reason } });
+                  toast(`✗ ${num} rejeitado`, { kind: "warn" });
+                  load();
+                } catch (e) { toast("Erro: " + e.message, { kind: "err" }); }
+              }
+            });
+          });
+        } catch (e) {
+          toast("Erro: " + e.message, { kind: "err" });
+        }
+      }
+
+      $("#btn-refresh").addEventListener("click", load);
+      document.addEventListener("DOMContentLoaded", load);
+    })();
+    AdminUI.renderLayout("aprovacoes");
+  </script>
+</body>
+</html>

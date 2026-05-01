@@ -229,8 +229,13 @@
           <div class="svc-hdr">
             <div>
               <div class="svc-num">${esc(svc.service_number)}</div>
-              <div style="margin-top:.4rem"><span class="badge badge-${esc(svc.status)}">${STATUS[svc.status] || svc.status}</span>
-                ${svc.source === "imported" ? '<span class="badge" style="background:#e0e7ff;color:#3730a3;margin-left:.4rem">Importado</span>' : ''}</div>
+              <div style="margin-top:.4rem">
+                <span class="badge badge-${esc(svc.status)}">${STATUS[svc.status] || svc.status}</span>
+                ${svc.source === "imported" ? '<span class="badge" style="background:#e0e7ff;color:#3730a3;margin-left:.4rem">Importado</span>' : ''}
+                ${svc.approval_status === "pending" ? '<span class="badge" style="background:#fef3c7;color:#92400e;margin-left:.4rem">Aprovação pendente</span>' : ''}
+                ${svc.approval_status === "approved" ? '<span class="badge" style="background:#dcfce7;color:#166534;margin-left:.4rem">Aprovado</span>' : ''}
+                ${svc.approval_status === "rejected" ? '<span class="badge" style="background:#fee2e2;color:#991b1b;margin-left:.4rem">Rejeitado</span>' : ''}
+              </div>
             </div>
             <div class="actions no-print">
               <button class="btn btn-print" onclick="window.print()">Imprimir Guia</button>
@@ -280,6 +285,11 @@
             <tbody id="items-body"></tbody>
           </table>
         </section>
+
+        <section class="admin-section no-print">
+          <h2>Histórico de actividade</h2>
+          <div id="audit-log"><div class="empty">A carregar…</div></div>
+        </section>
         `;
         document.getElementById("content").innerHTML = html;
 
@@ -307,6 +317,45 @@
         }
         itemsSort.render = renderItemsTable;
         renderItemsTable();
+
+        // Audit log
+        (async () => {
+          try {
+            const a = await fetchJSON(`/admin/api/distribution/services/${id}/audit`);
+            const ACTION_LBL = {
+              create: "Criado", update: "Editado", in_transit: "Em trânsito",
+              delivered: "Entregue", cancel: "Cancelado", attach_guia: "Guia anexada",
+              approve: "Aprovado", reject: "Rejeitado", bulk_deliver: "Entregue (lote)",
+              bulk_cancel: "Cancelado (lote)",
+            };
+            const ACTION_COLOR = {
+              create: "#0f4c75", update: "#7c3aed", in_transit: "#d97706",
+              delivered: "#16a34a", cancel: "#dc2626", attach_guia: "#0891b2",
+              approve: "#16a34a", reject: "#dc2626",
+            };
+            if (!a.rows.length) {
+              document.getElementById("audit-log").innerHTML = '<div class="empty">Sem histórico (audit_log não populado anteriormente).</div>';
+              return;
+            }
+            document.getElementById("audit-log").innerHTML = `<table class="adm-table" style="font-size:.78rem">
+              <thead><tr><th>Quando</th><th>Quem</th><th>Acção</th><th>Detalhes</th></tr></thead>
+              <tbody>${a.rows.map((row) => {
+                const color = ACTION_COLOR[row.action] || "#475569";
+                const lbl = ACTION_LBL[row.action] || row.action;
+                let details = row.details || "";
+                try { const parsed = JSON.parse(details); details = Object.entries(parsed).map(([k, v]) => `${k}: ${v}`).join(", "); } catch (_) {}
+                return `<tr>
+                  <td style="font-size:.72rem;color:#64748b">${fmtDate(row.created_at)}</td>
+                  <td>${esc(row.user_name || row.user_email || "—")} ${row.user_role ? `<span style="font-size:.65rem;color:#94a3b8">(${esc(row.user_role)})</span>` : ""}</td>
+                  <td><span style="background:${color}22;color:${color};padding:.1rem .5rem;border-radius:3px;font-size:.7rem;font-weight:700">${esc(lbl)}</span></td>
+                  <td style="font-size:.75rem;color:#475569">${esc(details).substring(0, 200)}</td>
+                </tr>`;
+              }).join("")}</tbody>
+            </table>`;
+          } catch (e) {
+            document.getElementById("audit-log").innerHTML = `<div class="empty" style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
+          }
+        })();
 
         // Action handlers
         const btnTransit = document.getElementById("btn-transit");
