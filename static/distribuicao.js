@@ -15,12 +15,14 @@
     { key: "extensionist_id",    label: "ID",                 sortable: true,  type: "string" },
     { key: "beneficiary_name",   label: "Beneficiário",       sortable: true,  type: "string" },
     { key: "district",           label: "Distrito",           sortable: true,  type: "string" },
+    { key: "posto",              label: "Posto",              sortable: true,  type: "string" },
     { key: "product_name",       label: "Produto",            sortable: true,  type: "string" },
     { key: "planned_original",   label: "Plano Original",     sortable: true,  type: "number", numCol: true, title: "Quantidade originalmente planeada (NOVA QUANTIDADE A ENTREGAR)" },
     { key: "realocado_recebido", label: "Realoc. Recebido",   sortable: true,  type: "number", numCol: true, title: "Quantidade recebida via realocação de outro beneficiário" },
     { key: "planned_qty",        label: "Plano Ajustado",     sortable: true,  type: "number", numCol: true, title: "Plano após subtrair Realocado Recebido" },
     { key: "committed_qty",      label: "Entregue",           sortable: true,  type: "number", numCol: true, title: "Já entregue (TRANSITO + FINALIZADO no sistema externo)" },
     { key: "available_qty",      label: "Falta",              sortable: true,  type: "number", numCol: true, title: "Falta entregar = max(0, Plano Ajustado − Entregue)" },
+    { key: "last_delivery_at",   label: "Última entrega",     sortable: true,  type: "date",   title: "Data da última entrega confirmada deste produto" },
     { key: "_pct",               label: "%",                  sortable: true,  type: "number", numCol: true },
   ];
   const balSort = { sortKey: "available_qty", sortAsc: false, render: () => renderRows() };
@@ -215,17 +217,29 @@
       const realocCell = realoc > 0
         ? `<span style="color:#7c3aed;font-weight:700" title="Recebeu ${fmtUnit(realoc, r.unit)} via realocação">${fmtUnit(realoc, r.unit)}</span>`
         : '<span style="color:#cbd5e1">—</span>';
+      // Última entrega: NUNCA recebeu = "—" cinza com tooltip "Nunca recebeu"
+      // Recebeu há > 30 dias = pinta de âmbar (urgente)
+      let lastCell = '<span style="color:#cbd5e1" title="Nunca recebeu este produto">—</span>';
+      if (r.last_delivery_at) {
+        const dt = new Date(String(r.last_delivery_at).replace(" ", "T"));
+        const days = Math.floor((Date.now() - dt.getTime()) / 86400000);
+        const colour = days > 30 ? "#b45309" : days > 14 ? "#475569" : "#64748b";
+        const fmtDate = window.AdminUI.fmtDate;
+        lastCell = `<span style="color:${colour};font-size:.72rem" title="Há ${days} dia(s)">${fmtDate(r.last_delivery_at)}</span>`;
+      }
       return `<tr class="${sel ? "selected" : ""}" data-key="${esc(k)}">
         <td class="check-col"><input type="checkbox" class="check-input row-check" ${sel ? "checked" : ""}></td>
         <td><code style="font-size:.7rem">${esc(r.extensionist_id)}</code></td>
         <td>${esc(r.beneficiary_name)}</td>
         <td>${esc(r.district || "")}</td>
-        <td>${esc(r.product_name)} <span style="color:#94a3b8;font-size:.7rem">(${esc(r.sku)})</span></td>
+        <td><span style="color:#64748b;font-size:.72rem">${esc(r.posto || "—")}</span></td>
+        <td>${esc(r.product_name)}</td>
         <td class="num" style="color:#64748b">${fmtUnit(plannedOrig, r.unit)}</td>
         <td class="num">${realocCell}</td>
         <td class="num" style="font-weight:700">${fmtUnit(planned, r.unit)}</td>
         <td class="num" style="color:#16a34a">${fmtUnit(committed, r.unit)}</td>
         <td class="num" style="color:#dc2626;font-weight:700">${fmtUnit(available, r.unit)}</td>
+        <td>${lastCell}</td>
         <td class="num"><span class="pct ${pctClass}">${pct}%</span></td>
       </tr>`;
     }).join("");
@@ -277,17 +291,22 @@
   function updateCapBar() {
     const sel = selectedRows();
     const kg = selectedKgEquiv();
+    const overCapacity = kg > truckCapacity;
     const pct = Math.min(100, Math.round((kg / truckCapacity) * 100));
     $("#cap-fill").style.width = pct + "%";
-    $("#cap-text").textContent = `${fmt(kg)} / ${fmt(truckCapacity)} kg • ${sel.length} itens`;
-    $("#btn-create").disabled = !sel.length;
-    $("#btn-create").style.background = kg > truckCapacity ? "#dc2626" : "";
+    const overText = overCapacity ? `  ⚠ EXCEDE em ${fmt(kg - truckCapacity)} kg` : "";
+    $("#cap-text").textContent = `${fmt(kg)} / ${fmt(truckCapacity)} kg • ${sel.length} itens${overText}`;
+    const btn = $("#btn-create");
+    btn.disabled = !sel.length || overCapacity;
+    btn.style.background = overCapacity ? "#dc2626" : "";
+    btn.title = overCapacity
+      ? `Carga excede capacidade do camião em ${fmt(kg - truckCapacity)} kg. Remova items ou aumente capacidade.`
+      : "";
   }
 
-  // ── Auto-fill (greedy first-fit decreasing on available kg) ─
+  // ── Auto-fill (peso decrescente — best fit on biggest first) ─
   function autoFill() {
     selectedKeys.clear();
-    // Score & sort by available_qty descending; pick largest that fits
     const candidates = [...allRows]
       .map((r) => ({
         key: rowKey(r),
@@ -295,6 +314,30 @@
       }))
       .filter((c) => c.weight > 0)
       .sort((a, b) => b.weight - a.weight);
+    let remaining = truckCapacity;
+    for (const c of candidates) {
+      if (c.weight <= remaining) {
+        selectedKeys.add(c.key);
+        remaining -= c.weight;
+      }
+      if (remaining < 100) break;
+    }
+    renderRows();
+    updateCapBar();
+  }
+
+  // ── Auto-fill priorizado (quem está há mais tempo sem receber primeiro) ─
+  function autoFillPriority() {
+    selectedKeys.clear();
+    const candidates = [...allRows]
+      .map((r) => ({
+        key: rowKey(r),
+        weight: r.unit === "un" ? Number(r.available_qty) * 0.3 : Number(r.available_qty),
+        last: r.last_delivery_at ? new Date(String(r.last_delivery_at).replace(" ", "T")).getTime() : 0,
+      }))
+      .filter((c) => c.weight > 0)
+      // last=0 (nunca recebeu) sobe ao topo. Empate desempata por peso desc (cabe o maior primeiro).
+      .sort((a, b) => (a.last - b.last) || (b.weight - a.weight));
     let remaining = truckCapacity;
     for (const c of candidates) {
       if (c.weight <= remaining) {
@@ -510,6 +553,7 @@
 
     // Truck panel actions
     $("#btn-autofill").addEventListener("click", autoFill);
+    $("#btn-autofill-prio").addEventListener("click", autoFillPriority);
     $("#btn-clear-sel").addEventListener("click", () => {
       selectedKeys.clear(); renderRows(); updateCapBar();
     });

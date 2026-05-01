@@ -135,22 +135,35 @@ const Balances = {
   async list(opts = {}) {
     const where = [];
     const params = [];
-    if (opts.province)  { where.push("province = ?");  params.push(opts.province); }
-    if (opts.district)  { where.push("district = ?");  params.push(opts.district); }
-    if (opts.sku)       { where.push("sku = ?");       params.push(opts.sku); }
-    if (opts.extensionist_id) { where.push("extensionist_id = ?"); params.push(opts.extensionist_id); }
-    if (opts.onlyAvailable) where.push("(planned_qty - committed_qty) > 0");
+    if (opts.province)  { where.push("b.province = ?");  params.push(opts.province); }
+    if (opts.district)  { where.push("b.district = ?");  params.push(opts.district); }
+    if (opts.sku)       { where.push("b.sku = ?");       params.push(opts.sku); }
+    if (opts.extensionist_id) { where.push("b.extensionist_id = ?"); params.push(opts.extensionist_id); }
+    if (opts.onlyAvailable) where.push("(b.planned_qty - b.committed_qty) > 0");
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
     const limit = opts.limit ? `LIMIT ${Number(opts.limit)}` : "LIMIT 5000";
+    // Junta posto admin (de beneficiaries) e last_delivery_at (max
+    // delivered_at sobre items deste benef×sku). last_delivery_at NULL =
+    // nunca recebeu nada deste produto → topo na ordenação ASC (urgente).
     return query(
-      `SELECT extensionist_id, sku, product_name, unit, province, district,
-              beneficiary_name,
-              planned_original, realocado_recebido,
-              planned_qty, committed_qty, delivered_qty,
-              GREATEST(0, planned_qty - committed_qty) AS available_qty
-       FROM delivery_balances
+      `SELECT b.extensionist_id, b.sku, b.product_name, b.unit, b.province, b.district,
+              b.beneficiary_name,
+              b.planned_original, b.realocado_recebido,
+              b.planned_qty, b.committed_qty, b.delivered_qty,
+              GREATEST(0, b.planned_qty - b.committed_qty) AS available_qty,
+              ben.posto AS posto,
+              ld.last_delivery_at
+       FROM delivery_balances b
+       LEFT JOIN beneficiaries ben ON ben.extensionist_id = b.extensionist_id
+       LEFT JOIN (
+         SELECT i.extensionist_id, i.sku, MAX(s.delivered_at) AS last_delivery_at
+         FROM delivery_service_items i
+         JOIN delivery_services s ON s.id = i.service_id
+         WHERE s.status = 'delivered'
+         GROUP BY i.extensionist_id, i.sku
+       ) ld ON ld.extensionist_id = b.extensionist_id AND ld.sku = b.sku
        ${w}
-       ORDER BY district, beneficiary_name, sku
+       ORDER BY b.district, b.beneficiary_name, b.sku
        ${limit}`,
       params
     );
