@@ -406,11 +406,91 @@ window.AdminUI = (function () {
     if (clearAll) clearAll.addEventListener("click", () => onRemove("__all__"));
   }
 
+  // ── Toast notifications ─────────────────────────────────────
+  // AdminUI.toast(message, opts?) — opts: { kind:"ok"|"warn"|"err"|"info", duration?, action? }
+  // action: { label, onClick }   adiciona um botão clicável
+  function ensureToastContainer() {
+    let c = document.getElementById("toast-container");
+    if (!c) {
+      c = document.createElement("div");
+      c.id = "toast-container";
+      document.body.appendChild(c);
+    }
+    return c;
+  }
+  function toast(message, opts = {}) {
+    const c = ensureToastContainer();
+    const kind = opts.kind || "info";
+    const el = document.createElement("div");
+    el.className = "toast toast-" + kind;
+    const actionHtml = opts.action
+      ? `<button class="toast-action">${esc(opts.action.label)}</button>`
+      : "";
+    el.innerHTML = `<div class="toast-msg">${esc(message)}</div>${actionHtml}<button class="toast-close" title="Fechar">×</button>`;
+    c.appendChild(el);
+    requestAnimationFrame(() => el.classList.add("show"));
+    const close = () => {
+      el.classList.remove("show");
+      setTimeout(() => el.remove(), 200);
+    };
+    el.querySelector(".toast-close").addEventListener("click", close);
+    if (opts.action) {
+      el.querySelector(".toast-action").addEventListener("click", () => {
+        try { opts.action.onClick(); } catch (_) {}
+        close();
+      });
+    }
+    const dur = opts.duration != null ? opts.duration : (kind === "err" ? 8000 : 4000);
+    if (dur > 0) setTimeout(close, dur);
+    return { close };
+  }
+
+  // ── Confirm modal estilizado (substitui confirm() nativo) ───
+  // AdminUI.confirm(message, opts?) → Promise<boolean>
+  // opts: { title?, confirmLabel?, cancelLabel?, dangerous?, details? }
+  function confirmDialog(message, opts = {}) {
+    return new Promise((resolve) => {
+      const wrap = document.createElement("div");
+      wrap.className = "confirm-overlay";
+      const isDanger = !!opts.dangerous;
+      wrap.innerHTML = `
+        <div class="confirm-box ${isDanger ? "danger" : ""}">
+          <h3 class="confirm-title">${esc(opts.title || (isDanger ? "Confirmar acção" : "Confirmar"))}</h3>
+          <div class="confirm-msg">${esc(message)}</div>
+          ${opts.details ? `<div class="confirm-details">${opts.details}</div>` : ""}
+          <div class="confirm-actions">
+            <button class="btn confirm-cancel">${esc(opts.cancelLabel || "Cancelar")}</button>
+            <button class="btn ${isDanger ? "btn-danger" : "btn-primary"} confirm-ok">${esc(opts.confirmLabel || "Confirmar")}</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(wrap);
+      requestAnimationFrame(() => wrap.classList.add("show"));
+      const finish = (val) => {
+        wrap.classList.remove("show");
+        setTimeout(() => wrap.remove(), 150);
+        document.removeEventListener("keydown", onKey);
+        resolve(val);
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape") finish(false);
+        else if (e.key === "Enter") finish(true);
+      };
+      document.addEventListener("keydown", onKey);
+      wrap.querySelector(".confirm-ok").addEventListener("click", () => finish(true));
+      wrap.querySelector(".confirm-cancel").addEventListener("click", () => finish(false));
+      wrap.addEventListener("click", (e) => { if (e.target === wrap) finish(false); });
+      // Auto-focus no botão OK
+      setTimeout(() => wrap.querySelector(".confirm-ok").focus(), 50);
+    });
+  }
+
   return {
     esc, fmt, fmtDate, statusBadge, fetchJSON, renderLayout, loadMe,
     loadProducts, loadWarehouses, productSelectOptions, clearCache,
     sortRows, sortArrow, bindSortable, mountGlobalSearch,
     exportCSV, urlState, renderFilterChips,
+    toast, confirm: confirmDialog,
   };
 })();
 

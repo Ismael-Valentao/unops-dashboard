@@ -147,7 +147,7 @@
   <script>
     (function () {
       const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable,
-              exportCSV, urlState, renderFilterChips } = window.AdminUI;
+              exportCSV, urlState, renderFilterChips, toast, confirm: confirmDialog } = window.AdminUI;
       const $ = (s) => document.querySelector(s);
 
       const STATUS_LABELS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
@@ -309,16 +309,28 @@
 
       async function bulkDeliver() {
         const ids = [...selectedIds];
-        if (!confirm(`Marcar ${ids.length} serviço${ids.length === 1 ? "" : "s"} como ENTREGUE? Esta acção não é reversível.`)) return;
+        const ok = await confirmDialog(
+          `Marcar ${ids.length} serviço${ids.length === 1 ? "" : "s"} como ENTREGUE?`,
+          { title: "Confirmar entrega em massa", confirmLabel: "Marcar entregue", dangerous: true,
+            details: "Esta acção não é reversível. Liberta o committed_qty e regista delivered_at em todos os serviços seleccionados." });
+        if (!ok) return;
         try {
           const r = await fetchJSON("/admin/api/distribution/services/bulk/deliver", {
             method: "POST", body: { ids },
           });
-          alert(`OK: ${r.ok.length} entregue${r.ok.length === 1 ? "" : "s"}` +
-            (r.failed.length ? `\nFalhou: ${r.failed.length}\n` + r.failed.map((f) => `• ${f.id}: ${f.error}`).join("\n") : ""));
+          if (r.ok.length && !r.failed.length) {
+            toast(`✓ ${r.ok.length} serviço${r.ok.length === 1 ? "" : "s"} entregue${r.ok.length === 1 ? "" : "s"}`, { kind: "ok" });
+          } else if (r.ok.length && r.failed.length) {
+            toast(`${r.ok.length} OK, ${r.failed.length} falhou`, {
+              kind: "warn", duration: 6000,
+              action: { label: "Ver", onClick: () => alert(r.failed.map((f) => `${f.id}: ${f.error}`).join("\n")) },
+            });
+          } else {
+            toast(`Falhou: ${r.failed.map((f) => f.error).join(", ")}`, { kind: "err" });
+          }
           selectedIds.clear();
           load();
-        } catch (e) { alert("Erro: " + e.message); }
+        } catch (e) { toast("Erro: " + e.message, { kind: "err" }); }
       }
 
       async function bulkCancelConfirm() {
@@ -337,8 +349,13 @@
             method: "POST", body: { ids, category, reason: reason || null },
           });
           $("#cm-modal").classList.remove("show");
-          alert(`OK: ${r.ok.length} cancelado${r.ok.length === 1 ? "" : "s"}` +
-            (r.failed.length ? `\nFalhou: ${r.failed.length}\n` + r.failed.map((f) => `• ${f.id}: ${f.error}`).join("\n") : ""));
+          if (r.ok.length && !r.failed.length) {
+            toast(`✓ ${r.ok.length} serviço${r.ok.length === 1 ? "" : "s"} cancelado${r.ok.length === 1 ? "" : "s"} • saldo libertado`, { kind: "ok" });
+          } else if (r.ok.length && r.failed.length) {
+            toast(`${r.ok.length} OK, ${r.failed.length} falhou`, { kind: "warn" });
+          } else {
+            toast("Não foi possível cancelar", { kind: "err" });
+          }
           selectedIds.clear();
           load();
         } catch (e) {

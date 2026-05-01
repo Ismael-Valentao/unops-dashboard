@@ -1,7 +1,7 @@
 /* ── Distribuição (saldo + criar serviço) ──────────────────── */
 (function () {
   const { fetchJSON, fmt, esc, sortRows, sortArrow, bindSortable,
-          exportCSV, urlState, renderFilterChips } = window.AdminUI;
+          exportCSV, urlState, renderFilterChips, toast } = window.AdminUI;
 
   // State
   let geo = {};                        // { province: { district: count } }
@@ -358,7 +358,7 @@
     const districts = new Set(sel.map((r) => r.district).filter(Boolean));
     const provinces = new Set(sel.map((r) => r.province).filter(Boolean));
     if (districts.size > 1 || provinces.size > 1) {
-      alert("Selecciona apenas beneficiários do mesmo distrito para um serviço.");
+      toast("Selecciona apenas beneficiários do mesmo distrito para um serviço", { kind: "warn" });
       return;
     }
     const beneficiaries = new Set(sel.map((r) => r.extensionist_id));
@@ -435,8 +435,10 @@
       closeCreateModal();
       selectedKeys.clear();
       await Promise.all([loadBalances(), loadSummary()]);
-      // Toast-like alert
-      alert(`Serviço ${result.service_number} criado (${fmt(result.total_kg)} kg)${putInTransit ? " e em trânsito" : ""}.\nVer em /admin/servicos.`);
+      toast(`✓ Serviço ${result.service_number} criado (${fmt(result.total_kg)} kg)${putInTransit ? " e em trânsito" : ""}`, {
+        kind: "ok", duration: 6000,
+        action: { label: "Ver detalhe", onClick: () => location.href = "/admin/servicos/" + result.service_id },
+      });
     } catch (e) {
       errBox.textContent = "Erro: " + e.message; errBox.classList.add("show");
     }

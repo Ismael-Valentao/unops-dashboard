@@ -192,7 +192,7 @@
   <script src="/static/admin.js"></script>
   <script>
     (function () {
-      const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable } = window.AdminUI;
+      const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable, toast, confirm: confirmDialog } = window.AdminUI;
       const STATUS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
       const id = location.pathname.split("/").pop();
 
@@ -380,11 +380,15 @@
         });
         const btnDeliver = document.getElementById("btn-deliver");
         if (btnDeliver) btnDeliver.addEventListener("click", async () => {
-          if (!confirm(`Marcar ${svc.service_number} como ENTREGUE? Esta acção não é reversível.`)) return;
+          const ok = await confirmDialog(`Marcar ${svc.service_number} como ENTREGUE?`,
+            { title: "Confirmar entrega", confirmLabel: "Marcar entregue", dangerous: true,
+              details: "Esta acção não é reversível. Regista delivered_at e contabiliza a quantidade em delivered_qty para cada beneficiário." });
+          if (!ok) return;
           try {
             await fetchJSON(`/admin/api/distribution/services/${id}/delivered`, { method: "POST", body: {} });
-            location.reload();
-          } catch (e) { alert("Erro: " + e.message); }
+            toast(`✓ ${svc.service_number} entregue`, { kind: "ok" });
+            setTimeout(() => location.reload(), 600);
+          } catch (e) { toast("Erro: " + e.message, { kind: "err" }); }
         });
         const btnCancel = document.getElementById("btn-cancel");
         if (btnCancel) btnCancel.addEventListener("click", async () => {

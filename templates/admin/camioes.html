@@ -169,7 +169,7 @@
   <script>
     (function () {
       const { fetchJSON, fmt, fmtDate, esc, sortRows, sortArrow, bindSortable,
-              exportCSV, urlState, renderFilterChips } = window.AdminUI;
+              exportCSV, urlState, renderFilterChips, toast, confirm: confirmDialog } = window.AdminUI;
       const STATUS = { draft: "Rascunho", in_transit: "Em Trânsito", delivered: "Entregue", cancelled: "Cancelado" };
       const STATUS_TITLE = {
         in_transit: "Camiões em Trânsito",
@@ -373,11 +373,14 @@
           // Bind deliver buttons
           $$(".btn-deliver").forEach((b) => {
             b.addEventListener("click", async () => {
-              if (!confirm(`Marcar ${b.dataset.num} como ENTREGUE?`)) return;
+              const ok = await confirmDialog(`Marcar ${b.dataset.num} como ENTREGUE?`,
+                { title: "Confirmar entrega", confirmLabel: "Marcar entregue", dangerous: true });
+              if (!ok) return;
               try {
                 await fetchJSON(`/admin/api/distribution/services/${b.dataset.id}/delivered`, { method: "POST", body: {} });
+                toast(`✓ ${b.dataset.num} entregue`, { kind: "ok" });
                 refresh();
-              } catch (e) { alert("Erro: " + e.message); }
+              } catch (e) { toast("Erro: " + e.message, { kind: "err" }); }
             });
           });
         } catch (e) {

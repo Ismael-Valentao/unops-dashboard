@@ -147,6 +147,48 @@ a{color:inherit;text-decoration:none}
 #gsearch-modal .gs-tag-cancelled{background:#fee2e2;color:#991b1b}
 #gsearch-modal .gs-hint{padding:1.5rem 1.25rem;color:#94a3b8;font-size:.85rem;text-align:center}
 
+/* ── Toast notifications ───────────────────────────────────── */
+#toast-container{position:fixed;top:1rem;right:1rem;z-index:10000;display:flex;flex-direction:column;gap:.5rem;
+  pointer-events:none;max-width:380px}
+.toast{display:flex;align-items:center;gap:.6rem;background:#1e293b;color:#fff;
+  padding:.7rem 1rem;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,.25);
+  font-size:.85rem;pointer-events:auto;opacity:0;transform:translateX(20px);
+  transition:opacity .2s,transform .2s;border-left:4px solid #38bdf8}
+.toast.show{opacity:1;transform:translateX(0)}
+.toast-ok{border-left-color:#16a34a}
+.toast-warn{border-left-color:#d97706}
+.toast-err{border-left-color:#dc2626}
+.toast-msg{flex:1;line-height:1.4}
+.toast-action{background:rgba(255,255,255,.15);color:#fff;border:0;border-radius:5px;
+  padding:.3rem .65rem;font-size:.75rem;font-weight:600;cursor:pointer;font-family:inherit}
+.toast-action:hover{background:rgba(255,255,255,.25)}
+.toast-close{background:transparent;border:0;color:rgba(255,255,255,.6);cursor:pointer;font-size:1.1rem;
+  padding:0 .25rem;line-height:1;border-radius:4px}
+.toast-close:hover{background:rgba(255,255,255,.15);color:#fff}
+
+/* ── Confirm modal ─────────────────────────────────────────── */
+.confirm-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);
+  display:flex;align-items:center;justify-content:center;z-index:10001;padding:1rem;
+  opacity:0;transition:opacity .15s}
+.confirm-overlay.show{opacity:1}
+.confirm-box{background:#fff;border-radius:12px;width:100%;max-width:420px;padding:1.4rem 1.5rem;
+  box-shadow:0 20px 60px rgba(15,23,42,.3);transform:scale(.95);transition:transform .15s}
+.confirm-overlay.show .confirm-box{transform:scale(1)}
+.confirm-title{margin:0 0 .5rem;font-size:1rem;color:#0f172a}
+.confirm-msg{font-size:.85rem;line-height:1.55;color:#475569}
+.confirm-details{margin-top:.6rem;background:#f8fafc;border-left:3px solid #cbd5e1;padding:.55rem .75rem;
+  border-radius:6px;font-size:.78rem;color:#475569}
+.confirm-box.danger .confirm-title{color:#991b1b}
+.confirm-box.danger .confirm-details{border-left-color:#dc2626;background:#fef2f2;color:#991b1b}
+.confirm-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.1rem}
+
+/* ── Skeleton loaders ──────────────────────────────────────── */
+.skeleton{display:inline-block;background:linear-gradient(90deg,#e2e8f0 0%,#f1f5f9 50%,#e2e8f0 100%);
+  background-size:200% 100%;animation:skeleton 1.4s ease infinite;border-radius:4px;color:transparent!important}
+.skeleton-row td{padding:.55rem .7rem}
+.skeleton-row .skeleton{height:.85em;width:80%;display:block}
+@keyframes skeleton{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
 /* ── Filter chips ──────────────────────────────────────────── */
 .filter-chips{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin-top:.5rem}
 .filter-chips:empty{display:none}
