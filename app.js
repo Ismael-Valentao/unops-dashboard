@@ -42,7 +42,15 @@ const cache = sheetCache.cache;
 function fetchCSV(url) {
   return new Promise((resolve, reject) => {
     const get = (u) => {
-      https.get(u, (res) => {
+      // Headers para impedir caching por intermediários/CDN.
+      const opts = {
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0",
+        },
+      };
+      https.get(u, opts, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           get(res.headers.location);
           return;
@@ -166,7 +174,11 @@ function enrichWithADSN(rows) {
 // ── Refresh cache ─────────────────────────────────────────────
 async function refreshCache() {
   try {
-    const text = await fetchCSV(SHEET_CSV_URL);
+    // Cache-bust: append a timestamp query-param para impedir o CDN de Google
+    // (ou intermediários) de servir uma cópia em cache. O Sheets ignora params
+    // desconhecidos no /export, mas o URL único força uma chave de cache nova.
+    const url = SHEET_CSV_URL + (SHEET_CSV_URL.includes("?") ? "&" : "?") + "t=" + Date.now();
+    const text = await fetchCSV(url);
     cache.data = parseCSV(text);
     enrichWithADSN(cache.data);
     cache.lastUpdated = new Date().toISOString();
