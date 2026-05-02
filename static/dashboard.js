@@ -983,11 +983,14 @@
     if (tableSearchTerm) {
       const q = tableSearchTerm.toLowerCase();
       rows = rows.filter((r) => {
+        // Para sacos hermeticos: pesquisa também aceita o valor em unidades
+        // (delivered_qty_units), porque é isso que o utilizador vê na tabela.
+        const qtyUnits = r.delivered_qty_units != null ? String(r.delivered_qty_units) : "";
         const hay = [
           r.delivery_id, r.beneficiary_name, r.province, r.district,
           r.product, r.delivery_note_number, r.submitted_by,
           r.verification_status, r.delivery_date,
-          String(r.delivered_qty), String(r.packages),
+          String(r.delivered_qty), qtyUnits, String(r.packages),
         ].join(" ").toLowerCase();
         return hay.includes(q);
       });
@@ -1096,12 +1099,21 @@
 
     elTableBody.innerHTML = page
       .map((r) => {
+        const isSaco = /saco|hermetic/i.test(String(r.product || ""));
         const cells = visibleCols
           .map((key) => {
             const col = getColDef(key);
             if (!col) return "<td></td>";
             const raw = r[key];
             if (col.type === "number") {
+              // Sacos hermeticos: parseCSV converte delivered_qty para kg-equiv
+              // (units × 0,3) para agregação consistente em kg nos cards/charts,
+              // mas o utilizador quer ver UNIDADES na tabela. Usar
+              // delivered_qty_units (valor original antes da conversão).
+              if (isSaco && key === "delivered_qty") {
+                const units = r.delivered_qty_units != null ? r.delivered_qty_units : raw;
+                return `<td style="text-align:right">${fmtDec(Number(units) || 0)} <span style="color:#94a3b8;font-size:.72rem;font-weight:400">un</span></td>`;
+              }
               return `<td style="text-align:right">${fmtDec(Number(raw) || 0)}</td>`;
             }
             if (col.type === "badge") {
@@ -1354,8 +1366,14 @@
     const header = cols.map((c) => c.label);
     const csvRows = [header.map((h) => '"' + String(h).replace(/"/g, '""') + '"').join(",")];
     exportRows.forEach((r) => {
+      const isSaco = /saco|hermetic/i.test(String(r.product || ""));
       const row = cols.map((c) => {
-        const val = r[c.key];
+        let val = r[c.key];
+        // Para sacos hermeticos, exporta delivered_qty em UNIDADES (não em
+        // kg-equivalente) — o que o utilizador vê na tabela.
+        if (isSaco && c.key === "delivered_qty" && r.delivered_qty_units != null) {
+          val = r.delivered_qty_units;
+        }
         return '"' + String(val ?? "").replace(/"/g, '""') + '"';
       });
       csvRows.push(row.join(","));
