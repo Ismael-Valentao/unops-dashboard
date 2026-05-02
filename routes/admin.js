@@ -1311,10 +1311,28 @@ router.post("/api/distribution/services", express.json(), auth.requireRole("oper
     await auth.logAction(req, "create", "delivery_service", result.service_id, JSON.stringify({
       service_number: result.service_number, items: items.length, total_kg: result.total_kg,
     }));
+    // Auto-aprovação: se quem criou já é admin/superadmin, não faz sentido
+    // entrar em fila para "aprovação admin". Aprova-se automaticamente com
+    // o user_id do criador. Operadores continuam a precisar de aprovação
+    // explícita acima do threshold.
+    const role = req.user?.role;
+    if (result.approval_status === "pending" && (role === "admin" || role === "superadmin")) {
+      const ar = await DistServices.approve(result.service_id, req.user.id, "Auto-aprovado (criado por " + role + ")");
+      if (ar.ok) {
+        result.approval_status = "approved";
+        await auth.logAction(req, "approve", "delivery_service", result.service_id, "auto-aprovado (criador é " + role + ")");
+      }
+    }
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+}));
+
+// IMPORTANTE: rotas estáticas (pending-approval) ANTES da paramétrica /:id
+// caso contrário Express casa "pending-approval" como :id e dá 404.
+router.get("/api/distribution/services/pending-approval", ah(async (_req, res) => {
+  res.json({ rows: await DistServices.listPendingApproval() });
 }));
 
 router.get("/api/distribution/services", ah(async (req, res) => {
@@ -1345,6 +1363,18 @@ router.get("/api/distribution/services/:id/preflight", ah(async (req, res) => {
 }));
 
 router.post("/api/distribution/services/:id/in-transit", express.json(), auth.requireRole("operator", "admin", "superadmin"), ah(async (req, res) => {
+  // Se admin/superadmin tenta pôr em trânsito um serviço com aprovação
+  // pendente, auto-aprova primeiro (eles têm autoridade para aprovar). Cobre
+  // serviços antigos que ficaram em pending antes do auto-approve no create.
+  const role = req.user?.role;
+  if (role === "admin" || role === "superadmin") {
+    const { query: q } = require("../db/mysql");
+    const [svc] = await q("SELECT approval_status FROM delivery_services WHERE id = ?", [req.params.id]);
+    if (svc && svc.approval_status === "pending") {
+      await DistServices.approve(req.params.id, req.user.id, "Auto-aprovado em setInTransit (utilizador é " + role + ")");
+      await auth.logAction(req, "approve", "delivery_service", req.params.id, "auto-aprovado em setInTransit");
+    }
+  }
   const result = await DistServices.setInTransit(req.params.id, req.body || {});
   if (result.error) return res.status(400).json(result);
   if (result.needs_confirm) return res.status(409).json(result);
@@ -1359,11 +1389,7 @@ router.post("/api/distribution/services/:id/delivered", express.json(), auth.req
   res.json(result);
 }));
 
-// Aprovação: pendentes + aprovar/rejeitar
-router.get("/api/distribution/services/pending-approval", ah(async (_req, res) => {
-  res.json({ rows: await DistServices.listPendingApproval() });
-}));
-
+// Aprovação: aprovar/rejeitar (listagem está acima, antes do :id)
 router.post("/api/distribution/services/:id/approve",
   express.json(), auth.requireRole("admin", "superadmin"),
   ah(async (req, res) => {
