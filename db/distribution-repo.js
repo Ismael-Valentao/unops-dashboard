@@ -987,11 +987,29 @@ const Services = {
   // Actividade recente: últimos 10 serviços por created_at.
   async dashboard() {
     // 1. Saldos por produto canónico
+    //
+    // IMPORTANTE — três quantidades distintas (e a sua coerência):
+    //   - planned   = SUM(planned_qty)  — universo total a entregar
+    //   - committed = SUM(committed_qty) — soma do que foi entregue/comprometido
+    //                  (pode exceder planned se alguns benefs receberam excesso)
+    //   - available = SUM(MAX(0, planned-committed))  — DÉFICIT por completar
+    //                  (per-row: over-deliveries a uns NÃO compensam déficits
+    //                  noutros, porque o pipe de plano é por beneficiário×produto)
+    //   - surplus   = SUM(MAX(0, committed-planned))  — over-delivered além do plano
+    //   - fulfilled = SUM(LEAST(planned, committed))  — efectivamente cumprido
+    //                  (cumprimento real, capa em planned por beneficiário)
+    //
+    // O cumprimento honesto é fulfilled/planned (sempre ≤ 100%). committed/planned
+    // pode passar 100% mas mascara que ainda há "available" por entregar a outros.
     const byProduct = await query(
       `SELECT sku, product_name, unit,
               SUM(planned_qty) AS planned,
               SUM(committed_qty) AS committed,
+              SUM(LEAST(planned_qty, committed_qty)) AS fulfilled,
               SUM(GREATEST(0, planned_qty - committed_qty)) AS available,
+              SUM(GREATEST(0, committed_qty - planned_qty)) AS surplus,
+              SUM(CASE WHEN committed_qty > planned_qty THEN 1 ELSE 0 END) AS n_over_delivered,
+              SUM(CASE WHEN committed_qty < planned_qty THEN 1 ELSE 0 END) AS n_under_delivered,
               COUNT(*) AS n_benefs
        FROM delivery_balances
        WHERE planned_qty > 0

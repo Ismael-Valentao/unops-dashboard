@@ -220,27 +220,41 @@
         `).join("");
 
         // 2. Cumprimento por produto
+        //
+        // Cumprimento "honesto" = fulfilled/planned (capa em 100%). committed pode
+        // exceder planned se houve over-delivery a alguns beneficiários, mas isso
+        // não compensa o déficit (available) de outros — daí mostrar excesso à
+        // parte para evitar a leitura confusa "106% e ainda falta entregar".
         document.getElementById("dist-products").innerHTML = (d.by_product || []).map((p) => {
           const planned = Number(p.planned) || 0;
           const committed = Number(p.committed) || 0;
+          const fulfilled = Number(p.fulfilled) || 0;
           const available = Number(p.available) || 0;
-          const pct = planned > 0 ? Math.round((committed / planned) * 100) : 0;
+          const surplus = Number(p.surplus) || 0;
+          const nOver = Number(p.n_over_delivered) || 0;
+          const pct = planned > 0 ? Math.round((fulfilled / planned) * 100) : 0;
           const barColor = pct >= 80 ? "#16a34a" : pct >= 40 ? "#f59e0b" : "#dc2626";
+          // Aviso se há excesso significativo (over-delivery em paralelo com déficit).
+          const overWarn = surplus > 0
+            ? `<div style="font-size:.7rem;color:#7c3aed;margin-top:.15rem" title="Alguns beneficiários receberam mais que o planeado — não compensa o défice noutros">
+                 +${fmt(surplus)} ${esc(p.unit)} em excesso${nOver ? ` (${nOver} benefs)` : ""}</div>`
+            : "";
           return `<a href="/admin/distribuicao?sku=${encodeURIComponent(p.sku)}"
               style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.65rem .85rem;
               text-decoration:none;color:#1e293b;display:block;transition:border-color .12s">
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.35rem">
               <strong style="font-size:.92rem">${esc(p.product_name)}</strong>
-              <span style="font-size:.78rem;color:${barColor};font-weight:700">${pct}%</span>
+              <span style="font-size:.78rem;color:${barColor};font-weight:700" title="Cumprimento real (fulfilled/planned, capa em 100%)">${pct}%</span>
             </div>
             <div style="height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;margin-bottom:.4rem">
               <div style="height:100%;background:${barColor};width:${Math.min(100, pct)}%"></div>
             </div>
             <div style="font-size:.7rem;color:#64748b;display:flex;justify-content:space-between">
-              <span>${fmt(committed)} / ${fmt(planned)} ${esc(p.unit)}</span>
+              <span>${fmt(fulfilled)} / ${fmt(planned)} ${esc(p.unit)}</span>
               <span>${p.n_benefs} benefs</span>
             </div>
             ${available > 0 ? `<div style="font-size:.7rem;color:#dc2626;margin-top:.25rem">Falta ${fmt(available)} ${esc(p.unit)}</div>` : ""}
+            ${overWarn}
           </a>`;
         }).join("");
 
