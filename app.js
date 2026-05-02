@@ -126,6 +126,9 @@ function parseCSV(text) {
 
       // Normalise backslashes in delivery note number
       row.delivery_note_number = row.delivery_note_number.replace(/\\/g, "/");
+      // Typo recorrente: "GTUS98/..." (U a mais) → "GTS98/...". Aplicado à
+      // entrada para que toda a UI/API downstream trabalhe com dados limpos.
+      row.delivery_note_number = row.delivery_note_number.replace(/^GTUS/i, "GTS");
 
       // Convert dates DD/MM/YYYY to ISO for sorting
       for (const col of ["delivery_date", "submission_date"]) {
@@ -849,6 +852,8 @@ const XLSX_LIB = require("xlsx");
 // Normalize GTU: GTS→GTU, remove extra slash, pad suffix to 5 digits
 function normGTU(raw) {
   let g = String(raw || "").trim().replace(/\\/g, "/");
+  // Tipos de input: GTUS98/... (com U a mais — provável typo do operador) → GTS98/...
+  g = g.replace(/^GTUS/i, "GTS");
   g = g.replace(/^GTS/i, "GTU");
   // GTU98/2023/6433 → GTU98/202306433 (extra slash + short suffix)
   g = g.replace(/^(GTU\d+\/\d{4})\/(\d+)$/i, (_, prefix, num) => prefix + num.padStart(5, "0"));
