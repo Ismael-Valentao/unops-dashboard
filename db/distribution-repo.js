@@ -364,14 +364,16 @@ const Services = {
       await conn.commit();
       // Decide approval requirement post-commit (separate UPDATE)
       await this.maybeRequireApproval(serviceId);
-      // Re-fetch approval_status to inform caller
-      const svc = await queryOne("SELECT approval_status FROM delivery_services WHERE id = ?", [serviceId]);
+      // Re-fetch approval_status to inform caller. NOTA: usar nome diferente
+      // de "svc" — o parâmetro já se chama svc e usar o mesmo nome dentro
+      // do mesmo bloco let/const causa TDZ nas linhas anteriores que lêem svc.*
+      const svcRow = await queryOne("SELECT approval_status FROM delivery_services WHERE id = ?", [serviceId]);
       return {
         ok: true,
         service_id: serviceId,
         service_number: serviceNumber,
         total_kg: totalKg,
-        approval_status: svc?.approval_status || "not_required",
+        approval_status: svcRow?.approval_status || "not_required",
       };
     } catch (e) {
       try { await conn.rollback(); } catch (_) { /* ignore */ }

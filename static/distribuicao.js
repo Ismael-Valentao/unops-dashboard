@@ -6,8 +6,20 @@
   // State
   let geo = {};                        // { province: { district: count } }
   let allRows = [];                    // current balance rows
-  let selectedKeys = new Set();        // `${ext_id}|${sku}` of rows the user picked
+  // selectionMap: key → qty (qty parcial para este serviço; null/undef = total falta)
+  // Substituí o Set anterior para suportar "decompor linha" — a mesma linha
+  // pode entrar num serviço com 30k, deixando 20k para o próximo camião.
+  let selectionMap = new Map();        // `${ext_id}|${sku}` → qty (parcial ou total)
   let truckCapacity = 30000;            // default 30T
+
+  // Helper: qty efectiva para uma row seleccionada (parcial ou total falta).
+  function selectedQtyOf(r) {
+    const k = rowKey(r);
+    if (!selectionMap.has(k)) return 0;
+    const v = selectionMap.get(k);
+    return v != null ? v : (Number(r.available_qty) || 0);
+  }
+  function isSelected(r) { return selectionMap.has(rowKey(r)); }
 
   // Definição das colunas para sort
   const BAL_COLS = [
@@ -150,7 +162,9 @@
     if (!sku) populateSkuOptions(allRows);
 
     // Drop selections that no longer exist
-    selectedKeys = new Set([...selectedKeys].filter((k) => allRows.find((r) => rowKey(r) === k)));
+    for (const k of [...selectionMap.keys()]) {
+      if (!allRows.find((r) => rowKey(r) === k)) selectionMap.delete(k);
+    }
 
     renderRows();
     updateCapBar();
@@ -205,12 +219,15 @@
     const sorted = sortRows(allRows, balSort.sortKey, balSort.sortAsc, col?.type);
     body.innerHTML = sorted.map((r) => {
       const k = rowKey(r);
-      const sel = selectedKeys.has(k);
+      const sel = isSelected(r);
       const plannedOrig = Number(r.planned_original) || 0;
       const realoc = Number(r.realocado_recebido) || 0;
       const planned = Number(r.planned_qty) || 0;       // = original − realoc
       const committed = Number(r.committed_qty) || 0;
       const available = Number(r.available_qty) || 0;
+      // qty parcial (decompor) — só relevante quando seleccionado
+      const partialQty = sel ? selectedQtyOf(r) : null;
+      const isPartial = sel && partialQty != null && Math.abs(partialQty - available) > 0.01;
       // % entregue/cumprido em relação ao plano ajustado
       const pct = planned > 0 ? Math.round((committed / planned) * 100) : 0;
       const pctClass = pct >= 100 ? "pct-high" : pct >= 50 ? "pct-mid" : "pct-0";
@@ -227,7 +244,24 @@
         const fmtDate = window.AdminUI.fmtDate;
         lastCell = `<span style="color:${colour};font-size:.72rem" title="Há ${days} dia(s)">${fmtDate(r.last_delivery_at)}</span>`;
       }
-      return `<tr class="${sel ? "selected" : ""}" data-key="${esc(k)}">
+      // Célula "Falta": se decomposto, mostra "30k / 50k" + ícone tesoura roxo;
+      // se selecção total, sublinhado em azul; senão vermelho como antes.
+      let availCell;
+      if (isPartial) {
+        availCell = `<span style="color:#7c3aed;font-weight:700;cursor:pointer" class="split-cell" data-key="${esc(k)}" title="Decomposto — clica para alterar">
+          ${fmtUnit(partialQty, r.unit)} <span style="color:#94a3b8;font-weight:400">/ ${fmtUnit(available, r.unit)}</span>
+          <span style="color:#7c3aed;font-size:.85rem;margin-left:.2rem">✂</span>
+        </span>`;
+      } else if (sel) {
+        availCell = `<span style="color:#0f4c75;font-weight:700;text-decoration:underline;text-decoration-color:#bfdbfe;text-underline-offset:3px">${fmtUnit(available, r.unit)}</span>`;
+      } else {
+        availCell = `<span style="color:#dc2626;font-weight:700">${fmtUnit(available, r.unit)}</span>`;
+      }
+      // Botão decompor (só quando seleccionado e tem qty > 0)
+      const decomporBtn = sel && available > 0
+        ? `<button class="btn-decompor" data-key="${esc(k)}" title="Decompor — entregar só uma parte neste serviço" style="margin-left:.4rem;background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe;padding:.05rem .35rem;border-radius:4px;font-size:.65rem;font-weight:700;cursor:pointer">✂ Decompor</button>`
+        : "";
+      return `<tr class="${sel ? "selected" : ""} ${isPartial ? "partial" : ""}" data-key="${esc(k)}">
         <td class="check-col"><input type="checkbox" class="check-input row-check" ${sel ? "checked" : ""}></td>
         <td><code style="font-size:.7rem">${esc(r.extensionist_id)}</code></td>
         <td>${esc(r.beneficiary_name)}</td>
@@ -238,7 +272,7 @@
         <td class="num">${realocCell}</td>
         <td class="num" style="font-weight:700">${fmtUnit(planned, r.unit)}</td>
         <td class="num" style="color:#16a34a">${fmtUnit(committed, r.unit)}</td>
-        <td class="num" style="color:#dc2626;font-weight:700">${fmtUnit(available, r.unit)}</td>
+        <td class="num">${availCell}${decomporBtn}</td>
         <td>${lastCell}</td>
         <td class="num"><span class="pct ${pctClass}">${pct}%</span></td>
       </tr>`;
@@ -249,41 +283,53 @@
     $$("#bal-body tr[data-key]").forEach((tr) => {
       const cb = tr.querySelector(".row-check");
       tr.addEventListener("click", (e) => {
-        if (e.target === cb) return; // checkbox click handles itself
+        // Cliques em controlos internos não devem alternar selecção
+        if (e.target === cb) return;
+        if (e.target.classList.contains("btn-decompor") || e.target.closest(".btn-decompor")) return;
+        if (e.target.classList.contains("split-cell") || e.target.closest(".split-cell")) return;
         cb.checked = !cb.checked;
         toggleRow(tr.dataset.key, cb.checked);
       });
       cb.addEventListener("click", (e) => { e.stopPropagation(); toggleRow(tr.dataset.key, cb.checked); });
     });
+    // Decompor handlers
+    $$(".btn-decompor, .split-cell").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openDecomporModal(el.dataset.key);
+      });
+    });
     // "Check all" toggle
     const cAll = $("#check-all");
-    cAll.checked = allRows.length > 0 && allRows.every((r) => selectedKeys.has(rowKey(r)));
+    cAll.checked = allRows.length > 0 && allRows.every(isSelected);
     cAll.onclick = () => {
-      if (cAll.checked) allRows.forEach((r) => selectedKeys.add(rowKey(r)));
-      else selectedKeys.clear();
+      if (cAll.checked) allRows.forEach((r) => selectionMap.set(rowKey(r), null));
+      else selectionMap.clear();
       renderRows();
       updateCapBar();
     };
   }
 
   function toggleRow(k, on) {
-    if (on) selectedKeys.add(k);
-    else    selectedKeys.delete(k);
+    if (on) selectionMap.set(k, null);  // null = full available
+    else    selectionMap.delete(k);
     const tr = $(`#bal-body tr[data-key="${k.replace(/"/g, '\\"')}"]`);
     if (tr) tr.classList.toggle("selected", on);
+    renderRows();   // re-render para aparecer/desaparecer botão Decompor
     updateCapBar();
   }
 
   // ── Capacity bar ───────────────────────────────────────────
   function selectedRows() {
-    return allRows.filter((r) => selectedKeys.has(rowKey(r)));
+    return allRows.filter(isSelected);
   }
   function selectedKgEquiv() {
     // For capacity, we treat L and un as kg-equivalent only crudely:
     // sementes (kg) count as kg, químicos (L) count as kg (1L≈1kg approx),
     // sacos (un) count as 0.3 kg/un. This is a UI-only estimate.
+    // Usa qty parcial (decompor) em vez de available_qty quando definida.
     return selectedRows().reduce((s, r) => {
-      const q = Number(r.available_qty) || 0;
+      const q = selectedQtyOf(r);
       if (r.unit === "un") return s + q * 0.3;
       return s + q; // kg ou L
     }, 0);
@@ -305,11 +351,15 @@
   }
 
   // ── Auto-fill (peso decrescente — best fit on biggest first) ─
+  // Se uma row não cabe inteira mas há espaço significativo (>500 kg),
+  // a primeira é decomposta para encher o camião exactamente.
   function autoFill() {
-    selectedKeys.clear();
+    selectionMap.clear();
     const candidates = [...allRows]
       .map((r) => ({
+        row: r,
         key: rowKey(r),
+        avail: Number(r.available_qty) || 0,
         weight: r.unit === "un" ? Number(r.available_qty) * 0.3 : Number(r.available_qty),
       }))
       .filter((c) => c.weight > 0)
@@ -317,8 +367,18 @@
     let remaining = truckCapacity;
     for (const c of candidates) {
       if (c.weight <= remaining) {
-        selectedKeys.add(c.key);
+        selectionMap.set(c.key, null);  // full
         remaining -= c.weight;
+      } else if (remaining > 500) {
+        // Decompõe a 1ª que não cabe inteira para encher o restante.
+        const partialKgEquiv = remaining;
+        const partialQty = c.row.unit === "un"
+          ? Math.floor(partialKgEquiv / 0.3)
+          : Math.floor(partialKgEquiv);
+        if (partialQty > 0 && partialQty < c.avail) {
+          selectionMap.set(c.key, partialQty);
+          remaining = 0;
+        }
       }
       if (remaining < 100) break;
     }
@@ -327,11 +387,14 @@
   }
 
   // ── Auto-fill priorizado (quem está há mais tempo sem receber primeiro) ─
+  // Decompõe a última row se ajudar a encher exactamente.
   function autoFillPriority() {
-    selectedKeys.clear();
+    selectionMap.clear();
     const candidates = [...allRows]
       .map((r) => ({
+        row: r,
         key: rowKey(r),
+        avail: Number(r.available_qty) || 0,
         weight: r.unit === "un" ? Number(r.available_qty) * 0.3 : Number(r.available_qty),
         last: r.last_delivery_at ? new Date(String(r.last_delivery_at).replace(" ", "T")).getTime() : 0,
       }))
@@ -341,11 +404,78 @@
     let remaining = truckCapacity;
     for (const c of candidates) {
       if (c.weight <= remaining) {
-        selectedKeys.add(c.key);
+        selectionMap.set(c.key, null);
         remaining -= c.weight;
+      } else if (remaining > 500) {
+        const partialQty = c.row.unit === "un"
+          ? Math.floor(remaining / 0.3)
+          : Math.floor(remaining);
+        if (partialQty > 0 && partialQty < c.avail) {
+          selectionMap.set(c.key, partialQty);
+          remaining = 0;
+        }
       }
       if (remaining < 100) break;
     }
+    renderRows();
+    updateCapBar();
+  }
+
+  // ── Modal: decompor linha ──────────────────────────────────
+  function openDecomporModal(k) {
+    const r = allRows.find((row) => rowKey(row) === k);
+    if (!r) return;
+    const available = Number(r.available_qty) || 0;
+    const current = selectedQtyOf(r) || available;
+    const overlay = $("#decompor-modal");
+    if (!overlay) return;
+    $("#dm-title").textContent = `Decompor: ${r.beneficiary_name}`;
+    $("#dm-subtitle").innerHTML = `<strong>${esc(r.product_name)}</strong> • Falta total: <strong>${fmtUnit(available, r.unit)}</strong>`;
+    const input = $("#dm-qty");
+    input.value = current;
+    input.max = available;
+    input.dataset.key = k;
+    input.dataset.unit = r.unit;
+    input.dataset.available = String(available);
+    $("#dm-unit").textContent = r.unit;
+    $("#dm-error").classList.remove("show");
+    // Sugestões rápidas: 1/2, 1/3, 2/3, total
+    const suggestions = [
+      { lbl: "Total",  v: available },
+      { lbl: "½",      v: Math.floor(available / 2) },
+      { lbl: "⅓",      v: Math.floor(available / 3) },
+      { lbl: "⅔",      v: Math.floor(available * 2 / 3) },
+    ];
+    $("#dm-suggestions").innerHTML = suggestions.map((s) =>
+      `<button type="button" class="dm-sug" data-v="${s.v}">${esc(s.lbl)} • ${fmtUnit(s.v, r.unit)}</button>`
+    ).join("");
+    $$(".dm-sug").forEach((b) => b.addEventListener("click", () => { input.value = b.dataset.v; input.focus(); }));
+    overlay.classList.add("show");
+    input.focus();
+    input.select();
+  }
+  function closeDecomporModal() { $("#decompor-modal").classList.remove("show"); }
+  function applyDecompor() {
+    const input = $("#dm-qty");
+    const k = input.dataset.key;
+    const unit = input.dataset.unit;
+    const available = Number(input.dataset.available);
+    const v = Number(input.value);
+    const err = $("#dm-error");
+    if (!Number.isFinite(v) || v <= 0) {
+      err.textContent = "Quantidade tem de ser maior que zero.";
+      err.classList.add("show");
+      return;
+    }
+    if (v > available + 0.01) {
+      err.textContent = `Quantidade excede o saldo disponível (${fmt(available)} ${unit}).`;
+      err.classList.add("show");
+      return;
+    }
+    // Se introduzir o total, guarda como null (= "linha completa", sem split)
+    const stored = Math.abs(v - available) < 0.01 ? null : v;
+    selectionMap.set(k, stored);
+    closeDecomporModal();
     renderRows();
     updateCapBar();
   }
@@ -394,10 +524,11 @@
 
     const province = sel[0].province;
     const district = sel[0].district;
+    // Usa qty parcial (decompor) quando definida, senão a falta total da linha.
     const items = sel.map((r) => ({
       extensionist_id: r.extensionist_id,
       sku: r.sku,
-      qty: Number(r.available_qty),
+      qty: selectedQtyOf(r),
     }));
     const body = {
       province, district,
@@ -433,7 +564,7 @@
       }
 
       closeCreateModal();
-      selectedKeys.clear();
+      selectionMap.clear();
       await Promise.all([loadBalances(), loadSummary()]);
       toast(`✓ Serviço ${result.service_number} criado (${fmt(result.total_kg)} kg)${putInTransit ? " e em trânsito" : ""}`, {
         kind: "ok", duration: 6000,
@@ -480,8 +611,8 @@
       const col = BAL_COLS.find((c) => c.key === balSort.sortKey);
       return sortRows(allRows, balSort.sortKey, balSort.sortAsc, col?.type);
     })();
-    const rows = selectedKeys.size > 0
-      ? sorted.filter((r) => selectedKeys.has(rowKey(r)))
+    const rows = selectionMap.size > 0
+      ? sorted.filter(isSelected).map((r) => ({ ...r, _selected_qty: selectedQtyOf(r) }))
       : sorted;
     exportCSV(rows, {
       filename: "saldos",
@@ -497,6 +628,7 @@
         { key: "planned_qty",        label: "Plano Ajustado" },
         { key: "committed_qty",      label: "Entregue" },
         { key: "available_qty",      label: "Falta" },
+        ...(selectionMap.size > 0 ? [{ key: "_selected_qty", label: "Qtd para serviço" }] : []),
       ],
     });
   }
@@ -557,9 +689,24 @@
     $("#btn-autofill").addEventListener("click", autoFill);
     $("#btn-autofill-prio").addEventListener("click", autoFillPriority);
     $("#btn-clear-sel").addEventListener("click", () => {
-      selectedKeys.clear(); renderRows(); updateCapBar();
+      selectionMap.clear(); renderRows(); updateCapBar();
     });
     $("#btn-create").addEventListener("click", openCreateModal);
+
+    // Decompor modal events
+    const dmCancel = $("#dm-cancel");
+    if (dmCancel) dmCancel.addEventListener("click", closeDecomporModal);
+    const dmConfirm = $("#dm-confirm");
+    if (dmConfirm) dmConfirm.addEventListener("click", applyDecompor);
+    const dmOverlay = $("#decompor-modal");
+    if (dmOverlay) dmOverlay.addEventListener("click", (e) => {
+      if (e.target.id === "decompor-modal") closeDecomporModal();
+    });
+    const dmInput = $("#dm-qty");
+    if (dmInput) dmInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); applyDecompor(); }
+      if (e.key === "Escape") { e.preventDefault(); closeDecomporModal(); }
+    });
 
     // Modal events
     $("#m-cancel").addEventListener("click", closeCreateModal);

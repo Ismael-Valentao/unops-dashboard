@@ -82,6 +82,27 @@
     /* Empty / loading states */
     .empty-state{padding:3rem 1rem;text-align:center;color:#94a3b8}
     .empty-state .ico{font-size:2.5rem;margin-bottom:.5rem;opacity:.5}
+
+    /* Decompor (split row) — linha selecionada com qty parcial */
+    .bal-tbl tbody tr.partial{background:#faf5ff}
+    .bal-tbl tbody tr.partial:hover{background:#f3e8ff}
+    .bal-tbl tbody tr.partial.selected{background:#ede9fe}
+    .bal-tbl tbody tr.partial.selected:hover{background:#ddd6fe}
+    .btn-decompor:hover{background:#e9d5ff !important;border-color:#a855f7 !important}
+    .split-cell:hover{text-decoration:underline}
+
+    /* Modal Decompor */
+    #decompor-modal .modal{max-width:460px}
+    #decompor-modal h2{display:flex;align-items:center;gap:.45rem}
+    #decompor-modal h2::before{content:"✂";color:#7c3aed}
+    .dm-subtitle{font-size:.82rem;color:#475569;margin:.25rem 0 .85rem;padding:.5rem .75rem;background:#faf5ff;border-radius:6px}
+    .dm-input-group{display:flex;align-items:stretch;gap:.4rem}
+    .dm-input-group input{flex:1;font-size:1.05rem;font-weight:700;text-align:right}
+    .dm-input-group .dm-unit-label{padding:.55rem .8rem;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;font-weight:700;color:#475569;display:flex;align-items:center}
+    .dm-suggestions{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.6rem}
+    .dm-sug{padding:.3rem .55rem;background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe;border-radius:5px;font-size:.72rem;font-weight:700;cursor:pointer;font-family:inherit}
+    .dm-sug:hover{background:#e9d5ff;border-color:#a855f7}
+    .dm-hint{font-size:.72rem;color:#64748b;margin-top:.6rem;padding:.4rem .6rem;background:#f8fafc;border-radius:5px}
   </style>
 </head>
 <body class="admin-body">
@@ -188,6 +209,29 @@
       </div>
     </section>
   </main>
+
+  <!-- Decompor (split row) modal -->
+  <div class="modal-overlay" id="decompor-modal">
+    <div class="modal">
+      <h2 id="dm-title">Decompor linha</h2>
+      <div class="dm-subtitle" id="dm-subtitle"></div>
+      <label>Quantidade para este serviço</label>
+      <div class="dm-input-group">
+        <input id="dm-qty" type="number" min="0" step="any" placeholder="Ex: 30000">
+        <span class="dm-unit-label" id="dm-unit">kg</span>
+      </div>
+      <div class="dm-suggestions" id="dm-suggestions"></div>
+      <div class="err-box" id="dm-error"></div>
+      <div class="dm-hint">
+        O remanescente fica disponível na tabela de saldo para o próximo camião.
+        Total = mantém linha cheia.
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-clear" id="dm-cancel">Cancelar</button>
+        <button class="btn btn-create" id="dm-confirm" style="background:#7c3aed">Aplicar</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Create service modal -->
   <div class="modal-overlay" id="create-modal">
