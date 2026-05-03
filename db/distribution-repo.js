@@ -211,6 +211,11 @@ const Balances = {
     if (opts.district) { where.push("district = ?"); params.push(opts.district); }
     if (opts.sku)      { where.push("sku = ?");      params.push(opts.sku); }
     const w = "WHERE " + where.join(" AND ");
+    // FALTA agregada = MAX(0, SUM(planned) - SUM(committed)).
+    // O planned_qty já tem realocado_recebido subtraído (pós-realocação),
+    // logo over-deliveries a uns benefs canceladas pela redução do plano
+    // de outros (realocação documentada). Per-row deficit somado dava
+    // sempre demais — overcontava o que já estava pago via realocação.
     const aggRows = await query(
       `SELECT unit,
               SUM(planned_original)         AS planned_original,
@@ -218,8 +223,8 @@ const Balances = {
               SUM(planned_qty)              AS planned,
               SUM(committed_qty)            AS committed,
               SUM(delivered_qty)            AS delivered,
-              SUM(GREATEST(0, planned_qty - committed_qty)) AS available,
-              SUM(GREATEST(0, committed_qty - planned_qty)) AS surplus,
+              GREATEST(0, SUM(planned_qty) - SUM(committed_qty)) AS available,
+              GREATEST(0, SUM(committed_qty) - SUM(planned_qty)) AS surplus,
               SUM(LEAST(planned_qty, committed_qty)) AS fulfilled,
               SUM(CASE WHEN committed_qty > planned_qty THEN 1 ELSE 0 END) AS n_over_delivered,
               COUNT(*)                      AS n_rows
@@ -1039,13 +1044,17 @@ const Services = {
     //
     // O cumprimento honesto é fulfilled/planned (sempre ≤ 100%). committed/planned
     // pode passar 100% mas mascara que ainda há "available" por entregar a outros.
+    // Por SKU: falta agregada = MAX(0, SUM(planned) - SUM(committed)).
+    // Per-row deficit somado overcontava porque excessos a uns benefs eram
+    // realocações documentadas (planned_qty já tem realocado_recebido
+    // subtraído). Aggregate-level cancela correctamente.
     const byProduct = await query(
       `SELECT sku, product_name, unit,
               SUM(planned_qty) AS planned,
               SUM(committed_qty) AS committed,
               SUM(LEAST(planned_qty, committed_qty)) AS fulfilled,
-              SUM(GREATEST(0, planned_qty - committed_qty)) AS available,
-              SUM(GREATEST(0, committed_qty - planned_qty)) AS surplus,
+              GREATEST(0, SUM(planned_qty) - SUM(committed_qty)) AS available,
+              GREATEST(0, SUM(committed_qty) - SUM(planned_qty)) AS surplus,
               SUM(CASE WHEN committed_qty > planned_qty THEN 1 ELSE 0 END) AS n_over_delivered,
               SUM(CASE WHEN committed_qty < planned_qty THEN 1 ELSE 0 END) AS n_under_delivered,
               COUNT(*) AS n_benefs
@@ -1058,14 +1067,22 @@ const Services = {
     // 2. Status counts (já tem fleetSummary p/ trânsito; aqui pegamos counts tudo)
     const counts = await this.dashboardCounts();
 
-    // 3. Top 8 distritos por falta total (kg-equiv: un × 0.3)
+    // 3. Top 8 distritos por falta total (kg-equiv: un × 0.3).
+    //    Falta = MAX(0, SUM(planned) - SUM(committed)) por (district × unit),
+    //    convertida para kg-equivalentes para somar tudo numa coluna.
     const topDistricts = await query(
       `SELECT province, district,
-              SUM(GREATEST(0, planned_qty - committed_qty) *
+              SUM(falta_unit *
                 CASE WHEN unit = 'un' THEN 0.3 ELSE 1 END) AS falta_kg_eq,
-              COUNT(DISTINCT extensionist_id) AS n_benefs
-       FROM delivery_balances
-       WHERE planned_qty > 0 AND district IS NOT NULL
+              SUM(n_benefs_with_deficit) AS n_benefs
+       FROM (
+         SELECT province, district, unit,
+                GREATEST(0, SUM(planned_qty) - SUM(committed_qty)) AS falta_unit,
+                COUNT(DISTINCT extensionist_id) AS n_benefs_with_deficit
+         FROM delivery_balances
+         WHERE planned_qty > 0 AND district IS NOT NULL
+         GROUP BY province, district, unit
+       ) t
        GROUP BY province, district
        HAVING falta_kg_eq > 0
        ORDER BY falta_kg_eq DESC
