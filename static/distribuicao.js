@@ -115,33 +115,56 @@
       // Filtro por SKU → usa só a unidade dessa categoria.
       const [unit, v] = units[0] || ["kg", { planned: 0, committed: 0, available: 0 }];
       const fmtU = unit === "L" ? fmtL : unit === "un" ? fmtUn : fmtKg;
+      // "Cumprido" = SUM(LEAST(planned, committed)) — o que efectivamente
+      // foi entregue dentro do plano (não conta over-delivery). Mostrar isto
+      // em vez de committed bruto faz com que Plano − Cumprido = Falta ✓
+      const fulfilled = v.fulfilled != null ? v.fulfilled : v.committed;
+      const surplus = v.surplus || 0;
+      const nOver = v.n_over_delivered || 0;
       $("#s-planned-label").textContent = "Plano (" + unit + ")";
       $("#s-delivered-label").textContent = "Entregue (" + unit + ")";
       $("#s-available-label").textContent = "Falta (" + unit + ")";
       $("#s-planned").textContent   = fmtU(v.planned   || 0);
-      $("#s-delivered").textContent = fmtU(v.committed || 0);
+      $("#s-delivered").textContent = fmtU(fulfilled);
       $("#s-available").textContent = fmtU(v.available || 0);
-      const pct = v.planned > 0 ? ((v.committed / v.planned) * 100).toFixed(1) + "%" : "—";
-      $("#s-delivered-pct").textContent = "Taxa: " + pct;
-      // Sub-rows (planeamento original, realocado)
+      const pct = v.planned > 0 ? ((fulfilled / v.planned) * 100).toFixed(1) + "%" : "—";
+      $("#s-delivered-pct").textContent = "Cumprido: " + pct;
+      // Sub-row do Plano: original + realocado recebido (se houver)
       const realocText = v.realocado_recebido > 0 ? "Realoc. recebido: " + fmtU(v.realocado_recebido) : "";
       $("#s-planned-other").textContent = v.planned_original
         ? "Original: " + fmtU(v.planned_original) + (realocText ? "  •  " + realocText : "")
         : "—";
+      // Sub-row do Entregue: total real (com excesso) se houver over-delivery
+      if (surplus > 0) {
+        $("#s-delivered-other").textContent = "Total: " + fmtU(v.committed) + "  (+ " + fmtU(surplus) + " excesso a " + nOver + " benef" + (nOver === 1 ? "" : "s") + ")";
+        $("#s-delivered-other").title = "Cumprido = entregue dentro do plano de cada benef. Excesso = entregue além do plano.";
+      } else {
+        $("#s-delivered-other").textContent = "—";
+        $("#s-delivered-other").title = "";
+      }
       $("#s-available-other").textContent = "—";
       $("#s-available-other").title = "";
     } else {
       // Sem filtro SKU — modo agregado (kg principal, L/un secundários).
+      const fulfilledKg = kg.fulfilled != null ? kg.fulfilled : kg.committed;
+      const surplusKg = kg.surplus || 0;
+      const nOverKg = kg.n_over_delivered || 0;
       $("#s-planned-label").textContent = "Plano (kg)";
       $("#s-delivered-label").textContent = "Entregue (kg)";
       $("#s-available-label").textContent = "Falta (kg)";
       $("#s-planned").textContent   = fmtKg(kg.planned   || 0);
-      $("#s-delivered").textContent = fmtKg(kg.committed || 0);
+      $("#s-delivered").textContent = fmtKg(fulfilledKg);
       $("#s-available").textContent = fmtKg(kg.available || 0);
-      const pct = kg.planned > 0 ? ((kg.committed / kg.planned) * 100).toFixed(1) + "%" : "—";
-      $("#s-delivered-pct").textContent = "Taxa: " + pct;
+      const pct = kg.planned > 0 ? ((fulfilledKg / kg.planned) * 100).toFixed(1) + "%" : "—";
+      $("#s-delivered-pct").textContent = "Cumprido: " + pct;
       $("#s-planned-other").textContent =
         [(L.planned   ? fmtL(L.planned) : null), (un.planned   ? fmtUn(un.planned)   : null)].filter(Boolean).join("  •  ") || "—";
+      if (surplusKg > 0) {
+        $("#s-delivered-other").textContent = "Total: " + fmtKg(kg.committed) + "  (+ " + fmtKg(surplusKg) + " excesso a " + nOverKg + " benefs)";
+      } else {
+        $("#s-delivered-other").textContent = "—";
+      }
+      $("#s-delivered-other").title = "";
       $("#s-available-other").textContent =
         [(L.available ? fmtL(L.available) : null), (un.available ? fmtUn(un.available) : null)].filter(Boolean).join("  •  ") || "—";
       $("#s-available-other").title = "";
