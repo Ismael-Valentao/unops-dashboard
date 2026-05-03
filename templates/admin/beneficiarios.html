@@ -100,19 +100,22 @@
       const $ = (s) => document.querySelector(s);
 
       const COLS = [
-        { key: "extensionist_id",  label: "ID",          sortable: true,  type: "string" },
-        { key: "nuit",             label: "NUIT",        sortable: true,  type: "string" },
-        { key: "name",             label: "Nome",        sortable: true,  type: "string" },
-        { key: "province",         label: "Província",   sortable: true,  type: "string" },
-        { key: "district",         label: "Distrito",    sortable: true,  type: "string" },
-        { key: "n_products",       label: "Produtos",    sortable: true,  type: "number", numCol: true },
-        { key: "planned_total",    label: "Plano",       sortable: true,  type: "number", numCol: true },
-        { key: "realocado_total",  label: "Realoc. Recebido", sortable: true, type: "number", numCol: true,
-          title: "Quantidade que foi atribuída via realocação (já subtraída do Plano)" },
-        { key: "committed_total",  label: "Entregue",    sortable: true,  type: "number", numCol: true },
-        { key: "available_total",  label: "Falta",       sortable: true,  type: "number", numCol: true },
-        { key: "n_services",       label: "Serviços",    sortable: true,  type: "number", numCol: true },
-        { key: null,               label: "",            sortable: false },
+        { key: "extensionist_id",   label: "ID",                sortable: true,  type: "string" },
+        { key: "nuit",              label: "NUIT",              sortable: true,  type: "string" },
+        { key: "name",              label: "Nome",              sortable: true,  type: "string" },
+        { key: "province",          label: "Província",         sortable: true,  type: "string" },
+        { key: "district",          label: "Distrito",          sortable: true,  type: "string" },
+        { key: "n_products",        label: "Produtos",          sortable: true,  type: "number", numCol: true },
+        { key: "planned_orig_total", label: "Plano Inicial",    sortable: true,  type: "number", numCol: true,
+          title: "NQAE original (antes de realocação)" },
+        { key: "realocado_total",   label: "Realoc. Recebido",  sortable: true,  type: "number", numCol: true,
+          title: "Quantidade atribuída via realocação (subtraída ao Plano Inicial)" },
+        { key: "planned_total",     label: "Plano Final",       sortable: true,  type: "number", numCol: true,
+          title: "Plano Inicial − Realocado Recebido (= o que ainda tem de ser entregue directamente)" },
+        { key: "committed_total",   label: "Entregue",          sortable: true,  type: "number", numCol: true },
+        { key: "available_total",   label: "Falta",             sortable: true,  type: "number", numCol: true },
+        { key: "n_services",        label: "Serviços",          sortable: true,  type: "number", numCol: true },
+        { key: null,                label: "",                  sortable: false },
       ];
       const sort = { sortKey: "name", sortAsc: true, render: () => render() };
 
@@ -223,8 +226,10 @@
           const extraTag = r.is_extra ? '<span class="ben-extra-tag">Extra</span>' : "";
           const realoc = Number(r.realocado_total) || 0;
           const realocCell = realoc > 0
-            ? `<td class="num" style="color:#7c3aed;font-weight:600" title="Plano original: ${fmt(r.planned_orig_total)}">${fmt(realoc)}</td>`
+            ? `<td class="num" style="color:#7c3aed;font-weight:600">${fmt(realoc)}</td>`
             : `<td class="num" style="color:#cbd5e1">—</td>`;
+          // Quando há realocação, destacar visualmente que o Plano Final difere do Inicial
+          const planFinalStyle = realoc > 0 ? "color:#0f4c75;font-weight:600" : "color:#64748b";
           return `<tr>
             <td><code class="bid">${esc(r.extensionist_id)}</code>${extraTag}</td>
             <td><code class="bid">${esc(r.nuit || "—")}</code></td>
@@ -232,8 +237,9 @@
             <td>${esc(r.province || "—")}</td>
             <td>${esc(r.district || "—")}</td>
             <td class="num">${fmt(r.n_products)}</td>
-            <td class="num" style="color:#64748b">${fmt(r.planned_total)}</td>
+            <td class="num" style="color:#64748b">${fmt(r.planned_orig_total)}</td>
             ${realocCell}
+            <td class="num" style="${planFinalStyle}">${fmt(r.planned_total)}</td>
             <td class="num" style="color:#16a34a">${fmt(r.committed_total)}</td>
             <td class="num" style="color:#dc2626;font-weight:700">${fmt(r.available_total)}</td>
             <td class="num">${fmt(r.n_services)}</td>
