@@ -6,7 +6,7 @@
   <title>AQI — Beneficiários</title>
   <link rel="stylesheet" href="/static/admin.css">
   <style>
-    .ben-filters{display:grid;grid-template-columns:repeat(5,1fr);gap:.6rem;align-items:end}
+    .ben-filters{display:grid;grid-template-columns:repeat(6,1fr);gap:.6rem;align-items:end}
     .ben-filters label{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;
       color:#64748b;font-weight:700;margin-bottom:.25rem}
     .ben-filters input,.ben-filters select{width:100%;padding:.45rem .6rem;border:1px solid #cbd5e1;
@@ -49,6 +49,10 @@
         <div>
           <label for="f-district">Distrito</label>
           <select id="f-district"><option value="">Todos</option></select>
+        </div>
+        <div>
+          <label for="f-sku">Produto</label>
+          <select id="f-sku"><option value="">Todos</option></select>
         </div>
         <div>
           <label for="f-kind">Tipo</label>
@@ -134,6 +138,7 @@
         const search = $("#f-search").value.trim(); if (search) p.set("search", search);
         const prov   = $("#f-province").value;     if (prov)   p.set("province", prov);
         const dist   = $("#f-district").value;     if (dist)   p.set("district", dist);
+        const sku    = $("#f-sku").value;           if (sku)    p.set("sku", sku);
         const kind   = $("#f-kind").value;          if (kind)   p.set("kind", kind);
         return p;
       }
@@ -143,19 +148,23 @@
         "f-search":   "search",
         "f-province": "province",
         "f-district": "district",
+        "f-sku":      "sku",
         "f-kind":     "kind",
       }, { onPopState: () => load() });
 
       function renderChips() {
         const KIND_LBL = { plan: "Do plano", extra: "Extras" };
+        const skuSel = $("#f-sku");
+        const skuLabel = skuSel.selectedOptions[0]?.textContent?.trim() || "";
         renderFilterChips($("#filter-chips"), [
           { key: "f-search",   label: "Pesquisa",   value: $("#f-search").value.trim() },
           { key: "f-province", label: "Província",  value: $("#f-province").value },
           { key: "f-district", label: "Distrito",   value: $("#f-district").value },
+          { key: "f-sku",      label: "Produto",    value: $("#f-sku").value ? skuLabel : "" },
           { key: "f-kind",     label: "Tipo",       value: KIND_LBL[$("#f-kind").value] || $("#f-kind").value },
         ], (key) => {
           if (key === "__all__") {
-            ["f-search","f-province","f-district","f-kind"].forEach((id) => $("#" + id).value = "");
+            ["f-search","f-province","f-district","f-sku","f-kind"].forEach((id) => $("#" + id).value = "");
             loadDistrictOptions();
           } else {
             $("#" + key).value = "";
@@ -250,15 +259,31 @@
 
       function debounced(fn) { return () => { clearTimeout(timer); timer = setTimeout(fn, 250); }; }
 
+      async function loadProducts() {
+        try {
+          const data = await fetchJSON("/admin/api/distribution/products");
+          const sel = $("#f-sku");
+          const current = sel.value;
+          sel.innerHTML = '<option value="">Todos</option>' +
+            (data.rows || []).map((p) => {
+              const lbl = `${p.product_name || p.sku} (${p.unit})`;
+              return `<option value="${esc(p.sku)}">${esc(lbl)}</option>`;
+            }).join("");
+          if (current) sel.value = current;
+        } catch (e) { /* noop — filtro fica desabilitado mas página funciona */ }
+      }
+
       document.addEventListener("DOMContentLoaded", async () => {
         $("#f-search").addEventListener("input", debounced(load));
         $("#f-province").addEventListener("change", () => { loadDistrictOptions(); load(); });
         $("#f-district").addEventListener("change", load);
+        $("#f-sku").addEventListener("change", load);
         $("#f-kind").addEventListener("change", load);
         $("#btn-clear").addEventListener("click", () => {
           $("#f-search").value = "";
           $("#f-province").value = "";
           $("#f-district").value = "";
+          $("#f-sku").value = "";
           $("#f-kind").value = "";
           loadDistrictOptions();
           load();
@@ -266,7 +291,7 @@
 
         $("#btn-export-csv").addEventListener("click", doExportCSV);
 
-        await loadGeo();
+        await Promise.all([loadGeo(), loadProducts()]);
         urlSync.read();
         loadDistrictOptions();
         urlSync.read();

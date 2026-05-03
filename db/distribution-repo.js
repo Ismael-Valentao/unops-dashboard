@@ -36,9 +36,27 @@ const Beneficiaries = {
     }
     if (opts.kind === "extra") where.push("b.extensionist_id LIKE 'EXT-%'");
     if (opts.kind === "plan")  where.push("b.extensionist_id NOT LIKE 'EXT-%'");
+
+    // Filtro de SKU (produto): quando activo, os totais agregados são APENAS
+    // desse SKU e benefs sem rows para esse SKU são escondidos. Filtro idêntico
+    // aplicado à contagem de serviços (só conta serviços que entregaram esse SKU).
+    const skuParams = [];
+    const svcSkuParams = [];
+    let balancesWhere = "";
+    let itemsWhere = "";
+    if (opts.sku) {
+      balancesWhere = "WHERE sku = ?";
+      itemsWhere = "WHERE sku = ?";
+      skuParams.push(opts.sku);
+      svcSkuParams.push(opts.sku);
+      // Esconder benefs que não tenham row para esse SKU
+      where.push("s.extensionist_id IS NOT NULL");
+    }
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
+
     // Cada benef mostra: totais agregados de saldo (planeado, entregue, falta)
     // + nº de produtos no plano. Permite ordenar por estes campos.
+    // Param ordering: skuParams (subquery balances) → svcSkuParams (subquery items) → params (outer WHERE)
     return query(
       `SELECT b.extensionist_id, b.nuit, b.name, b.province, b.district, b.posto,
               b.contact, b.supervisor_name, b.supervisor_phone,
@@ -56,17 +74,31 @@ const Beneficiaries = {
                 SUM(committed_qty) AS committed_total,
                 SUM(GREATEST(0, planned_qty - committed_qty)) AS available_total
          FROM delivery_balances
+         ${balancesWhere}
          GROUP BY extensionist_id
        ) s ON s.extensionist_id = b.extensionist_id
        LEFT JOIN (
          SELECT extensionist_id, COUNT(DISTINCT service_id) AS n_services
          FROM delivery_service_items
+         ${itemsWhere}
          GROUP BY extensionist_id
        ) svc ON svc.extensionist_id = b.extensionist_id
        ${w}
        ORDER BY b.name
        LIMIT 5000`,
-      params
+      [...skuParams, ...svcSkuParams, ...params]
+    );
+  },
+
+  // Lista de SKUs distintos presentes em delivery_balances + nome amigável.
+  // Usado para popular o dropdown de filtro de produto na página.
+  async listProducts() {
+    return query(
+      `SELECT sku, MAX(product_name) AS product_name, MAX(unit) AS unit, COUNT(*) AS n_benefs
+       FROM delivery_balances
+       WHERE sku IS NOT NULL AND sku <> ''
+       GROUP BY sku
+       ORDER BY MAX(product_name)`
     );
   },
   async byId(extId) {

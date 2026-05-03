@@ -1232,9 +1232,14 @@ router.get("/api/distribution/geography", ah(async (_req, res) => {
 }));
 
 router.get("/api/distribution/beneficiaries", ah(async (req, res) => {
-  const { province, district, search, kind } = req.query;
-  const rows = await Beneficiaries.list({ province, district, search, kind });
+  const { province, district, search, kind, sku } = req.query;
+  const rows = await Beneficiaries.list({ province, district, search, kind, sku });
   res.json({ rows });
+}));
+
+// Lista de produtos distintos (sku + nome) para popular dropdown de filtro.
+router.get("/api/distribution/products", ah(async (_req, res) => {
+  res.json({ rows: await Beneficiaries.listProducts() });
 }));
 
 router.get("/api/distribution/beneficiaries/:id", ah(async (req, res) => {
