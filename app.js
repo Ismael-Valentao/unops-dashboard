@@ -927,7 +927,12 @@ app.get("/api/logistics/compare", (_req, res) => {
       const totalDeliv = delRows.reduce((sum, d) => sum + (Number(d.delivered_qty) || 0), 0);
       const produto = SKU_MAP[s["SKU"]] || s["SKU"] || "";
       const estado = String(s["Estado"] || "").toUpperCase();
-      const peso = Number(s["Peso"]) || 0;
+      // Sacos herméticos (SUSSACO): Volumes é o count real. Peso no Excel é
+      // inconsistente (uns rows têm count, outros têm kg). Para sacos usar
+      // sempre Volumes; outros produtos usam Peso (kg).
+      const skuStr = String(s["SKU"] || "").trim();
+      const isSacoSku = skuStr === "SUSSACO";
+      const peso = isSacoSku ? (Number(s["Volumes"]) || 0) : (Number(s["Peso"]) || 0);
 
       if (entregue) matched++;
 
