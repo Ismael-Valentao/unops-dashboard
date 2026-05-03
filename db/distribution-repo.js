@@ -54,22 +54,27 @@ const Beneficiaries = {
     }
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
 
-    // Cada benef mostra: totais agregados de saldo (planeado, entregue, falta)
-    // + nº de produtos no plano. Permite ordenar por estes campos.
+    // Cada benef mostra: totais agregados de saldo (planeado, entregue, falta,
+    // realocado recebido) + nº de produtos no plano. Permite ordenar por estes
+    // campos.
     // Param ordering: skuParams (subquery balances) → svcSkuParams (subquery items) → params (outer WHERE)
     return query(
       `SELECT b.extensionist_id, b.nuit, b.name, b.province, b.district, b.posto,
               b.contact, b.supervisor_name, b.supervisor_phone,
               CASE WHEN b.extensionist_id LIKE 'EXT-%' THEN 1 ELSE 0 END AS is_extra,
-              COALESCE(s.n_products, 0)        AS n_products,
-              COALESCE(s.planned_total, 0)     AS planned_total,
-              COALESCE(s.committed_total, 0)   AS committed_total,
-              COALESCE(s.available_total, 0)   AS available_total,
-              COALESCE(svc.n_services, 0)      AS n_services
+              COALESCE(s.n_products, 0)         AS n_products,
+              COALESCE(s.planned_total, 0)      AS planned_total,
+              COALESCE(s.planned_orig_total, 0) AS planned_orig_total,
+              COALESCE(s.realocado_total, 0)    AS realocado_total,
+              COALESCE(s.committed_total, 0)    AS committed_total,
+              COALESCE(s.available_total, 0)    AS available_total,
+              COALESCE(svc.n_services, 0)       AS n_services
        FROM beneficiaries b
        LEFT JOIN (
          SELECT extensionist_id,
                 COUNT(*) AS n_products,
+                SUM(planned_original) AS planned_orig_total,
+                SUM(realocado_recebido) AS realocado_total,
                 SUM(planned_qty) AS planned_total,
                 SUM(committed_qty) AS committed_total,
                 SUM(GREATEST(0, planned_qty - committed_qty)) AS available_total

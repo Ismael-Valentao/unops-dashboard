@@ -74,6 +74,7 @@
         <div class="b-stat b-stat-purple"><div class="b-stat-lbl">Extras</div><div class="b-stat-val" id="s-extra">—</div></div>
         <div class="b-stat"><div class="b-stat-lbl">Distritos</div><div class="b-stat-val" id="s-distritos">—</div></div>
         <div class="b-stat b-stat-green"><div class="b-stat-lbl">Já receberam</div><div class="b-stat-val" id="s-com-entregas">—</div></div>
+        <div class="b-stat b-stat-purple"><div class="b-stat-lbl">Com Realocação</div><div class="b-stat-val" id="s-realoc">—</div></div>
       </div>
     </section>
 
@@ -106,6 +107,8 @@
         { key: "district",         label: "Distrito",    sortable: true,  type: "string" },
         { key: "n_products",       label: "Produtos",    sortable: true,  type: "number", numCol: true },
         { key: "planned_total",    label: "Plano",       sortable: true,  type: "number", numCol: true },
+        { key: "realocado_total",  label: "Realoc. Recebido", sortable: true, type: "number", numCol: true,
+          title: "Quantidade que foi atribuída via realocação (já subtraída do Plano)" },
         { key: "committed_total",  label: "Entregue",    sortable: true,  type: "number", numCol: true },
         { key: "available_total",  label: "Falta",       sortable: true,  type: "number", numCol: true },
         { key: "n_services",       label: "Serviços",    sortable: true,  type: "number", numCol: true },
@@ -180,17 +183,19 @@
         exportCSV(sorted, {
           filename: "beneficiarios",
           columns: [
-            { key: "extensionist_id", label: "Extens. ID" },
-            { key: "nuit",            label: "NUIT" },
-            { key: "name",            label: "Nome" },
-            { key: "province",        label: "Província" },
-            { key: "district",        label: "Distrito" },
-            { key: "is_extra",        label: "Extra", format: (v) => v ? "Sim" : "Não" },
-            { key: "n_products",      label: "Produtos" },
-            { key: "planned_total",   label: "Plano Total" },
-            { key: "committed_total", label: "Entregue Total" },
-            { key: "available_total", label: "Falta Total" },
-            { key: "n_services",      label: "Serviços" },
+            { key: "extensionist_id",    label: "Extens. ID" },
+            { key: "nuit",               label: "NUIT" },
+            { key: "name",               label: "Nome" },
+            { key: "province",           label: "Província" },
+            { key: "district",           label: "Distrito" },
+            { key: "is_extra",           label: "Extra", format: (v) => v ? "Sim" : "Não" },
+            { key: "n_products",         label: "Produtos" },
+            { key: "planned_orig_total", label: "Plano Original (NQAE)" },
+            { key: "realocado_total",    label: "Realocado Recebido" },
+            { key: "planned_total",      label: "Plano Pós-Realoc." },
+            { key: "committed_total",    label: "Entregue Total" },
+            { key: "available_total",    label: "Falta Total" },
+            { key: "n_services",         label: "Serviços" },
           ],
         });
       }
@@ -216,6 +221,10 @@
         }
         body.innerHTML = sorted.map((r) => {
           const extraTag = r.is_extra ? '<span class="ben-extra-tag">Extra</span>' : "";
+          const realoc = Number(r.realocado_total) || 0;
+          const realocCell = realoc > 0
+            ? `<td class="num" style="color:#7c3aed;font-weight:600" title="Plano original: ${fmt(r.planned_orig_total)}">${fmt(realoc)}</td>`
+            : `<td class="num" style="color:#cbd5e1">—</td>`;
           return `<tr>
             <td><code class="bid">${esc(r.extensionist_id)}</code>${extraTag}</td>
             <td><code class="bid">${esc(r.nuit || "—")}</code></td>
@@ -224,6 +233,7 @@
             <td>${esc(r.district || "—")}</td>
             <td class="num">${fmt(r.n_products)}</td>
             <td class="num" style="color:#64748b">${fmt(r.planned_total)}</td>
+            ${realocCell}
             <td class="num" style="color:#16a34a">${fmt(r.committed_total)}</td>
             <td class="num" style="color:#dc2626;font-weight:700">${fmt(r.available_total)}</td>
             <td class="num">${fmt(r.n_services)}</td>
@@ -238,10 +248,12 @@
         const extras = allRows.filter((r) => r.is_extra).length;
         const districts = new Set(allRows.map((r) => r.district).filter(Boolean)).size;
         const comEntregas = allRows.filter((r) => r.n_services > 0).length;
+        const comRealoc = allRows.filter((r) => Number(r.realocado_total) > 0).length;
         $("#s-total").textContent = fmt(total);
         $("#s-extra").textContent = fmt(extras);
         $("#s-distritos").textContent = fmt(districts);
         $("#s-com-entregas").textContent = fmt(comEntregas);
+        $("#s-realoc").textContent = fmt(comRealoc);
       }
 
       async function load() {
