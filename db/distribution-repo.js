@@ -219,6 +219,9 @@ const Balances = {
               SUM(committed_qty)            AS committed,
               SUM(delivered_qty)            AS delivered,
               SUM(GREATEST(0, planned_qty - committed_qty)) AS available,
+              SUM(GREATEST(0, committed_qty - planned_qty)) AS surplus,
+              SUM(LEAST(planned_qty, committed_qty)) AS fulfilled,
+              SUM(CASE WHEN committed_qty > planned_qty THEN 1 ELSE 0 END) AS n_over_delivered,
               COUNT(*)                      AS n_rows
        FROM delivery_balances ${w} GROUP BY unit`,
       params
@@ -232,6 +235,9 @@ const Balances = {
         committed: Number(r.committed) || 0,
         delivered: Number(r.delivered) || 0,
         available: Number(r.available) || 0,
+        surplus: Number(r.surplus) || 0,
+        fulfilled: Number(r.fulfilled) || 0,
+        n_over_delivered: Number(r.n_over_delivered) || 0,
         rows: Number(r.n_rows) || 0,
       };
     });

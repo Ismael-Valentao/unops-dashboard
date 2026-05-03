@@ -121,14 +121,30 @@
       $("#s-planned").textContent   = fmtU(v.planned   || 0);
       $("#s-delivered").textContent = fmtU(v.committed || 0);
       $("#s-available").textContent = fmtU(v.available || 0);
-      const pct = v.planned > 0 ? ((v.committed / v.planned) * 100).toFixed(1) + "%" : "—";
-      $("#s-delivered-pct").textContent = "Taxa: " + pct;
+      // Cumprimento honesto: cap em 100%, mostra fulfilled/planned (não committed/planned
+      // que pode passar 100% se houver over-delivery a alguns benefs).
+      const fulfilled = v.fulfilled != null ? v.fulfilled : v.committed;
+      const pct = v.planned > 0 ? ((fulfilled / v.planned) * 100).toFixed(1) + "%" : "—";
+      $("#s-delivered-pct").textContent = "Cumprido: " + pct;
       // Sub-rows (planeamento original, realocado) em vez do "outros un"
       const realocText = v.realocado_recebido > 0 ? "Realoc. recebido: " + fmtU(v.realocado_recebido) : "";
       $("#s-planned-other").textContent = v.planned_original
         ? "Original: " + fmtU(v.planned_original) + (realocText ? "  •  " + realocText : "")
         : "—";
-      $("#s-available-other").textContent = "—";
+      // Falta sub-text: explica decomposição quando há excesso
+      const surplus = v.surplus || 0;
+      const nOver = v.n_over_delivered || 0;
+      if (surplus > 0) {
+        const planMinusEntreg = (v.planned || 0) - (v.committed || 0);
+        $("#s-available-other").textContent =
+          `(${fmtU(v.planned)}−${fmtU(v.committed)})+${fmtU(surplus)} excesso = ${fmtU(v.available)}`;
+        $("#s-available-other").title =
+          "Falta = (Plano − Entregue) + Excesso. Há " + nOver + " benef" + (nOver === 1 ? "" : "s") +
+          " com excesso (receberam mais que o seu plano), pelo que esses kg ainda têm de ser entregues a outros.";
+      } else {
+        $("#s-available-other").textContent = "—";
+        $("#s-available-other").title = "";
+      }
     } else {
       // Sem filtro SKU — modo agregado (kg principal, L/un secundários).
       $("#s-planned-label").textContent = "Plano (kg)";
@@ -137,12 +153,23 @@
       $("#s-planned").textContent   = fmtKg(kg.planned   || 0);
       $("#s-delivered").textContent = fmtKg(kg.committed || 0);
       $("#s-available").textContent = fmtKg(kg.available || 0);
-      const pct = kg.planned > 0 ? ((kg.committed / kg.planned) * 100).toFixed(1) + "%" : "—";
-      $("#s-delivered-pct").textContent = "Taxa: " + pct;
+      const fulfilledKg = kg.fulfilled != null ? kg.fulfilled : kg.committed;
+      const pct = kg.planned > 0 ? ((fulfilledKg / kg.planned) * 100).toFixed(1) + "%" : "—";
+      $("#s-delivered-pct").textContent = "Cumprido: " + pct;
       $("#s-planned-other").textContent =
         [(L.planned   ? fmtL(L.planned) : null), (un.planned   ? fmtUn(un.planned)   : null)].filter(Boolean).join("  •  ") || "—";
-      $("#s-available-other").textContent =
-        [(L.available ? fmtL(L.available) : null), (un.available ? fmtUn(un.available) : null)].filter(Boolean).join("  •  ") || "—";
+      // Falta sub-text agregado: também explica se há excesso
+      const surplusKg = kg.surplus || 0;
+      if (surplusKg > 0) {
+        $("#s-available-other").textContent = "Excesso: " + fmtKg(surplusKg) + " (em " + (kg.n_over_delivered || 0) + " benefs)";
+        $("#s-available-other").title =
+          "Falta = (Plano − Entregue) + Excesso. Há " + (kg.n_over_delivered || 0) +
+          " benefs com excesso (receberam mais que o seu plano), pelo que esses kg ainda têm de ser entregues a outros.";
+      } else {
+        $("#s-available-other").textContent =
+          [(L.available ? fmtL(L.available) : null), (un.available ? fmtUn(un.available) : null)].filter(Boolean).join("  •  ") || "—";
+        $("#s-available-other").title = "";
+      }
     }
   }
 
