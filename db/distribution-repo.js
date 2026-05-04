@@ -436,14 +436,34 @@ const Services = {
   // Permite corrigir matrícula, motorista, telefone, origem, capacidade,
   // notas. Não toca em itens (para isso é cancelar + recriar).
   async update(serviceId, patch) {
-    const allowed = [
-      "truck_plate", "truck_plate_2", "driver_name", "driver_phone",
-      "origem_supplier", "truck_capacity_kg", "notes",
-    ];
-    const sets = [];
-    const params = [];
-    for (const k of allowed) {
-      if (Object.prototype.hasOwnProperty.call(patch, k)) {
+    // Campos sempre editáveis (mesmo em in_transit): identificação do camião,
+    // motorista e notas — operador pode precisar corrigir typos ou actualizar
+    // dados de contacto depois do despacho.
+    const ALWAYS_EDITABLE = ["truck_plate", "truck_plate_2", "driver_name", "driver_phone", "notes"];
+    // Campos só editáveis em draft (mexem em saldo/match/match com items).
+    const DRAFT_ONLY = ["origem_supplier", "truck_capacity_kg"];
+
+    // Lê o estado actual para decidir o que se permite alterar.
+    const conn = await getPool().getConnection();
+    try {
+      const [svc] = await conn.query("SELECT status FROM delivery_services WHERE id = ?", [serviceId]);
+      if (!svc[0]) return { error: "Serviço não existe" };
+      const status = svc[0].status;
+      if (status === "delivered" || status === "cancelled") {
+        return { error: "Serviço já está " + (status === "delivered" ? "entregue" : "cancelado") + " — não pode ser editado" };
+      }
+      const allowed = status === "draft"
+        ? [...ALWAYS_EDITABLE, ...DRAFT_ONLY]
+        : ALWAYS_EDITABLE;
+
+      const sets = [];
+      const params = [];
+      const blocked = [];
+      for (const k of Object.keys(patch || {})) {
+        if (!allowed.includes(k)) {
+          if (DRAFT_ONLY.includes(k)) blocked.push(k);
+          continue;
+        }
         sets.push(`${k} = ?`);
         let v = patch[k];
         if (k === "truck_plate" || k === "truck_plate_2") {
@@ -455,20 +475,19 @@ const Services = {
         }
         params.push(v);
       }
-    }
-    if (!sets.length) return { error: "Nada para actualizar" };
+      if (!sets.length) {
+        if (blocked.length) return { error: "Em " + status + " só pode editar camião/motorista/notas. Bloqueado: " + blocked.join(", ") };
+        return { error: "Nada para actualizar" };
+      }
 
-    const conn = await getPool().getConnection();
-    try {
       const [r] = await conn.query(
-        `UPDATE delivery_services SET ${sets.join(", ")}
-         WHERE id = ? AND status = 'draft'`,
+        `UPDATE delivery_services SET ${sets.join(", ")} WHERE id = ?`,
         [...params, serviceId]
       );
       if (r.affectedRows === 0) {
-        return { error: "Serviço não está em rascunho — não pode ser editado" };
+        return { error: "Falha ao actualizar serviço" };
       }
-      return { ok: true };
+      return { ok: true, blocked: blocked.length ? blocked : undefined };
     } finally {
       conn.release();
     }

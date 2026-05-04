@@ -99,6 +99,15 @@
         Cancelar liberta o saldo destes <strong id="cm-items-count">…</strong> beneficiários.
         Esta acção não pode ser revertida.
       </p>
+      <div id="cm-transit-warning" style="display:none;background:#fef2f2;border:1px solid #fca5a5;border-left:4px solid #dc2626;border-radius:6px;padding:.65rem .8rem;margin-bottom:.6rem;font-size:.78rem;color:#991b1b;line-height:1.4">
+        <strong>⚠️ Serviço em TRÂNSITO</strong><br>
+        O camião já saiu do armazém com <strong id="cm-transit-kg"></strong> kg. Cancelar agora vai:
+        <ul style="margin:.35rem 0 .25rem 1.1rem;padding:0">
+          <li>Libertar o saldo dos beneficiários (volta a ficar disponível para outro despacho)</li>
+          <li>Marcar o serviço como cancelado, mas <strong>NÃO travar o camião</strong> — se a entrega física aconteceu, o stock fica inconsistente</li>
+        </ul>
+        Só cancelar se tens confirmação que a carga voltou ao armazém ou foi desviada.
+      </div>
       <div style="margin-top:.7rem">
         <label style="display:block;font-size:.7rem;text-transform:uppercase;color:#64748b;font-weight:600;margin-bottom:.25rem">Motivo *</label>
         <select id="cm-category" style="width:100%;padding:.55rem .65rem;border:1px solid #cbd5e1;border-radius:6px;font-size:.85rem;font-family:inherit"></select>
@@ -120,8 +129,8 @@
   <div class="edit-modal" id="edit-modal">
     <div class="edit-box">
       <h2>Editar Serviço</h2>
-      <p style="font-size:.78rem;color:#64748b;margin:.3rem 0 0">Alterações só permitidas enquanto o serviço está em rascunho.</p>
-      <div class="edit-row">
+      <p style="font-size:.78rem;color:#64748b;margin:.3rem 0 0" id="e-mode-note">Alterações limitadas conforme estado.</p>
+      <div class="edit-row" id="e-row-draft-only">
         <div>
           <label>Capacidade do camião (kg)</label>
           <select id="e-capacity">
@@ -239,7 +248,7 @@
             </div>
             <div class="actions no-print">
               <button class="btn btn-print" onclick="window.print()">Imprimir Guia</button>
-              ${svc.status === "draft" ? `<button class="btn btn-edit" id="btn-edit">Editar</button>` : ""}
+              ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-edit" id="btn-edit">Editar</button>` : ""}
               ${svc.status === "draft" ? `<button class="btn btn-transit" id="btn-transit">Pôr em Trânsito</button>` : ""}
               ${(svc.status === "in_transit" || svc.status === "delivered") ? `<button class="btn btn-attach" id="btn-attach">Anexar Guia ADICIONAL</button>` : ""}
               ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-deliver" id="btn-deliver">Marcar Entregue</button>` : ""}
@@ -387,10 +396,22 @@
           } catch (e) { alert("Erro: " + e.message); }
         });
 
-        // Edit modal (só draft)
+        // Edit modal (draft = tudo; in_transit = só camião/motorista/notas)
         const btnEdit = document.getElementById("btn-edit");
         if (btnEdit) btnEdit.addEventListener("click", () => {
           const mod = document.getElementById("edit-modal");
+          const isDraft = svc.status === "draft";
+          // Esconde campos só-draft quando em trânsito
+          const draftOnlyRow = document.getElementById("e-row-draft-only");
+          if (draftOnlyRow) draftOnlyRow.style.display = isDraft ? "" : "none";
+          // Nota informativa adapta ao estado
+          const note = document.getElementById("e-mode-note");
+          if (note) {
+            note.textContent = isDraft
+              ? "Em rascunho podes editar todos os campos."
+              : "Em trânsito só podes corrigir camião/motorista/notas. Capacidade e origem ficam fixas.";
+            note.style.color = isDraft ? "#64748b" : "#7c3aed";
+          }
           document.getElementById("e-capacity").value = svc.truck_capacity_kg || "30000";
           document.getElementById("e-origem").value = svc.origem_supplier || "";
           document.getElementById("e-plate").value = svc.truck_plate || "";
@@ -410,15 +431,20 @@
         document.getElementById("e-save").addEventListener("click", async () => {
           const errBox = document.getElementById("e-errors");
           errBox.classList.remove("show");
+          const isDraft = svc.status === "draft";
+          // Em trânsito só envia campos seguros — backend já bloqueia mas evita
+          // 400 desnecessário
           const patch = {
-            truck_capacity_kg: Number(document.getElementById("e-capacity").value) || 0,
-            origem_supplier: document.getElementById("e-origem").value.trim() || null,
             truck_plate: document.getElementById("e-plate").value.trim().toUpperCase() || null,
             truck_plate_2: document.getElementById("e-plate-2").value.trim().toUpperCase() || null,
             driver_name: document.getElementById("e-driver").value.trim() || null,
             driver_phone: document.getElementById("e-phone").value.trim() || null,
             notes: document.getElementById("e-notes").value.trim() || null,
           };
+          if (isDraft) {
+            patch.truck_capacity_kg = Number(document.getElementById("e-capacity").value) || 0;
+            patch.origem_supplier = document.getElementById("e-origem").value.trim() || null;
+          }
           try {
             await fetchJSON(`/admin/api/distribution/services/${id}`, { method: "PATCH", body: patch });
             location.reload();
@@ -450,6 +476,14 @@
           document.getElementById("cm-items-count").textContent = svc.items.length;
           document.getElementById("cm-reason").value = "";
           document.getElementById("cm-error").classList.remove("show");
+          // Aviso forte se serviço já está em trânsito (camião saiu)
+          const warnBox = document.getElementById("cm-transit-warning");
+          if (svc.status === "in_transit" && warnBox) {
+            warnBox.style.display = "block";
+            document.getElementById("cm-transit-kg").textContent = (Number(svc.total_kg) || 0).toLocaleString("pt-PT");
+          } else if (warnBox) {
+            warnBox.style.display = "none";
+          }
           mod.classList.add("show");
         });
         document.getElementById("cm-back").addEventListener("click", () => {
