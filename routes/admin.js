@@ -1268,31 +1268,69 @@ router.get("/api/distribution/origens", ah(async (_req, res) => {
     sheetSource = [...map.entries()].map(([name, n]) => ({ name, n }));
   } catch (_) { /* sem cache, ignora */ }
 
-  // Agrupar case-insensitive — preserva variação mais usada como display
-  const groups = new Map(); // key=lowercase → { displayName, n, variations:Set }
+  // Normaliza um nome para chave de agrupamento. Remove case, acentos,
+  // pontuação e sufixos comerciais comuns ("LDA", "S.A.", "Pty",
+  // "Moçambique", "Tenders") iterativamente. Assim BAYER ≡ BAYER Moçambique
+  // LDA, SeedCo ≡ SEEDCO, "AGT Foods Africa Pty, Lda" ≡ "AGT Foods Africa
+  // Pty, Lda" (variação espaços).
+  const normalizeKey = (name) => {
+    let s = String(name || "")
+      .toLowerCase()
+      .normalize("NFD").replace(/[̀-ͯ]/g, "")  // remove acentos
+      .replace(/[,\.\-]/g, " ")                           // pontuação → espaços
+      .replace(/\s+/g, " ")
+      .trim();
+    const SUFFIXES = [
+      /\s+tenders?\s*$/, /\s+lda\.?\s*$/, /\s+ltda\.?\s*$/,
+      /\s+s\s?a\s*$/,    /\s+ei\s*$/,      /\s+pty\s*$/,
+      /\s+mocambique\s*$/, /\s+mozambique\s*$/,
+      /\s+africa\s*$/,   // ex: "AGT Foods Africa" → "AGT Foods"
+    ];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const re of SUFFIXES) {
+        const ns = s.replace(re, "").trim();
+        if (ns !== s && ns.length > 0) { s = ns; changed = true; }
+      }
+    }
+    return s.replace(/\s+/g, " ").trim();
+  };
+
+  // Agrupar pela chave normalizada. Cada grupo guarda contagens por variação
+  // para depois escolher a variação mais frequente (e mais curta) como display.
+  const groups = new Map(); // key=normalized → { variantCounts: Map, n }
   const add = (name, n) => {
     if (!name) return;
-    const key = name.toLowerCase().trim();
+    const key = normalizeKey(name);
     if (!key) return;
-    const g = groups.get(key) || { displayName: name, n: 0, variations: new Set() };
+    const g = groups.get(key) || { variantCounts: new Map(), n: 0 };
     g.n += Number(n) || 0;
-    g.variations.add(name);
-    // Mantém o display name "mais bonito" — prefere o que tem capitalização mista
-    // (não tudo MAIÚSCULAS nem tudo minúsculas)
-    const isMixed = /[a-z]/.test(g.displayName) && /[A-Z]/.test(g.displayName);
-    const newIsMixed = /[a-z]/.test(name) && /[A-Z]/.test(name);
-    if (newIsMixed && !isMixed) g.displayName = name;
+    g.variantCounts.set(name, (g.variantCounts.get(name) || 0) + (Number(n) || 0));
     groups.set(key, g);
   };
   for (const r of dbRows)       add(r.name, r.n);
   for (const r of sheetSource)  add(r.name, r.n);
 
+  // Para cada grupo, escolhe display = variação mais usada
+  // (em empate: a mais curta, depois a com capitalização mista).
+  const score = (variant) => {
+    const isMixed = /[a-z]/.test(variant) && /[A-Z]/.test(variant) ? 1 : 0;
+    return { mixed: isMixed, len: variant.length };
+  };
   const rows = [...groups.values()]
-    .map((g) => ({
-      name: g.displayName,
-      n: g.n,
-      variations: [...g.variations].filter((v) => v !== g.displayName),
-    }))
+    .map((g) => {
+      const variants = [...g.variantCounts.entries()]
+        .sort((a, b) => {
+          if (b[1] !== a[1]) return b[1] - a[1];               // maior count
+          const sa = score(a[0]), sb = score(b[0]);
+          if (sa.mixed !== sb.mixed) return sb.mixed - sa.mixed; // mixed-case primeiro
+          return sa.len - sb.len;                                // mais curta primeiro
+        });
+      const [displayName] = variants[0];
+      const variations = variants.slice(1).map(([v]) => v);
+      return { name: displayName, n: g.n, variations };
+    })
     .sort((a, b) => b.n - a.n);
   res.json({ rows });
 }));
