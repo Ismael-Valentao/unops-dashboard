@@ -15,13 +15,24 @@
     </header>
 
     <section class="admin-section">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem">
         <span style="font-size:.85rem;color:#475569" id="meta">A carregar…</span>
-        <button class="btn" id="btn-refresh">Refrescar</button>
+        <div style="display:flex;gap:.4rem">
+          <button class="btn" id="btn-refresh">Refrescar</button>
+        </div>
+      </div>
+      <!-- Barra de bulk actions: aparece quando >0 selecionados -->
+      <div id="bulk-bar" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:.55rem .85rem;margin-bottom:.7rem;font-size:.85rem;align-items:center;justify-content:space-between;gap:.5rem">
+        <span><strong id="bulk-count">0</strong> seleccionado(s) — <span id="bulk-kg" style="color:#475569"></span></span>
+        <div style="display:flex;gap:.4rem">
+          <button class="btn btn-success btn-sm" id="btn-bulk-approve">Aprovar todos</button>
+          <button class="btn btn-sm" id="btn-bulk-clear">Limpar selecção</button>
+        </div>
       </div>
       <div class="tbl-wrap">
         <table class="adm-table" id="tbl">
           <thead><tr>
+            <th style="width:30px"><input type="checkbox" id="check-all" title="Seleccionar todos"></th>
             <th>Nº</th><th>Distrito</th><th>Matrícula</th><th>Origem</th>
             <th class="num">Benefs</th><th class="num">Itens</th><th class="num">Total kg</th>
             <th>Criado</th><th></th>
@@ -38,14 +49,35 @@
       const { fetchJSON, fmt, fmtDate, esc, toast, confirm: confirmDialog } = window.AdminUI;
       const $ = (s) => document.querySelector(s);
 
+      let lastRows = [];
+      function updateBulkBar() {
+        const checked = document.querySelectorAll("input[name=row-check]:checked");
+        const ids = [...checked].map((c) => Number(c.value));
+        const totalKg = ids.reduce((sum, id) => {
+          const r = lastRows.find((x) => x.id === id);
+          return sum + (r ? Number(r.total_kg) || 0 : 0);
+        }, 0);
+        const bar = $("#bulk-bar");
+        if (ids.length > 0) {
+          bar.style.display = "flex";
+          $("#bulk-count").textContent = ids.length;
+          $("#bulk-kg").textContent = fmt(totalKg) + " kg total";
+        } else {
+          bar.style.display = "none";
+        }
+        return ids;
+      }
+
       async function load() {
         try {
           const data = await fetchJSON("/admin/api/distribution/services/pending-approval");
-          $("#meta").textContent = data.rows.length
-            ? `${data.rows.length} serviço${data.rows.length === 1 ? "" : "s"} a aguardar aprovação`
+          lastRows = data.rows || [];
+          $("#meta").textContent = lastRows.length
+            ? `${lastRows.length} serviço${lastRows.length === 1 ? "" : "s"} a aguardar aprovação`
             : "Nenhum serviço pendente.";
-          $("#tbody").innerHTML = data.rows.length
-            ? data.rows.map((r) => `<tr>
+          $("#tbody").innerHTML = lastRows.length
+            ? lastRows.map((r) => `<tr>
+                <td><input type="checkbox" name="row-check" value="${r.id}"></td>
                 <td><a href="/admin/servicos/${r.id}" style="color:#0f4c75;font-weight:600">${esc(r.service_number)}</a></td>
                 <td>${esc(r.district || "—")}</td>
                 <td><code>${esc(r.truck_plate || "—")}</code></td>
@@ -59,7 +91,14 @@
                   <button class="btn btn-danger btn-sm" data-act="reject" data-id="${r.id}" data-num="${esc(r.service_number)}">Rejeitar</button>
                 </td>
               </tr>`).join("")
-            : '<tr><td colspan="9" class="empty">Nada a aprovar.</td></tr>';
+            : '<tr><td colspan="10" class="empty">Nada a aprovar.</td></tr>';
+
+          // Checkboxes individuais
+          document.querySelectorAll("input[name=row-check]").forEach((c) => {
+            c.addEventListener("change", updateBulkBar);
+          });
+          $("#check-all").checked = false;
+          updateBulkBar();
 
           document.querySelectorAll("button[data-act]").forEach((b) => {
             b.addEventListener("click", async () => {
@@ -90,6 +129,46 @@
           toast("Erro: " + e.message, { kind: "err" });
         }
       }
+
+      // Check-all
+      $("#check-all").addEventListener("change", (e) => {
+        document.querySelectorAll("input[name=row-check]").forEach((c) => { c.checked = e.target.checked; });
+        updateBulkBar();
+      });
+
+      // Bulk approve
+      $("#btn-bulk-approve").addEventListener("click", async () => {
+        const ids = updateBulkBar();
+        if (!ids.length) return;
+        const ok = await confirmDialog(
+          `Aprovar ${ids.length} serviço${ids.length === 1 ? "" : "s"} de uma vez?`,
+          {
+            title: "Aprovação em lote",
+            confirmLabel: "Aprovar todos",
+            details: "Cada serviço passará para approval_status='approved' e ficará disponível para pôr em trânsito.",
+          }
+        );
+        if (!ok) return;
+        try {
+          const r = await fetchJSON("/admin/api/distribution/services/bulk/approve", {
+            method: "POST", body: { ids, notes: "Aprovação em lote via /admin/aprovacoes" },
+          });
+          const okN = r.ok?.length || 0;
+          const failN = r.failed?.length || 0;
+          if (failN > 0) {
+            toast(`${okN} aprovado${okN === 1 ? "" : "s"}, ${failN} falharam`, { kind: "warn" });
+          } else {
+            toast(`✓ ${okN} serviço${okN === 1 ? "" : "s"} aprovado${okN === 1 ? "" : "s"}`, { kind: "ok" });
+          }
+          load();
+        } catch (e) { toast("Erro: " + e.message, { kind: "err" }); }
+      });
+
+      $("#btn-bulk-clear").addEventListener("click", () => {
+        document.querySelectorAll("input[name=row-check]").forEach((c) => c.checked = false);
+        $("#check-all").checked = false;
+        updateBulkBar();
+      });
 
       $("#btn-refresh").addEventListener("click", load);
       document.addEventListener("DOMContentLoaded", load);

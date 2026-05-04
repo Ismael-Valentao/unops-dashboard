@@ -303,8 +303,8 @@
       const decomporBtn = sel && available > 0
         ? `<button class="btn-decompor" data-key="${esc(k)}" title="Decompor — entregar só uma parte neste serviço" style="margin-left:.4rem;background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe;padding:.05rem .35rem;border-radius:4px;font-size:.65rem;font-weight:700;cursor:pointer">✂ Decompor</button>`
         : "";
-      return `<tr class="${sel ? "selected" : ""} ${isPartial ? "partial" : ""}" data-key="${esc(k)}">
-        <td class="check-col"><input type="checkbox" class="check-input row-check" ${sel ? "checked" : ""}></td>
+      return `<tr class="${sel ? "selected" : ""} ${isPartial ? "partial" : ""}" data-key="${esc(k)}" draggable="true">
+        <td class="check-col"><span class="drag-handle" title="Arrasta para o camião" style="display:inline-block;color:#94a3b8;cursor:grab;font-size:.95rem;margin-right:.2rem;user-select:none">⋮⋮</span><input type="checkbox" class="check-input row-check" ${sel ? "checked" : ""}></td>
         <td><code style="font-size:.7rem">${esc(r.extensionist_id)}</code></td>
         <td>${esc(r.beneficiary_name)}</td>
         <td>${esc(r.district || "")}</td>
@@ -321,7 +321,7 @@
     }).join("");
     $("#row-count").textContent = allRows.length + " itens";
 
-    // Bind row clicks
+    // Bind row clicks + drag-drop
     $$("#bal-body tr[data-key]").forEach((tr) => {
       const cb = tr.querySelector(".row-check");
       tr.addEventListener("click", (e) => {
@@ -329,10 +329,24 @@
         if (e.target === cb) return;
         if (e.target.classList.contains("btn-decompor") || e.target.closest(".btn-decompor")) return;
         if (e.target.classList.contains("split-cell") || e.target.closest(".split-cell")) return;
+        if (e.target.classList.contains("drag-handle")) return;
         cb.checked = !cb.checked;
         toggleRow(tr.dataset.key, cb.checked);
       });
       cb.addEventListener("click", (e) => { e.stopPropagation(); toggleRow(tr.dataset.key, cb.checked); });
+
+      // Drag-drop: arrastar linha → solta no camião → adiciona à selecção
+      tr.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", tr.dataset.key);
+        e.dataTransfer.effectAllowed = "copy";
+        tr.classList.add("dragging");
+        // Highlight da zona de drop (truck-panel)
+        document.querySelector(".truck-panel")?.classList.add("drop-target-active");
+      });
+      tr.addEventListener("dragend", () => {
+        tr.classList.remove("dragging");
+        document.querySelector(".truck-panel")?.classList.remove("drop-target-active", "drop-hover");
+      });
     });
     // Decompor handlers
     $$(".btn-decompor, .split-cell").forEach((el) => {
@@ -796,6 +810,35 @@
     loadDistrictOptions();
     urlSync.read(); // re-read porque distrito só agora está no DOM
     await refresh();
+
+    // Drop target = truck-panel. Aceita drop de linhas da tabela e adiciona-as
+    // à selecção (mesma operação que clicar no checkbox).
+    const truckPanel = document.querySelector(".truck-panel");
+    if (truckPanel) {
+      truckPanel.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        truckPanel.classList.add("drop-hover");
+      });
+      truckPanel.addEventListener("dragleave", (e) => {
+        // Só remove hover se realmente saiu do painel (não de filho)
+        if (!truckPanel.contains(e.relatedTarget)) {
+          truckPanel.classList.remove("drop-hover");
+        }
+      });
+      truckPanel.addEventListener("drop", (e) => {
+        e.preventDefault();
+        truckPanel.classList.remove("drop-hover", "drop-target-active");
+        const key = e.dataTransfer.getData("text/plain");
+        if (!key) return;
+        if (!selectionMap.has(key)) {
+          selectionMap.set(key, null);
+          renderRows();
+          updateCapBar();
+          if (window.AdminUI?.toast) window.AdminUI.toast("Adicionado ao camião", { kind: "ok", duration: 1500 });
+        }
+      });
+    }
 
     // Hint dinâmico no campo Origem: indica se é fornecedor conhecido
     // (já em uso N vezes) ou novo (vai ser criado).

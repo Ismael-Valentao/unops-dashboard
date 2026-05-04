@@ -248,6 +248,7 @@
             </div>
             <div class="actions no-print">
               <button class="btn btn-print" onclick="window.print()">Imprimir Guia</button>
+              <a class="btn" href="/admin/servicos/${svc.id}/roteiro" target="_blank" style="background:#0f4c75;color:#fff;border:0">Roteiro Motorista</a>
               ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-edit" id="btn-edit">Editar</button>` : ""}
               ${svc.status === "draft" ? `<button class="btn btn-transit" id="btn-transit">Pôr em Trânsito</button>` : ""}
               ${(svc.status === "in_transit" || svc.status === "delivered") ? `<button class="btn btn-attach" id="btn-attach">Anexar Guia ADICIONAL</button>` : ""}

@@ -770,6 +770,40 @@ const Services = {
     return results;
   },
 
+  // Aprovar múltiplos serviços de uma vez. Para cada id que esteja em
+  // approval_status='pending', define como approved com user/notas.
+  async bulkApprove(serviceIds, userId, notes) {
+    const results = { ok: [], failed: [] };
+    for (const id of serviceIds) {
+      try {
+        const r = await this.approve(id, userId, notes);
+        if (r.ok) results.ok.push(id);
+        else results.failed.push({ id, error: r.error });
+      } catch (e) {
+        results.failed.push({ id, error: e.message });
+      }
+    }
+    return results;
+  },
+
+  // Pôr múltiplos serviços em trânsito de uma vez. Cada id passa pelos
+  // mesmos checks (preflight, aprovação) que setInTransit individual.
+  // opts.force=true ignora warnings (mas erros bloqueiam sempre).
+  async bulkSetInTransit(serviceIds, opts = {}) {
+    const results = { ok: [], failed: [], needs_confirm: [] };
+    for (const id of serviceIds) {
+      try {
+        const r = await this.setInTransit(id, opts);
+        if (r.ok) results.ok.push(id);
+        else if (r.needs_confirm) results.needs_confirm.push({ id, warnings: r.warnings });
+        else results.failed.push({ id, error: r.error });
+      } catch (e) {
+        results.failed.push({ id, error: e.message });
+      }
+    }
+    return results;
+  },
+
   async list(opts = {}) {
     const where = [];
     const params = [];
@@ -840,6 +874,50 @@ const Services = {
       [id]
     );
     return { ...svc, items };
+  },
+
+  // Versão com detalhes de cada beneficiário (contacto, posto, supervisor)
+  // para imprimir o roteiro do motorista. Items agrupados por beneficiário.
+  async byIdForRoteiro(id) {
+    const svc = await queryOne("SELECT * FROM delivery_services WHERE id = ?", [id]);
+    if (!svc) return null;
+    const items = await query(
+      `SELECT i.*, b.contact, b.posto, b.localidade, b.supervisor_name, b.supervisor_phone, b.nuit
+       FROM delivery_service_items i
+       LEFT JOIN beneficiaries b ON b.extensionist_id = i.extensionist_id
+       WHERE i.service_id = ?
+       ORDER BY i.beneficiary_name, i.sku`,
+      [id]
+    );
+    // Agrupar por beneficiário (cada benef pode ter múltiplos SKUs)
+    const benefMap = new Map();
+    for (const it of items) {
+      const key = it.extensionist_id;
+      if (!benefMap.has(key)) {
+        benefMap.set(key, {
+          extensionist_id: it.extensionist_id,
+          beneficiary_name: it.beneficiary_name,
+          nuit: it.nuit,
+          contact: it.contact,
+          posto: it.posto,
+          localidade: it.localidade,
+          supervisor_name: it.supervisor_name,
+          supervisor_phone: it.supervisor_phone,
+          province: it.province,
+          district: it.district,
+          items: [],
+          total_kg: 0,
+        });
+      }
+      const g = benefMap.get(key);
+      g.items.push({ sku: it.sku, product_name: it.product_name, qty: Number(it.qty) || 0, unit: it.unit });
+      // Total kg-equivalente para sortar/mostrar (sacos × 0.3)
+      g.total_kg += (it.unit === "un" ? Number(it.qty) * 0.3 : Number(it.qty)) || 0;
+    }
+    const beneficiaries = [...benefMap.values()].sort((a, b) =>
+      (a.posto || "").localeCompare(b.posto || "") || (a.beneficiary_name || "").localeCompare(b.beneficiary_name || "")
+    );
+    return { ...svc, beneficiaries };
   },
 
   async byPlate(plate) {

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Roteiro do Motorista</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    body { background:#f1f5f9; margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    .toolbar { position:sticky; top:0; background:#0f4c75; color:#fff; padding:.75rem 1.25rem;
+      display:flex; justify-content:space-between; align-items:center; z-index:100; box-shadow:0 2px 6px rgba(0,0,0,.1); }
+    .toolbar h2 { margin:0; font-size:1rem; font-weight:600 }
+    .toolbar .btns { display:flex; gap:.5rem }
+    .toolbar button { background:#fff; color:#0f4c75; border:0; padding:.45rem .85rem; border-radius:5px;
+      font-weight:600; font-size:.85rem; cursor:pointer; }
+    .toolbar button:hover { background:#e2e8f0 }
+    .toolbar a { color:#fff; text-decoration:none; font-size:.82rem; opacity:.9 }
+    .toolbar a:hover { opacity:1; text-decoration:underline }
+
+    .page { max-width:920px; margin:1rem auto; background:#fff; padding:2rem 2.5rem;
+      box-shadow:0 1px 3px rgba(15,23,42,.08); }
+    .page-head { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:1rem;
+      border-bottom:3px solid #0f4c75; margin-bottom:1.5rem }
+    .doc-title { font-size:1.6rem; color:#0f4c75; font-weight:800; letter-spacing:.5px; margin:0 }
+    .doc-subtitle { color:#64748b; font-size:.78rem; text-transform:uppercase; letter-spacing:.1em;
+      margin-top:.2rem }
+    .doc-num { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.95rem; color:#0f172a;
+      margin-top:.4rem }
+
+    .info-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem 1.5rem; font-size:.85rem;
+      margin-bottom:1.5rem }
+    .info-grid .lbl { color:#64748b; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em;
+      font-weight:700; margin-bottom:.1rem }
+    .info-grid .val { color:#0f172a; font-weight:600 }
+
+    .truck-banner { background:#fef3c7; border-left:5px solid #d97706; padding:.85rem 1rem;
+      margin-bottom:1.5rem; display:grid; grid-template-columns:repeat(3,1fr); gap:.75rem; font-size:.85rem }
+    .truck-banner .lbl { color:#78350f; font-size:.65rem; text-transform:uppercase; letter-spacing:.06em;
+      font-weight:700 }
+    .truck-banner .val { color:#0f172a; font-weight:700; font-size:.95rem; font-family:ui-monospace,monospace }
+
+    h3.section-title { font-size:.85rem; color:#0f4c75; text-transform:uppercase; letter-spacing:.07em;
+      margin:1.5rem 0 .6rem; border-bottom:1px solid #e2e8f0; padding-bottom:.3rem }
+
+    table.benef-list { width:100%; border-collapse:collapse; font-size:.78rem; margin-bottom:1rem }
+    table.benef-list thead th { background:#0f4c75; color:#fff; padding:.55rem .65rem; text-align:left;
+      font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; font-weight:700 }
+    table.benef-list td { padding:.6rem .65rem; border-bottom:1px solid #e2e8f0; vertical-align:top }
+    table.benef-list tbody tr:nth-child(even) { background:#f8fafc }
+    .benef-name { font-weight:700; color:#0f172a; font-size:.85rem }
+    .benef-id { font-family:ui-monospace,monospace; color:#64748b; font-size:.7rem; display:block; margin-top:.1rem }
+    .benef-loc { color:#64748b; font-size:.72rem; margin-top:.1rem }
+    .benef-contact { color:#0f4c75; font-family:ui-monospace,monospace; font-size:.78rem }
+    .benef-supervisor { color:#7c3aed; font-size:.7rem; margin-top:.15rem }
+    .item-line { display:block; padding:.1rem 0; font-size:.75rem }
+    .item-qty { font-weight:700; color:#0f172a; font-family:ui-monospace,monospace }
+    .item-total { font-weight:800; color:#0f4c75; font-size:.85rem; padding-top:.25rem; border-top:1px dashed #cbd5e1; margin-top:.3rem }
+
+    .sig-cell { width:130px; text-align:center }
+    .sig-line { border-bottom:1px solid #475569; height:38px; margin:0 auto 0; width:90% }
+    .sig-label { font-size:.62rem; color:#64748b; margin-top:.2rem }
+    .check-circle { display:inline-block; width:18px; height:18px; border:1.5px solid #475569; border-radius:50%;
+      vertical-align:middle; margin-right:.3rem }
+
+    .totals-summary { background:#f1f5f9; border-radius:6px; padding:.75rem 1rem; display:grid;
+      grid-template-columns:repeat(4,1fr); gap:.5rem; margin-top:1rem; font-size:.78rem }
+    .totals-summary .t-lbl { color:#64748b; font-size:.65rem; text-transform:uppercase; letter-spacing:.05em }
+    .totals-summary .t-val { color:#0f172a; font-weight:800; font-size:1.05rem; margin-top:.1rem }
+
+    .driver-sig-block { display:grid; grid-template-columns:repeat(3,1fr); gap:1.5rem; margin-top:2.5rem;
+      padding-top:1rem; border-top:2px dashed #cbd5e1 }
+    .sig-block-cell { text-align:center }
+    .sig-block-line { border-bottom:1px solid #475569; height:50px; margin-bottom:.3rem }
+    .sig-block-label { font-size:.78rem; color:#475569; font-weight:600 }
+    .sig-block-sub { font-size:.66rem; color:#94a3b8 }
+
+    .footer-note { font-size:.7rem; color:#94a3b8; text-align:center; margin-top:2rem; padding-top:.75rem;
+      border-top:1px solid #e2e8f0 }
+
+    @media print {
+      body { background:#fff }
+      .toolbar, .no-print { display:none !important }
+      .page { box-shadow:none; padding:1rem 1.25rem; max-width:100%; margin:0 }
+      table.benef-list { page-break-inside:auto }
+      table.benef-list tbody tr { page-break-inside:avoid; page-break-after:auto }
+      h3.section-title { page-break-after:avoid }
+      .driver-sig-block { page-break-inside:avoid }
+      @page { size:A4; margin:1.5cm 1cm }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar no-print">
+    <h2>Roteiro de Entrega</h2>
+    <div class="btns">
+      <a id="btn-back" href="#">← Voltar ao serviço</a>
+      <button onclick="window.print()">Imprimir / PDF</button>
+    </div>
+  </div>
+
+  <div class="page" id="page">
+    <div style="text-align:center;color:#64748b;padding:3rem;font-size:.9rem">A carregar roteiro…</div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, fmtDate, esc, toast } = window.AdminUI;
+      const id = location.pathname.split("/")[3];
+      document.getElementById("btn-back").href = "/admin/servicos/" + id;
+
+      function fmtItemQty(q, unit) {
+        return fmt(q) + " " + esc(unit || "kg");
+      }
+
+      function whatsappLink(phone) {
+        if (!phone) return "";
+        const clean = String(phone).replace(/\D/g, "");
+        if (!clean) return "";
+        const intl = clean.startsWith("258") ? clean : "258" + clean;
+        return "https://wa.me/" + intl;
+      }
+
+      async function load() {
+        try {
+          const svc = await fetchJSON("/admin/api/distribution/services/" + id + "/roteiro");
+          const benefs = svc.beneficiaries || [];
+          const totalKg = benefs.reduce((s, b) => s + (Number(b.total_kg) || 0), 0);
+          const totalItems = benefs.reduce((s, b) => s + b.items.length, 0);
+          // Distintas postos / localidades como índice de paragens
+          const postos = [...new Set(benefs.map((b) => b.posto).filter(Boolean))];
+
+          // Cabeçalho
+          let html = `
+            <div class="page-head">
+              <div>
+                <h1 class="doc-title">Roteiro de Entrega</h1>
+                <div class="doc-subtitle">Distribuição AQI · Documento operacional para o motorista</div>
+                <div class="doc-num">${esc(svc.service_number)}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:.7rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Status</div>
+                <div style="font-weight:700;color:#0f4c75;font-size:.95rem">${esc(svc.status)}</div>
+                <div style="font-size:.7rem;color:#64748b;margin-top:.4rem">Impresso em<br>${esc(new Date().toLocaleString("pt-MZ"))}</div>
+              </div>
+            </div>
+
+            <div class="info-grid">
+              <div><div class="lbl">Província</div><div class="val">${esc(svc.province || "—")}</div></div>
+              <div><div class="lbl">Distrito</div><div class="val">${esc(svc.district || "—")}</div></div>
+              <div><div class="lbl">Origem (Fornecedor)</div><div class="val">${esc(svc.origem_supplier || "—")}</div></div>
+              <div><div class="lbl">Capacidade do Camião</div><div class="val">${fmt(svc.truck_capacity_kg)} kg</div></div>
+            </div>
+
+            <div class="truck-banner">
+              <div>
+                <div class="lbl">Matrícula Principal</div>
+                <div class="val">${esc(svc.truck_plate || "—")}</div>
+              </div>
+              <div>
+                <div class="lbl">Matrícula Reboque</div>
+                <div class="val">${esc(svc.truck_plate_2 || "—")}</div>
+              </div>
+              <div>
+                <div class="lbl">Notas / Observações</div>
+                <div class="val" style="font-family:inherit;font-size:.78rem;color:#475569">${esc(svc.notes || "—")}</div>
+              </div>
+              <div>
+                <div class="lbl">Motorista</div>
+                <div class="val">${esc(svc.driver_name || "—")}</div>
+              </div>
+              <div>
+                <div class="lbl">Telefone</div>
+                <div class="val">${esc(svc.driver_phone || "—")}</div>
+              </div>
+              <div>
+                <div class="lbl">Data de despacho</div>
+                <div class="val" style="font-family:inherit;font-size:.85rem">${svc.dispatched_at ? fmtDate(svc.dispatched_at) : (svc.created_at ? fmtDate(svc.created_at) + " (criado)" : "—")}</div>
+              </div>
+            </div>
+
+            <div class="totals-summary">
+              <div><div class="t-lbl">Beneficiários</div><div class="t-val">${benefs.length}</div></div>
+              <div><div class="t-lbl">Linhas (item)</div><div class="t-val">${totalItems}</div></div>
+              <div><div class="t-lbl">Postos</div><div class="t-val">${postos.length || "—"}</div></div>
+              <div><div class="t-lbl">Total Carga</div><div class="t-val">${fmt(svc.total_kg || totalKg)} kg</div></div>
+            </div>
+
+            <h3 class="section-title">Lista de Paragens (${benefs.length} beneficiários${postos.length ? " · ordenado por posto" : ""})</h3>
+            <table class="benef-list">
+              <thead><tr>
+                <th style="width:30px">#</th>
+                <th>Beneficiário & Localização</th>
+                <th>Contactos</th>
+                <th style="width:230px">Items a entregar</th>
+                <th class="sig-cell">Recebido / Assinatura</th>
+              </tr></thead>
+              <tbody>
+                ${benefs.map((b, i) => {
+                  const wa = whatsappLink(b.contact);
+                  const items = b.items.map((it) => `<span class="item-line">• ${esc(it.product_name || it.sku)}: <span class="item-qty">${fmtItemQty(it.qty, it.unit)}</span></span>`).join("");
+                  return `<tr>
+                    <td style="font-weight:700;color:#0f4c75;text-align:center">${i + 1}</td>
+                    <td>
+                      <div class="benef-name">${esc(b.beneficiary_name)}</div>
+                      <span class="benef-id">${esc(b.extensionist_id)} · NUIT ${esc(b.nuit || "—")}</span>
+                      ${b.posto ? `<div class="benef-loc"><strong>Posto:</strong> ${esc(b.posto)}${b.localidade ? " · " + esc(b.localidade) : ""}</div>` : ""}
+                    </td>
+                    <td>
+                      ${b.contact ? `<div class="benef-contact">${esc(b.contact)}${wa ? ` <span class="no-print">(<a href="${wa}" target="_blank" style="color:#16a34a;text-decoration:none">WhatsApp</a>)</span>` : ""}</div>` : '<div style="color:#cbd5e1">—</div>'}
+                      ${b.supervisor_name ? `<div class="benef-supervisor"><strong>Sup:</strong> ${esc(b.supervisor_name)}${b.supervisor_phone ? ` · ${esc(b.supervisor_phone)}` : ""}</div>` : ""}
+                    </td>
+                    <td>
+                      ${items}
+                      <div class="item-total">Total: ${fmt(Math.round(b.total_kg))} kg eq.</div>
+                    </td>
+                    <td class="sig-cell">
+                      <div style="display:flex;align-items:center;justify-content:center;gap:.6rem;margin-bottom:.5rem;font-size:.66rem;color:#64748b">
+                        <span><span class="check-circle"></span>OK</span>
+                        <span><span class="check-circle"></span>Parcial</span>
+                        <span><span class="check-circle"></span>Recusou</span>
+                      </div>
+                      <div class="sig-line"></div>
+                      <div class="sig-label">Assinatura</div>
+                    </td>
+                  </tr>`;
+                }).join("")}
+              </tbody>
+            </table>
+
+            <div class="driver-sig-block">
+              <div class="sig-block-cell">
+                <div class="sig-block-line"></div>
+                <div class="sig-block-label">Motorista</div>
+                <div class="sig-block-sub">${esc(svc.driver_name || "")}</div>
+              </div>
+              <div class="sig-block-cell">
+                <div class="sig-block-line"></div>
+                <div class="sig-block-label">Coordenador</div>
+                <div class="sig-block-sub">Distribuição AQI</div>
+              </div>
+              <div class="sig-block-cell">
+                <div class="sig-block-line"></div>
+                <div class="sig-block-label">Data de retorno</div>
+                <div class="sig-block-sub">_____ / _____ / 2026</div>
+              </div>
+            </div>
+
+            <div class="footer-note">
+              Documento gerado automaticamente pelo sistema de distribuição AQI · ${esc(svc.service_number)} · ${esc(new Date().toISOString().slice(0,10))}
+            </div>
+          `;
+          document.getElementById("page").innerHTML = html;
+          document.title = "Roteiro " + svc.service_number;
+        } catch (e) {
+          document.getElementById("page").innerHTML = `<div style="color:#dc2626;text-align:center;padding:3rem">Erro: ${esc(e.message)}</div>`;
+        }
+      }
+      load();
+    })();
+  </script>
+</body>
+</html>

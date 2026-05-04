@@ -118,6 +118,7 @@
   <!-- Bulk action bar -->
   <div class="bulk-bar" id="bulk-bar">
     <span class="bulk-count" id="bulk-count">0 seleccionados</span>
+    <button class="btn btn-bulk" id="btn-bulk-transit" style="background:#d97706;border-color:#d97706">Pôr em Trânsito</button>
     <button class="btn btn-bulk btn-bulk-deliver" id="btn-bulk-deliver">Marcar Entregue</button>
     <button class="btn btn-bulk btn-bulk-cancel" id="btn-bulk-cancel">Cancelar</button>
     <button class="btn-bulk-clear" id="btn-bulk-clear">Limpar selecção ✕</button>
@@ -284,7 +285,11 @@
         // forem in_transit (entregar uma draft sem dispatch é nonsense).
         const selected = allRows.filter((r) => selectedIds.has(r.id));
         const allInTransit = selected.length > 0 && selected.every((r) => r.status === "in_transit");
+        // "Pôr em trânsito" só se TODOS forem draft.
+        const allDraft = selected.length > 0 && selected.every((r) => r.status === "draft");
         const noneDelivered = selected.every((r) => r.status !== "delivered" && r.status !== "cancelled");
+        $("#btn-bulk-transit").disabled = !allDraft;
+        $("#btn-bulk-transit").style.opacity = allDraft ? "1" : ".5";
         $("#btn-bulk-deliver").disabled = !allInTransit;
         $("#btn-bulk-deliver").style.opacity = allInTransit ? "1" : ".5";
         $("#btn-bulk-cancel").disabled = !noneDelivered;
@@ -308,6 +313,44 @@
         $("#cm-reason").value = "";
         $("#cm-error").classList.remove("show");
         $("#cm-modal").classList.add("show");
+      }
+
+      async function bulkInTransit() {
+        const ids = [...selectedIds];
+        const selected = allRows.filter((r) => selectedIds.has(r.id));
+        const totalKg = selected.reduce((s, r) => s + (Number(r.total_kg) || 0), 0);
+        const ok = await confirmDialog(
+          `Pôr ${ids.length} serviço${ids.length === 1 ? "" : "s"} em TRÂNSITO?`,
+          {
+            title: "Despachar em massa",
+            confirmLabel: "Pôr em trânsito",
+            details: `Total carregado: ${fmt(totalKg)} kg. Cada serviço passa por preflight (matrícula, motorista, capacidade). Se algum tem warnings (não erros), passa em modo force=true.`,
+          }
+        );
+        if (!ok) return;
+        try {
+          const r = await fetchJSON("/admin/api/distribution/services/bulk/in-transit", {
+            method: "POST", body: { ids, force: true },
+          });
+          if (r.ok.length && !r.failed.length && !(r.needs_confirm || []).length) {
+            toast(`✓ ${r.ok.length} serviço${r.ok.length === 1 ? "" : "s"} em trânsito`, { kind: "ok" });
+          } else if (r.ok.length) {
+            const fails = (r.failed || []).length + (r.needs_confirm || []).length;
+            toast(`${r.ok.length} OK, ${fails} falhou`, {
+              kind: "warn", duration: 6000,
+              action: { label: "Ver", onClick: () => {
+                const lines = [];
+                for (const f of (r.failed || [])) lines.push(`${f.id}: ${f.error}`);
+                for (const f of (r.needs_confirm || [])) lines.push(`${f.id}: ${(f.warnings || []).join("; ")}`);
+                alert(lines.join("\n"));
+              }},
+            });
+          } else {
+            toast(`Nada despachado: ${(r.failed || []).map((f) => f.error).join(", ")}`, { kind: "err" });
+          }
+          selectedIds.clear();
+          load();
+        } catch (e) { toast("Erro: " + e.message, { kind: "err" }); }
       }
 
       async function bulkDeliver() {
@@ -483,6 +526,7 @@
         );
 
         // Bulk handlers
+        $("#btn-bulk-transit").addEventListener("click", bulkInTransit);
         $("#btn-bulk-deliver").addEventListener("click", bulkDeliver);
         $("#btn-bulk-cancel").addEventListener("click", openCancelModal);
         $("#btn-bulk-clear").addEventListener("click", () => { selectedIds.clear(); render(); });

@@ -1216,8 +1216,9 @@ const distUpload = multer({
 
 // ── Pages (HTML) ────────────────────────────────────────────
 router.get("/distribuicao",        (_req, res) => send(res, "distribuicao.html"));
-router.get("/servicos",            (_req, res) => send(res, "servicos.html"));
-router.get("/servicos/:id",        (_req, res) => send(res, "servico-detalhe.html"));
+router.get("/servicos",              (_req, res) => send(res, "servicos.html"));
+router.get("/servicos/:id",          (_req, res) => send(res, "servico-detalhe.html"));
+router.get("/servicos/:id/roteiro",  (_req, res) => send(res, "servico-roteiro.html"));
 router.get("/camioes",             (_req, res) => send(res, "camioes.html"));
 router.get("/beneficiarios",       (_req, res) => send(res, "beneficiarios.html"));
 router.get("/beneficiarios/:id",   (_req, res) => send(res, "beneficiario-detalhe.html"));
@@ -1462,6 +1463,14 @@ router.get("/api/distribution/services/:id", ah(async (req, res) => {
   res.json(svc);
 }));
 
+// Roteiro do motorista — versão com detalhes de cada benef (contacto, posto,
+// supervisor) para imprimir/PDF. Items agrupados por beneficiário.
+router.get("/api/distribution/services/:id/roteiro", ah(async (req, res) => {
+  const svc = await DistServices.byIdForRoteiro(req.params.id);
+  if (!svc) return jsonError(res, 404, "Serviço não encontrado");
+  res.json(svc);
+}));
+
 router.patch("/api/distribution/services/:id", express.json(), auth.requireRole("operator", "admin", "superadmin"), ah(async (req, res) => {
   const result = await DistServices.update(req.params.id, req.body || {});
   if (result.error) return res.status(400).json(result);
@@ -1601,6 +1610,49 @@ router.post("/api/distribution/services/bulk/cancel",
     const result = await DistServices.bulkCancel(ids, opts);
     await auth.logAction(req, "bulk_cancel", "delivery_service", null,
       JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length, ...opts }));
+    res.json(result);
+  })
+);
+
+// Bulk approve — aprovar N serviços pendentes de uma vez (admin+)
+router.post("/api/distribution/services/bulk/approve",
+  express.json(),
+  auth.requireRole("admin", "superadmin"),
+  ah(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
+    const result = await DistServices.bulkApprove(ids, req.user?.id, req.body?.notes);
+    await auth.logAction(req, "bulk_approve", "delivery_service", null,
+      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length }));
+    res.json(result);
+  })
+);
+
+// Bulk in-transit — pôr N serviços em trânsito de uma vez
+router.post("/api/distribution/services/bulk/in-transit",
+  express.json(),
+  auth.requireRole("operator", "admin", "superadmin"),
+  ah(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
+    // Auto-aprovar todos os pending desta lista se o utilizador é admin+,
+    // antes de bulk in-transit (cobre o caso "estava pendente, agora vou pôr todos a andar")
+    const role = req.user?.role;
+    if (role === "admin" || role === "superadmin") {
+      const { query: q } = require("../db/mysql");
+      const placeholders = ids.map(() => "?").join(",");
+      const pending = await q(
+        `SELECT id FROM delivery_services WHERE id IN (${placeholders}) AND approval_status = 'pending'`,
+        ids
+      );
+      for (const p of pending) {
+        await DistServices.approve(p.id, req.user.id, "Auto-aprovado em bulk in-transit (utilizador é " + role + ")");
+        await auth.logAction(req, "approve", "delivery_service", p.id, "auto-aprovado em bulk in-transit");
+      }
+    }
+    const result = await DistServices.bulkSetInTransit(ids, { force: req.body?.force });
+    await auth.logAction(req, "bulk_in_transit", "delivery_service", null,
+      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length, needs_confirm: result.needs_confirm.length }));
     res.json(result);
   })
 );

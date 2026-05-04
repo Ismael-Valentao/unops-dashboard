@@ -23,7 +23,16 @@
 
     /* Truck capacity panel */
     .truck-panel{background:#f8fafc;border-radius:10px;padding:1rem 1.15rem;
-      border:1px solid #e2e8f0;margin-bottom:1rem}
+      border:1px solid #e2e8f0;margin-bottom:1rem;transition:border-color .15s, background .15s}
+    /* Drag-drop feedback */
+    .truck-panel.drop-target-active{border-color:#bfdbfe;border-style:dashed;border-width:2px;
+      background:#eff6ff}
+    .truck-panel.drop-hover{border-color:#0f4c75;background:#dbeafe;
+      box-shadow:0 0 0 4px rgba(15,76,117,.15)}
+    .truck-panel.drop-hover h3:after{content:" — solta aqui!";color:#0f4c75;font-weight:800;font-size:.78rem}
+    .bal-tbl tr.dragging{opacity:.4;background:#fef3c7 !important}
+    .drag-handle{cursor:grab !important}
+    .drag-handle:active{cursor:grabbing !important}
     .truck-panel h3{margin:0 0 .65rem;font-size:.78rem;color:#475569;font-weight:700;
       text-transform:uppercase;letter-spacing:.05em}
     .cap-buttons{display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.7rem}
