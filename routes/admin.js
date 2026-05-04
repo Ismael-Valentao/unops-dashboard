@@ -1273,6 +1273,15 @@ router.get("/api/distribution/origens", ah(async (_req, res) => {
   // "Moçambique", "Tenders") iterativamente. Assim BAYER ≡ BAYER Moçambique
   // LDA, SeedCo ≡ SEEDCO, "AGT Foods Africa Pty, Lda" ≡ "AGT Foods Africa
   // Pty, Lda" (variação espaços).
+  // Aliases manuais para casos onde a normalização pattern-based não chega.
+  // Mapeia chave normalizada → chave canónica. Pode ser estendido conforme
+  // o operador identifica equivalências.
+  const ALIAS = {
+    "mozseeds":         "mozseed",
+    "mozambique seeds": "mozseed",
+    "mozambique seed":  "mozseed",
+  };
+
   const normalizeKey = (name) => {
     let s = String(name || "")
       .toLowerCase()
@@ -1294,7 +1303,13 @@ router.get("/api/distribution/origens", ah(async (_req, res) => {
         if (ns !== s && ns.length > 0) { s = ns; changed = true; }
       }
     }
-    return s.replace(/\s+/g, " ").trim();
+    // Remove conectores entre palavras (do, da, de, dos, das, del, della).
+    // "Sementes do Limpopo" → "Sementes Limpopo".
+    s = s.replace(/\b(do|da|de|dos|das|del|della)\b/g, " ")
+         .replace(/\s+/g, " ").trim();
+    // Aplica alias se houver mapeamento explícito
+    if (ALIAS[s]) s = ALIAS[s];
+    return s;
   };
 
   // Agrupar pela chave normalizada. Cada grupo guarda contagens por variação
