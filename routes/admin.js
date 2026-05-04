@@ -1242,6 +1242,61 @@ router.get("/api/distribution/products", ah(async (_req, res) => {
   res.json({ rows: await Beneficiaries.listProducts() });
 }));
 
+// Lista de origens (fornecedores) usadas em serviços, para popular o
+// datalist de autocomplete na criação de serviço. Combina:
+//  1. delivery_services.origem_supplier (já em uso pelo admin)
+//  2. cache do Google Sheet (Origem das linhas TRANSITO/FINALIZADO)
+// Deduplicado por nome canónico (trim + agrupado case-insensitive,
+// nome de exibição = variação mais frequente).
+router.get("/api/distribution/origens", ah(async (_req, res) => {
+  const { query } = require("../db/mysql");
+  const dbRows = await query(
+    `SELECT origem_supplier AS name, COUNT(*) AS n
+     FROM delivery_services
+     WHERE origem_supplier IS NOT NULL AND origem_supplier <> ''
+     GROUP BY origem_supplier`
+  );
+  // Adicional: contagens da Google Sheet (sheetCache compartilhado).
+  let sheetSource = [];
+  try {
+    const sheetCache = require("../lib/sheet-cache");
+    const map = new Map();
+    for (const r of (sheetCache.cache.data || [])) {
+      const o = String(r.supplier || "").trim();
+      if (o) map.set(o, (map.get(o) || 0) + 1);
+    }
+    sheetSource = [...map.entries()].map(([name, n]) => ({ name, n }));
+  } catch (_) { /* sem cache, ignora */ }
+
+  // Agrupar case-insensitive — preserva variação mais usada como display
+  const groups = new Map(); // key=lowercase → { displayName, n, variations:Set }
+  const add = (name, n) => {
+    if (!name) return;
+    const key = name.toLowerCase().trim();
+    if (!key) return;
+    const g = groups.get(key) || { displayName: name, n: 0, variations: new Set() };
+    g.n += Number(n) || 0;
+    g.variations.add(name);
+    // Mantém o display name "mais bonito" — prefere o que tem capitalização mista
+    // (não tudo MAIÚSCULAS nem tudo minúsculas)
+    const isMixed = /[a-z]/.test(g.displayName) && /[A-Z]/.test(g.displayName);
+    const newIsMixed = /[a-z]/.test(name) && /[A-Z]/.test(name);
+    if (newIsMixed && !isMixed) g.displayName = name;
+    groups.set(key, g);
+  };
+  for (const r of dbRows)       add(r.name, r.n);
+  for (const r of sheetSource)  add(r.name, r.n);
+
+  const rows = [...groups.values()]
+    .map((g) => ({
+      name: g.displayName,
+      n: g.n,
+      variations: [...g.variations].filter((v) => v !== g.displayName),
+    }))
+    .sort((a, b) => b.n - a.n);
+  res.json({ rows });
+}));
+
 router.get("/api/distribution/beneficiaries/:id", ah(async (req, res) => {
   const profile = await Beneficiaries.profile(req.params.id);
   if (!profile) return jsonError(res, 404, "Beneficiário não encontrado");

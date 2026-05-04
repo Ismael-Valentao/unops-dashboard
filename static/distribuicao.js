@@ -53,6 +53,23 @@
   }
 
   // ── Filters ─────────────────────────────────────────────────
+  // Cache das origens para hint dinâmico no input
+  let origensCache = [];
+  async function loadOrigens() {
+    try {
+      const data = await fetchJSON("/admin/api/distribution/origens");
+      origensCache = data.rows || [];
+      const dl = document.getElementById("origens-list");
+      if (dl) {
+        dl.innerHTML = origensCache.map((o) => {
+          // datalist option: value = name; label "(N usos)" mostrado em alguns browsers
+          const tag = o.n > 1 ? ` (${o.n} usos)` : "";
+          return `<option value="${o.name.replace(/"/g, "&quot;")}">${o.name}${tag}</option>`;
+        }).join("");
+      }
+    } catch (e) { /* sem datalist, mas input continua funcional */ }
+  }
+
   async function loadGeo() {
     geo = await fetchJSON("/admin/api/distribution/geography");
     const sel = $("#f-province");
@@ -773,10 +790,30 @@
         $("#bs-services-file"), $("#bs-services-result"), bsSvcBtn));
 
     await loadGeo();
+    await loadOrigens();
     // Restore filtros do URL APÓS geo carregar (precisamos das províncias)
     urlSync.read();
     loadDistrictOptions();
     urlSync.read(); // re-read porque distrito só agora está no DOM
     await refresh();
+
+    // Hint dinâmico no campo Origem: indica se é fornecedor conhecido
+    // (já em uso N vezes) ou novo (vai ser criado).
+    const origemEl = $("#m-origem");
+    const hintEl = $("#m-origem-hint");
+    if (origemEl && hintEl) {
+      origemEl.addEventListener("input", () => {
+        const v = origemEl.value.trim();
+        if (!v) { hintEl.textContent = ""; return; }
+        const match = origensCache.find((o) => o.name.toLowerCase() === v.toLowerCase());
+        if (match) {
+          hintEl.textContent = "✓ Fornecedor conhecido (" + match.n + " serviço" + (match.n === 1 ? "" : "s") + ")";
+          hintEl.style.color = "#16a34a";
+        } else {
+          hintEl.textContent = "+ Novo fornecedor — será adicionado à lista";
+          hintEl.style.color = "#7c3aed";
+        }
+      });
+    }
   });
 })();

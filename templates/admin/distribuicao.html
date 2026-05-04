@@ -243,7 +243,9 @@
       <div class="modal-row">
         <div>
           <label>Origem (fornecedor)</label>
-          <input id="m-origem" type="text" placeholder="Ex: SeedCo, Phoenix">
+          <input id="m-origem" type="text" list="origens-list" placeholder="Selecciona ou escreve…" autocomplete="off">
+          <datalist id="origens-list"></datalist>
+          <span id="m-origem-hint" style="font-size:.7rem;color:#94a3b8;display:block;margin-top:.2rem"></span>
         </div>
         <div>
           <label>Capacidade</label>
