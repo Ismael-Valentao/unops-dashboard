@@ -29,6 +29,9 @@
     { key: "district",           label: "Distrito",           sortable: true,  type: "string" },
     { key: "posto",              label: "Posto",              sortable: true,  type: "string" },
     { key: "product_name",       label: "Produto",            sortable: true,  type: "string" },
+    // Coluna condicional: só aparece quando o filtro SKU activo é Feijão
+    { key: "bean_type",          label: "Tipo Feijão",        sortable: true,  type: "string",
+      onlyForSku: "MXIXFEIJAOKG", title: "Tipo de feijão (Vulgar / Nhemba / mistura) — do planeamento" },
     { key: "planned_original",   label: "Plano Original",     sortable: true,  type: "number", numCol: true, title: "Quantidade originalmente planeada (NOVA QUANTIDADE A ENTREGAR)" },
     { key: "realocado_recebido", label: "Realoc. Recebido",   sortable: true,  type: "number", numCol: true, title: "Quantidade recebida via realocação de outro beneficiário" },
     { key: "planned_qty",        label: "Plano Ajustado",     sortable: true,  type: "number", numCol: true, title: "Plano após subtrair Realocado Recebido" },
@@ -37,6 +40,13 @@
     { key: "last_delivery_at",   label: "Última entrega",     sortable: true,  type: "date",   title: "Data da última entrega confirmada deste produto" },
     { key: "_pct",               label: "%",                  sortable: true,  type: "number", numCol: true },
   ];
+
+  // Devolve as colunas visíveis para o filtro SKU activo. Colunas com
+  // onlyForSku só aparecem quando o filtro corresponde.
+  function visibleCols() {
+    const currentSku = $("#f-sku")?.value || "";
+    return BAL_COLS.filter((c) => !c.onlyForSku || c.onlyForSku === currentSku);
+  }
   const balSort = { sortKey: "available_qty", sortAsc: false, render: () => renderRows() };
 
   // Helpers
@@ -229,7 +239,8 @@
 
   function renderHeader() {
     const head = $("#bal-thead-row");
-    head.innerHTML = BAL_COLS.map((c) => {
+    const cols = visibleCols();
+    head.innerHTML = cols.map((c) => {
       const cls = c.numCol ? "num" : (c.key === null ? "check-col" : "");
       if (!c.sortable) {
         return `<th class="${cls}">${c.key === null ? '<input type="checkbox" id="check-all" class="check-input" title="Selecc. todos">' : esc(c.label)}</th>`;
@@ -243,8 +254,9 @@
   function renderRows() {
     renderHeader();
     const body = $("#bal-body");
+    const cols = visibleCols();
     if (!allRows.length) {
-      body.innerHTML = `<tr><td colspan="${BAL_COLS.length}"><div class="empty-state">
+      body.innerHTML = `<tr><td colspan="${cols.length}"><div class="empty-state">
         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:.4rem"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         <div>Nada a entregar nesta selecção. Tudo cumprido.</div>
       </div></td></tr>`;
@@ -303,6 +315,25 @@
       const decomporBtn = sel && available > 0
         ? `<button class="btn-decompor" data-key="${esc(k)}" title="Decompor — entregar só uma parte neste serviço" style="margin-left:.4rem;background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe;padding:.05rem .35rem;border-radius:4px;font-size:.65rem;font-weight:700;cursor:pointer">✂ Decompor</button>`
         : "";
+      // Coluna Tipo Feijão — só renderiza quando a coluna está visível
+      // (filtro SKU=MXIXFEIJAOKG). Cores diferentes por tipo.
+      const showBeanType = visibleCols().some((c) => c.key === "bean_type");
+      let beanCell = "";
+      if (showBeanType) {
+        const bt = String(r.bean_type || "").trim();
+        if (bt) {
+          const colour = bt === "Vulgar" ? "#92400e" :
+                         bt === "Nhemba" ? "#0f4c75" :
+                         "#7c3aed"; // mistura "Nhemba e Vulgar"
+          const bg     = bt === "Vulgar" ? "#fef3c7" :
+                         bt === "Nhemba" ? "#dbeafe" :
+                         "#ede9fe";
+          beanCell = `<td><span style="background:${bg};color:${colour};font-weight:700;font-size:.7rem;padding:.12rem .45rem;border-radius:4px;letter-spacing:.02em">${esc(bt)}</span></td>`;
+        } else {
+          beanCell = `<td><span style="color:#cbd5e1">—</span></td>`;
+        }
+      }
+
       return `<tr class="${sel ? "selected" : ""} ${isPartial ? "partial" : ""}" data-key="${esc(k)}" draggable="true">
         <td class="check-col"><span class="drag-handle" title="Arrasta para o camião" style="display:inline-block;color:#94a3b8;cursor:grab;font-size:.95rem;margin-right:.2rem;user-select:none">⋮⋮</span><input type="checkbox" class="check-input row-check" ${sel ? "checked" : ""}></td>
         <td><code style="font-size:.7rem">${esc(r.extensionist_id)}</code></td>
@@ -310,6 +341,7 @@
         <td>${esc(r.district || "")}</td>
         <td><span style="color:#64748b;font-size:.72rem">${esc(r.posto || "—")}</span></td>
         <td>${esc(r.product_name)}</td>
+        ${beanCell}
         <td class="num" style="color:#64748b">${fmtUnit(plannedOrig, r.unit)}</td>
         <td class="num">${realocCell}</td>
         <td class="num" style="font-weight:700">${fmtUnit(planned, r.unit)}</td>

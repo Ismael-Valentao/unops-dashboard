@@ -184,7 +184,7 @@ const Balances = {
     // nunca recebeu nada deste produto → topo na ordenação ASC (urgente).
     return query(
       `SELECT b.extensionist_id, b.sku, b.product_name, b.unit, b.province, b.district,
-              b.beneficiary_name,
+              b.beneficiary_name, b.bean_type,
               b.planned_original, b.realocado_recebido,
               b.planned_qty, b.committed_qty, b.delivered_qty,
               GREATEST(0, b.planned_qty - b.committed_qty) AS available_qty,

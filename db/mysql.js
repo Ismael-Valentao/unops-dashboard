@@ -193,6 +193,16 @@ async function migrate() {
     );
     console.log("[DB] migrated delivery_balances.realocado_recebido");
   }
+
+  // Tipo específico do produto (ex: "Vulgar"/"Nhemba"/"Nhemba e Vulgar"
+  // para Feijão). NULL para SKUs onde não se aplica. Lido do Excel coluna
+  // "Tipo de Feijão" no importPlanning.
+  if (!(await columnExists("delivery_balances", "bean_type"))) {
+    await getPool().query(
+      "ALTER TABLE delivery_balances ADD COLUMN bean_type VARCHAR(32) NULL AFTER product_name"
+    );
+    console.log("[DB] migrated delivery_balances.bean_type");
+  }
 }
 
 async function init() {
