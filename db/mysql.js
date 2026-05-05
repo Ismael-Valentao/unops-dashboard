@@ -212,6 +212,20 @@ async function migrate() {
     );
     console.log("[DB] migrated beneficiaries.localidade");
   }
+
+  // alias_for: quando 2 IDs representam o MESMO extensionista (duplicação
+  // histórica). NULL = ID canónico (recebe plano oficial). Não-NULL = aponta
+  // para o canónico que tem o plano. Histórico de entregas pode estar em
+  // qualquer um — SUM agrega via COALESCE(alias_for, extensionist_id).
+  // Adicionado para suportar reconciliação MAAP onde MAAP usa IDs novos
+  // mas o sistema tem entregas sob IDs antigos.
+  if (!(await columnExists("beneficiaries", "alias_for"))) {
+    await getPool().query(
+      "ALTER TABLE beneficiaries ADD COLUMN alias_for VARCHAR(16) NULL AFTER localidade"
+    );
+    try { await getPool().query("ALTER TABLE beneficiaries ADD INDEX idx_alias_for (alias_for)"); } catch(_) {}
+    console.log("[DB] migrated beneficiaries.alias_for");
+  }
 }
 
 async function init() {
