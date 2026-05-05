@@ -12,9 +12,23 @@
 const XLSX = require("xlsx");
 const path = require("path");
 const fs = require("fs");
+const { loadMAAP, KIT_RECIPE } = require("./lib/parse-maap");
 
 const PLANNING_FILE = path.join(__dirname, "data", "Planeamento_Actualizado.xlsx");
 const SHEET_NAME = "Planeamento Adicional";
+
+// Mapeamento Referencia (Excel) → label do KIT_RECIPE (MAAP).
+// Quando uma row da Excel tem product_plan que mapeia, sobrescrevemos
+// a quantidade usando MAAP × recipe. Sacos Hermeticos NÃO está no recipe
+// (não faz parte do kit), por isso fica null e mantém valor original.
+const PLAN_TO_MAAP = {
+  "Milho":         "Milho",
+  "Feijão":        "Feijão Vulgar",
+  "Arroz":         "Arroz",
+  "Emamectin":     "Emamectim Benzoato",
+  "Imadocloprid":  "Imidacloprid",
+  "MCPA":          "MCPA",
+};
 
 const PRODUCT_MAP = {
   "Milho":            "Maize Seeds (kg)",
@@ -122,6 +136,95 @@ function load() {
       supervisor:       String(r["Nome do Supervisor"] || "").trim(),
     };
   });
+
+  // ── MAAP override ─────────────────────────────────────────────
+  // Os 6 ficheiros oficiais MAAP (Ministério da Agricultura) são a fonte
+  // de verdade para as quantidades de kit por extensionista.
+  //
+  // Cuidado: a Excel "Planeamento Adicional" tem MÚLTIPLAS rows por
+  // (ext_id × produto) — cada row é um envio separado. Não podemos
+  // simplesmente sobrescrever cada row com o total — multiplicaria.
+  // Solução: a PRIMEIRA row de cada (ext_id, product_plan) recebe
+  // o total do MAAP; as restantes ficam zeradas (preserva metadata
+  // mas não conta no agregado).
+  let maapData = null;
+  try { maapData = loadMAAP(); }
+  catch (e) { console.warn("[PLANNING-MAAP] Falha a carregar MAAP:", e.message); }
+  if (maapData && maapData.extensionists.size > 0) {
+    const assignedTo = new Map(); // "ext_id|product_plan" → row já portadora do total
+    let overridden = 0, zeroed = 0;
+    for (const r of rows) {
+      const recipeLabel = PLAN_TO_MAAP[r.product_plan];
+      if (!recipeLabel) continue; // Sacos & outros → manter
+      // Row sem ext_id em produto do recipe: MAAP é fonte de verdade,
+      // logo se não tem ID válido (ou é EXT-* extra) não conta.
+      // Os rows oficiais sem ID já foram capturados via MAAP-PEND-*
+      // dentro de loadMAAP, então não há perda real de dados.
+      if (!r.extensionist_id) {
+        if (r.weight_kg > 0) zeroed++;
+        r.weight_kg = 0;
+        r.weight_updated = 0;
+        r.weight_was_updated = true;
+        continue;
+      }
+      const key = r.extensionist_id + "|" + r.product_plan;
+      const m = maapData.extensionists.get(r.extensionist_id);
+      const recipe = KIT_RECIPE[recipeLabel];
+      if (!m) {
+        // ext_id não está no MAAP → não recebe nada deste produto
+        if (r.weight_kg > 0) zeroed++;
+        r.weight_kg = 0;
+        r.weight_updated = 0;
+        r.weight_was_updated = true;
+        continue;
+      }
+      const qty = m.kit1 * recipe.kit1 + m.kit2 * recipe.kit2;
+      if (assignedTo.has(key)) {
+        // Total já está noutra row — esta zero
+        r.weight_kg = 0;
+        r.weight_updated = 0;
+        r.weight_was_updated = true;
+      } else {
+        r.weight_kg = qty;
+        r.weight_updated = qty;
+        r.weight_was_updated = true;
+        assignedTo.set(key, r);
+        if (qty > 0) overridden++;
+      }
+    }
+    // Adicionar rows novas para ext_ids no MAAP não vistos no Excel
+    let added = 0;
+    for (const [extId, m] of maapData.extensionists) {
+      for (const [planLabel, recipeLabel] of Object.entries(PLAN_TO_MAAP)) {
+        const k = extId + "|" + planLabel;
+        if (assignedTo.has(k)) continue;
+        const recipe = KIT_RECIPE[recipeLabel];
+        const qty = m.kit1 * recipe.kit1 + m.kit2 * recipe.kit2;
+        if (qty <= 0) continue;
+        rows.push({
+          product_plan: planLabel,
+          product_delivery: PRODUCT_MAP[planLabel] || planLabel,
+          province: m.prov,
+          district: normalizeDistrict(m.district),
+          district_raw: m.district,
+          posto: m.location || "",
+          beneficiary: m.name,
+          volumes: 0,
+          weight_kg: qty,
+          weight_original: qty,
+          weight_updated: qty,
+          weight_was_updated: true,
+          tipo_feijao: planLabel === "Feijão" ? "Vulgar" : "",
+          extensionist_id: extId,
+          extensionista: m.name,
+          supervisor: m.supervisor || "",
+        });
+        added++;
+      }
+    }
+    console.log(`[PLANNING-MAAP] Override: ${overridden} rows actualizadas, ${zeroed} zeradas (não no MAAP), ${added} novas adicionadas`);
+  }
+
   // Removed rows = beneficiários com Qtd Actualizada = 0 explicitamente (foram retirados do plano).
   const removedRows = rows.filter((r) => r.weight_was_updated && r.weight_updated <= 0.001 && r.weight_original > 0.001);
   // Reduced rows = Qtd Actualizada > 0 MAS < Peso original (meta reduziu mas não foi a 0)
