@@ -825,6 +825,12 @@ const Services = {
     if (opts.driver) {
       where.push("driver_name LIKE ?"); params.push("%" + opts.driver + "%");
     }
+    // Filtro por SKU/artigo: serviço inclui pelo menos um item desse SKU.
+    // EXISTS é mais eficiente que JOIN+DISTINCT para esta query.
+    if (opts.sku) {
+      where.push("EXISTS (SELECT 1 FROM delivery_service_items WHERE service_id = s.id AND sku = ?)");
+      params.push(opts.sku);
+    }
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
 
     // Paginação: page (1-based) + pageSize. Se ambos omitidos, fallback ao
@@ -1087,6 +1093,11 @@ const Services = {
     if (opts.min_kg != null && opts.min_kg !== "") { where.push("s.total_kg >= ?"); params.push(Number(opts.min_kg)); }
     if (opts.max_kg != null && opts.max_kg !== "") { where.push("s.total_kg <= ?"); params.push(Number(opts.max_kg)); }
     if (opts.driver)   { where.push("s.driver_name LIKE ?"); params.push("%" + opts.driver + "%"); }
+    // Filtro por SKU: camião inclui pelo menos um item desse artigo
+    if (opts.sku) {
+      where.push("EXISTS (SELECT 1 FROM delivery_service_items WHERE service_id = s.id AND sku = ?)");
+      params.push(opts.sku);
+    }
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
     const rows = await query(
       `SELECT

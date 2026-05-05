@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/static/admin.css">
   <style>
     /* ── Filtros ────────────────────────────────────────────── */
-    .fleet-filters{display:grid;grid-template-columns:repeat(6,1fr);gap:.6rem;align-items:end}
+    .fleet-filters{display:grid;grid-template-columns:repeat(7,1fr);gap:.6rem;align-items:end}
     .fleet-filters label{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;
       color:#64748b;font-weight:700;margin-bottom:.25rem}
     .fleet-filters select,.fleet-filters input{
@@ -122,6 +122,10 @@
           <input id="f-supplier" type="text" placeholder="Ex: SeedCo, Phoenix">
         </div>
         <div>
+          <label for="f-sku">Artigo (produto)</label>
+          <select id="f-sku"><option value="">Todos</option></select>
+        </div>
+        <div>
           <label for="f-min-kg">Carga ≥ (kg)</label>
           <input id="f-min-kg" type="number" min="0" step="100" placeholder="0">
         </div>
@@ -204,6 +208,7 @@
           province: $("#f-province").value.trim(),
           district: $("#f-district").value.trim(),
           supplier: $("#f-supplier").value.trim(),
+          sku:      $("#f-sku").value,
           min_kg:   $("#f-min-kg").value.trim(),
           max_kg:   $("#f-max-kg").value.trim(),
         };
@@ -213,6 +218,21 @@
         const p = new URLSearchParams();
         Object.entries(f).forEach(([k, v]) => { if (v) p.set(k, v); });
         return p;
+      }
+
+      // ── Products (SKU dropdown) ─────────────────────────────
+      async function loadProducts() {
+        try {
+          const data = await fetchJSON("/admin/api/distribution/products");
+          const sel = $("#f-sku");
+          const current = sel.value;
+          sel.innerHTML = '<option value="">Todos</option>' +
+            (data.rows || []).map((p) => {
+              const lbl = `${p.product_name || p.sku} (${p.unit})`;
+              return `<option value="${esc(p.sku)}">${esc(lbl)}</option>`;
+            }).join("");
+          if (current) sel.value = current;
+        } catch (e) { /* noop — filtro fica vazio mas página funciona */ }
       }
 
       // ── Geography (province/district dropdowns) ─────────────
@@ -241,6 +261,7 @@
         "f-province": "province",
         "f-district": "district",
         "f-supplier": "supplier",
+        "f-sku":      "sku",
         "f-min-kg":   "min_kg",
         "f-max-kg":   "max_kg",
       }, { onPopState: () => refresh() });
@@ -248,16 +269,19 @@
       function renderChips() {
         const f = getFilters();
         const STATUS_LBL = { in_transit: "Em Trânsito", delivered: "Entregue", draft: "Rascunho", cancelled: "Cancelado" };
+        const skuSel = $("#f-sku");
+        const skuLbl = skuSel.selectedOptions[0]?.textContent?.trim() || "";
         renderFilterChips($("#filter-chips"), [
           { key: "f-status",   label: "Estado",   value: f.status ? (STATUS_LBL[f.status] || f.status) : "" },
           { key: "f-province", label: "Província", value: f.province },
           { key: "f-district", label: "Distrito",  value: f.district },
           { key: "f-supplier", label: "Origem",    value: f.supplier },
+          { key: "f-sku",      label: "Artigo",    value: f.sku ? skuLbl : "" },
           { key: "f-min-kg",   label: "Carga ≥",   value: f.min_kg ? f.min_kg + " kg" : "" },
           { key: "f-max-kg",   label: "Carga ≤",   value: f.max_kg ? f.max_kg + " kg" : "" },
         ], (key) => {
           if (key === "__all__") {
-            ["f-status","f-province","f-district","f-supplier","f-min-kg","f-max-kg"].forEach((id) => {
+            ["f-status","f-province","f-district","f-supplier","f-sku","f-min-kg","f-max-kg"].forEach((id) => {
               const el = $("#" + id);
               if (id === "f-status") el.value = "in_transit"; else el.value = "";
             });
@@ -449,7 +473,7 @@
         $("#plate-input").addEventListener("keypress", (e) => { if (e.key === "Enter") searchPlate(); });
 
         // Filtros — change/input handlers
-        ["f-status", "f-province", "f-district"].forEach((id) =>
+        ["f-status", "f-province", "f-district", "f-sku"].forEach((id) =>
           $("#" + id).addEventListener("change", () => {
             if (id === "f-province") loadDistrictOptions();
             refresh();
@@ -479,8 +503,8 @@
 
         $("#btn-export-csv").addEventListener("click", doExportCSV);
 
-        await loadGeo();
-        // Restore filtros do URL após geo carregar
+        await Promise.all([loadGeo(), loadProducts()]);
+        // Restore filtros do URL após geo + produtos carregarem
         urlSync.read();
         loadDistrictOptions();
         urlSync.read();
