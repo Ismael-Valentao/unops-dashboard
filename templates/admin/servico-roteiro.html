@@ -6,41 +6,22 @@
   <title>AQI — Roteiro do Motorista</title>
   <link rel="stylesheet" href="/static/admin.css">
   <style>
-    body { background:#cbd5e1; margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    body { background:#f1f5f9; margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     .toolbar { position:sticky; top:0; background:#0f4c75; color:#fff; padding:.75rem 1.25rem;
       display:flex; justify-content:space-between; align-items:center; z-index:100; box-shadow:0 2px 6px rgba(0,0,0,.1); }
     .toolbar h2 { margin:0; font-size:1rem; font-weight:600 }
-    .toolbar .a4-tag { background:rgba(255,255,255,.15); color:#fff; font-size:.7rem; font-weight:600;
-      padding:.15rem .55rem; border-radius:4px; letter-spacing:.04em; margin-left:.6rem }
     .toolbar .btns { display:flex; gap:.5rem; align-items:center }
     .toolbar button { background:#fff; color:#0f4c75; border:0; padding:.45rem .85rem; border-radius:5px;
       font-weight:600; font-size:.85rem; cursor:pointer; }
     .toolbar button:hover { background:#e2e8f0 }
+    .toolbar button.btn-download { background:#16a34a; color:#fff }
+    .toolbar button.btn-download:hover { background:#15803d }
+    .toolbar button:disabled { opacity:.6; cursor:wait }
     .toolbar a { color:#fff; text-decoration:none; font-size:.82rem; opacity:.9 }
     .toolbar a:hover { opacity:1; text-decoration:underline }
 
-    /* Página A4 — dimensões exactas para WYSIWYG. 210mm × 297mm com
-       margem interna de 1.5cm vertical / 1cm horizontal (mesma do @page). */
-    .page-shell { padding:1rem 0; display:flex; flex-direction:column; align-items:center; gap:1rem }
-    .page { width:210mm; min-height:297mm; background:#fff; padding:1.5cm 1cm;
-      box-shadow:0 4px 16px rgba(15,23,42,.18), 0 1px 3px rgba(15,23,42,.1);
-      box-sizing:border-box; position:relative; }
-    .page-num { position:absolute; bottom:.5cm; right:1cm; font-size:.65rem; color:#94a3b8;
-      font-family:ui-monospace,monospace }
-    /* Indicador A4 só visível em ecrã */
-    .page::before { content:"A4 · 210 × 297 mm"; position:absolute; top:-1.4rem; left:0;
-      font-size:.66rem; color:#64748b; letter-spacing:.06em; text-transform:uppercase; font-weight:700 }
-
-    /* Marcadores de quebra de página (calculados via JS após render).
-       Cada marcador é uma linha tracejada full-width com label "Página N". */
-    .page-break-marker { position:absolute; left:0; right:0; height:0;
-      border-top:2px dashed #d97706; pointer-events:none; z-index:50 }
-    .page-break-marker::after { content:attr(data-label); position:absolute; top:-0.7rem; left:50%;
-      transform:translateX(-50%); background:#d97706; color:#fff; font-size:.62rem; font-weight:800;
-      padding:.1rem .5rem; border-radius:3px; letter-spacing:.05em; text-transform:uppercase;
-      font-family:-apple-system,sans-serif }
-    .page-est-tag { background:rgba(255,255,255,.15); color:#fff; font-size:.7rem; font-weight:600;
-      padding:.15rem .55rem; border-radius:4px; margin-left:.4rem; letter-spacing:.04em }
+    .page { max-width:920px; margin:1rem auto; background:#fff; padding:2rem 2.5rem;
+      box-shadow:0 1px 3px rgba(15,23,42,.08); }
     .page-head { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:1rem;
       border-bottom:3px solid #0f4c75; margin-bottom:1.5rem }
     .doc-title { font-size:1.6rem; color:#0f4c75; font-weight:800; letter-spacing:.5px; margin:0 }
@@ -106,12 +87,8 @@
 
     @media print {
       body { background:#fff }
-      .toolbar, .no-print, .page-num, .page-break-marker { display:none !important }
-      /* Em print, o @page já dá os margins; o .page deixa de simular paper.
-         width 100% para preencher a página e cancelar shadows/box-sizing. */
-      .page-shell { padding:0; gap:0 }
-      .page { width:auto; min-height:0; padding:0; margin:0; box-shadow:none }
-      .page::before { display:none }
+      .toolbar, .no-print { display:none !important }
+      .page { box-shadow:none; padding:1rem 1.25rem; max-width:100%; margin:0 }
       table.benef-list { page-break-inside:auto }
       table.benef-list tbody tr { page-break-inside:avoid; page-break-after:auto }
       table.benef-list tr.district-section { page-break-before:auto; page-break-after:avoid }
@@ -119,39 +96,22 @@
         -webkit-print-color-adjust:exact; print-color-adjust:exact }
       h3.section-title { page-break-after:avoid }
       .driver-sig-block { page-break-inside:avoid }
-      /* Numeração de página fiél (counters CSS — gerados pelo browser
-         a partir do número real de páginas após pagination). Aparece no
-         canto inferior direito de cada folha impressa. */
-      @page {
-        size:A4; margin:1.5cm 1cm 2cm 1cm;
-        @bottom-right {
-          content: "Página " counter(page) " de " counter(pages);
-          font-size:9pt; color:#64748b; font-family:-apple-system,sans-serif;
-        }
-        @bottom-left {
-          content: "Roteiro AQI";
-          font-size:8pt; color:#94a3b8;
-        }
-      }
+      @page { size:A4; margin:1.5cm 1cm }
     }
   </style>
 </head>
 <body>
   <div class="toolbar no-print">
-    <h2>Roteiro de Entrega
-      <span class="a4-tag">A4 · 210 × 297 mm</span>
-      <span class="page-est-tag" id="page-est">a calcular…</span>
-    </h2>
+    <h2>Roteiro de Entrega</h2>
     <div class="btns">
       <a id="btn-back" href="#">← Voltar ao serviço</a>
-      <button onclick="window.print()">Imprimir / PDF</button>
+      <button onclick="window.print()">Imprimir</button>
+      <button class="btn-download" id="btn-download">Baixar PDF</button>
     </div>
   </div>
 
-  <div class="page-shell">
-    <div class="page" id="page">
-      <div style="text-align:center;color:#64748b;padding:3rem;font-size:.9rem">A carregar roteiro…</div>
-    </div>
+  <div class="page" id="page">
+    <div style="text-align:center;color:#64748b;padding:3rem;font-size:.9rem">A carregar roteiro…</div>
   </div>
 
   <script src="/static/admin.js"></script>
@@ -371,53 +331,62 @@
           `;
           document.getElementById("page").innerHTML = html;
           document.title = "Roteiro " + svc.service_number;
-          // Estimar quantas páginas A4 a impressão vai ocupar e marcar visualmente
-          // os pontos de quebra no ecrã. Re-corre quando fonts/imagens carregam.
-          setTimeout(estimatePages, 100);
-          if (document.fonts && document.fonts.ready) {
-            document.fonts.ready.then(estimatePages);
+          // Activa o botão de download depois do conteúdo carregar
+          const btn = document.getElementById("btn-download");
+          if (btn) {
+            btn.dataset.serviceNumber = svc.service_number;
+            btn.disabled = false;
           }
-          window.addEventListener("resize", estimatePages);
         } catch (e) {
           document.getElementById("page").innerHTML = `<div style="color:#dc2626;text-align:center;padding:3rem">Erro: ${esc(e.message)}</div>`;
         }
       }
 
-      function estimatePages() {
-        const page = document.getElementById("page");
-        if (!page) return;
-        // Remove marcadores anteriores antes de recalcular
-        page.querySelectorAll(".page-break-marker").forEach((m) => m.remove());
-        // 297mm em px @ 96dpi = 297 * (96/25.4) = 1122.5 px aprox.
-        // Padding interno top+bottom: 2 * 1.5cm = 3cm = ~113.4px
-        // Conteúdo útil por página = ~1009px
-        const PX_PER_MM = 96 / 25.4;
-        const PAGE_HEIGHT_PX = 297 * PX_PER_MM;     // altura A4
-        const PADDING_PX = 2 * 15 * PX_PER_MM;       // 1.5cm topo + 1.5cm base
-        const USABLE_PX = PAGE_HEIGHT_PX - PADDING_PX;
-        // Altura total do conteúdo da página
-        const total = page.scrollHeight;
-        const contentH = total - PADDING_PX; // exclui padding
-        const pages = Math.max(1, Math.ceil(contentH / USABLE_PX));
-        // Actualiza tag na toolbar
-        const tag = document.getElementById("page-est");
-        if (tag) {
-          tag.textContent = pages === 1
-            ? "1 página"
-            : `≈ ${pages} páginas (estimado)`;
-          tag.title = "Estimativa baseada em conteúdo / 297mm. Print real pode variar ±5mm por scaling/zoom do browser.";
-        }
-        // Inserir marcador de quebra a cada PAGE_HEIGHT_PX a partir do topo do .page
-        for (let i = 1; i < pages; i++) {
-          const top = (i * PAGE_HEIGHT_PX);
-          if (top >= total - 20) break; // já passou do conteúdo
-          const m = document.createElement("div");
-          m.className = "page-break-marker";
-          m.style.top = top + "px";
-          m.setAttribute("data-label", "Página " + (i + 1));
-          page.appendChild(m);
+      // Download PDF — usa html2pdf.js (carregado lazy ao primeiro click).
+      // Lazy-load evita pagar 600kb logo a abrir a página.
+      function loadHtml2Pdf() {
+        return new Promise((resolve, reject) => {
+          if (window.html2pdf) return resolve(window.html2pdf);
+          const s = document.createElement("script");
+          s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js";
+          s.onload = () => resolve(window.html2pdf);
+          s.onerror = () => reject(new Error("Falha a carregar html2pdf.js (verifica internet)"));
+          document.head.appendChild(s);
+        });
+      }
+
+      async function downloadPdf() {
+        const btn = document.getElementById("btn-download");
+        const serviceNumber = btn?.dataset?.serviceNumber || "roteiro";
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "A gerar…";
+        try {
+          const html2pdf = await loadHtml2Pdf();
+          const page = document.getElementById("page");
+          const filename = `Roteiro_${serviceNumber}_${new Date().toISOString().slice(0, 10)}.pdf`;
+          await html2pdf()
+            .set({
+              margin: [10, 10, 10, 10],
+              filename,
+              image: { type: "jpeg", quality: 0.95 },
+              html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+              jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+              pagebreak: { mode: ["css", "legacy"], avoid: ["tr", ".district-section", ".driver-sig-block"] },
+            })
+            .from(page)
+            .save();
+        } catch (e) {
+          alert("Erro ao gerar PDF: " + e.message + "\n\nAlternativa: usa o botão Imprimir e escolhe \"Guardar como PDF\".");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = original;
         }
       }
+
+      // Inicialmente desabilitado até o conteúdo carregar
+      document.getElementById("btn-download").disabled = true;
+      document.getElementById("btn-download").addEventListener("click", downloadPdf);
 
       load();
     })();
