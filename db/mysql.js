@@ -203,6 +203,15 @@ async function migrate() {
     );
     console.log("[DB] migrated delivery_balances.bean_type");
   }
+
+  // Localidade do benef (mais granular que "posto"). Vem do Excel coluna
+  // "Localidade". Útil para o roteiro do motorista (saber onde parar).
+  if (!(await columnExists("beneficiaries", "localidade"))) {
+    await getPool().query(
+      "ALTER TABLE beneficiaries ADD COLUMN localidade VARCHAR(128) NULL AFTER posto"
+    );
+    console.log("[DB] migrated beneficiaries.localidade");
+  }
 }
 
 async function init() {
