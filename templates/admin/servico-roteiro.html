@@ -6,19 +6,30 @@
   <title>AQI — Roteiro do Motorista</title>
   <link rel="stylesheet" href="/static/admin.css">
   <style>
-    body { background:#f1f5f9; margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    body { background:#cbd5e1; margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     .toolbar { position:sticky; top:0; background:#0f4c75; color:#fff; padding:.75rem 1.25rem;
       display:flex; justify-content:space-between; align-items:center; z-index:100; box-shadow:0 2px 6px rgba(0,0,0,.1); }
     .toolbar h2 { margin:0; font-size:1rem; font-weight:600 }
-    .toolbar .btns { display:flex; gap:.5rem }
+    .toolbar .a4-tag { background:rgba(255,255,255,.15); color:#fff; font-size:.7rem; font-weight:600;
+      padding:.15rem .55rem; border-radius:4px; letter-spacing:.04em; margin-left:.6rem }
+    .toolbar .btns { display:flex; gap:.5rem; align-items:center }
     .toolbar button { background:#fff; color:#0f4c75; border:0; padding:.45rem .85rem; border-radius:5px;
       font-weight:600; font-size:.85rem; cursor:pointer; }
     .toolbar button:hover { background:#e2e8f0 }
     .toolbar a { color:#fff; text-decoration:none; font-size:.82rem; opacity:.9 }
     .toolbar a:hover { opacity:1; text-decoration:underline }
 
-    .page { max-width:920px; margin:1rem auto; background:#fff; padding:2rem 2.5rem;
-      box-shadow:0 1px 3px rgba(15,23,42,.08); }
+    /* Página A4 — dimensões exactas para WYSIWYG. 210mm × 297mm com
+       margem interna de 1.5cm vertical / 1cm horizontal (mesma do @page). */
+    .page-shell { padding:1rem 0; display:flex; flex-direction:column; align-items:center; gap:1rem }
+    .page { width:210mm; min-height:297mm; background:#fff; padding:1.5cm 1cm;
+      box-shadow:0 4px 16px rgba(15,23,42,.18), 0 1px 3px rgba(15,23,42,.1);
+      box-sizing:border-box; position:relative; }
+    .page-num { position:absolute; bottom:.5cm; right:1cm; font-size:.65rem; color:#94a3b8;
+      font-family:ui-monospace,monospace }
+    /* Indicador A4 só visível em ecrã */
+    .page::before { content:"A4 · 210 × 297 mm"; position:absolute; top:-1.4rem; left:0;
+      font-size:.66rem; color:#64748b; letter-spacing:.06em; text-transform:uppercase; font-weight:700 }
     .page-head { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:1rem;
       border-bottom:3px solid #0f4c75; margin-bottom:1.5rem }
     .doc-title { font-size:1.6rem; color:#0f4c75; font-weight:800; letter-spacing:.5px; margin:0 }
@@ -84,8 +95,12 @@
 
     @media print {
       body { background:#fff }
-      .toolbar, .no-print { display:none !important }
-      .page { box-shadow:none; padding:1rem 1.25rem; max-width:100%; margin:0 }
+      .toolbar, .no-print, .page-num { display:none !important }
+      /* Em print, o @page já dá os margins; o .page deixa de simular paper.
+         width 100% para preencher a página e cancelar shadows/box-sizing. */
+      .page-shell { padding:0; gap:0 }
+      .page { width:auto; min-height:0; padding:0; margin:0; box-shadow:none }
+      .page::before { display:none }
       table.benef-list { page-break-inside:auto }
       table.benef-list tbody tr { page-break-inside:avoid; page-break-after:auto }
       table.benef-list tr.district-section { page-break-before:auto; page-break-after:avoid }
@@ -99,15 +114,17 @@
 </head>
 <body>
   <div class="toolbar no-print">
-    <h2>Roteiro de Entrega</h2>
+    <h2>Roteiro de Entrega <span class="a4-tag">A4 · 210 × 297 mm</span></h2>
     <div class="btns">
       <a id="btn-back" href="#">← Voltar ao serviço</a>
       <button onclick="window.print()">Imprimir / PDF</button>
     </div>
   </div>
 
-  <div class="page" id="page">
-    <div style="text-align:center;color:#64748b;padding:3rem;font-size:.9rem">A carregar roteiro…</div>
+  <div class="page-shell">
+    <div class="page" id="page">
+      <div style="text-align:center;color:#64748b;padding:3rem;font-size:.9rem">A carregar roteiro…</div>
+    </div>
   </div>
 
   <script src="/static/admin.js"></script>
