@@ -26,7 +26,7 @@ const PRODUCT_MAP = {
   "Sacos Hermeticos": "Hermetic bags (un)",
 };
 
-const SACO_KG_PER_UNIT = 0.3;
+const SACO_KG_PER_UNIT = 0.145;
 function isSacoProduct(name) {
   const l = String(name || "").toLowerCase();
   return l.includes("saco") || l.includes("hermetic");

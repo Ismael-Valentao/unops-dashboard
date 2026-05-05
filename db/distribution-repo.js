@@ -16,7 +16,7 @@ const now = () => new Date().toISOString().slice(0, 19).replace("T", " ");
 //   • kg  → kg directo (sementes)
 //   • L   → kg ≈ 1L (químicos; ~densidade da água, aproximação aceitável p/ logística)
 //   • un  → kg = qty × 0.3 (saco hermético = 0.3 kg cada)
-const SACO_KG_PER_UNIT = 0.3;
+const SACO_KG_PER_UNIT = 0.145;
 function qtyToKg(qty, unit) {
   const n = Number(qty) || 0;
   if (unit === "un") return n * SACO_KG_PER_UNIT;

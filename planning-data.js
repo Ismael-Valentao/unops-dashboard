@@ -19,9 +19,9 @@ const PRODUCT_MAP = {
   "Sacos Hermeticos": "Hermetic bags (un)",
 };
 
-// Saco (hermetic bag) weight — each unit weighs 0.3 kg.
+// Saco (hermetic bag) weight — each unit weighs 0.145 kg.
 // Planning stores count (Peso do Volume Kg = nº unidades); we multiply to get real kg.
-const SACO_KG_PER_UNIT = 0.3;
+const SACO_KG_PER_UNIT = 0.145;
 function isSacoProduct(name) {
   const l = String(name || "").toLowerCase();
   return l.includes("saco") || l.includes("hermetic");

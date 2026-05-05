@@ -3,6 +3,10 @@
   const { fetchJSON, fmt, esc, sortRows, sortArrow, bindSortable,
           exportCSV, urlState, renderFilterChips, toast } = window.AdminUI;
 
+  // Saco hermético: 0.145 kg cada. Mantém alinhado com server-side
+  // (db/distribution-repo.js, lib/distribution-bootstrap.js).
+  const SACO_KG_PER_UNIT = 0.145;
+
   // State
   let geo = {};                        // { province: { district: count } }
   let allRows = [];                    // current balance rows
@@ -418,7 +422,7 @@
     // Usa qty parcial (decompor) em vez de available_qty quando definida.
     return selectedRows().reduce((s, r) => {
       const q = selectedQtyOf(r);
-      if (r.unit === "un") return s + q * 0.3;
+      if (r.unit === "un") return s + q * SACO_KG_PER_UNIT;
       return s + q; // kg ou L
     }, 0);
   }
@@ -448,7 +452,7 @@
         row: r,
         key: rowKey(r),
         avail: Number(r.available_qty) || 0,
-        weight: r.unit === "un" ? Number(r.available_qty) * 0.3 : Number(r.available_qty),
+        weight: r.unit === "un" ? Number(r.available_qty) * SACO_KG_PER_UNIT : Number(r.available_qty),
       }))
       .filter((c) => c.weight > 0)
       .sort((a, b) => b.weight - a.weight);
@@ -461,7 +465,7 @@
         // Decompõe a 1ª que não cabe inteira para encher o restante.
         const partialKgEquiv = remaining;
         const partialQty = c.row.unit === "un"
-          ? Math.floor(partialKgEquiv / 0.3)
+          ? Math.floor(partialKgEquiv / SACO_KG_PER_UNIT)
           : Math.floor(partialKgEquiv);
         if (partialQty > 0 && partialQty < c.avail) {
           selectionMap.set(c.key, partialQty);
@@ -483,7 +487,7 @@
         row: r,
         key: rowKey(r),
         avail: Number(r.available_qty) || 0,
-        weight: r.unit === "un" ? Number(r.available_qty) * 0.3 : Number(r.available_qty),
+        weight: r.unit === "un" ? Number(r.available_qty) * SACO_KG_PER_UNIT : Number(r.available_qty),
         last: r.last_delivery_at ? new Date(String(r.last_delivery_at).replace(" ", "T")).getTime() : 0,
       }))
       .filter((c) => c.weight > 0)
@@ -496,7 +500,7 @@
         remaining -= c.weight;
       } else if (remaining > 500) {
         const partialQty = c.row.unit === "un"
-          ? Math.floor(remaining / 0.3)
+          ? Math.floor(remaining / SACO_KG_PER_UNIT)
           : Math.floor(remaining);
         if (partialQty > 0 && partialQty < c.avail) {
           selectionMap.set(c.key, partialQty);

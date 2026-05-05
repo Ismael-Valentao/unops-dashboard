@@ -5,6 +5,9 @@
 
   const REFRESH_INTERVAL = 5 * 60; // 5 minutes in seconds
   const PAGE_SIZE = 20;
+  // Saco hermético: 0.145 kg cada. Mantém alinhado com app.js parseCSV
+  // (que armazena delivered_qty já em kg = units × SACO_KG_PER_UNIT para sacos).
+  const SACO_KG_PER_UNIT = 0.145;
 
   let allRows = [];
   let filteredRows = [];
@@ -587,7 +590,7 @@
   }
 
   // ── Metrics ─────────────────────────────────────────────────
-  // Sacos herméticos are pre-converted to kg at parse time (0.3 kg/un) so we
+  // Sacos herméticos are pre-converted to kg at parse time (0.145 kg/un) so we
   // simply aggregate everything as kg here.
   function renderMetrics() {
     const rows = filteredRows;
@@ -629,7 +632,7 @@
     const qtyLabel = $("#m-qty-label");
     if (filterIsSacos) {
       if (qtyLabel) qtyLabel.textContent = "Qtd. Entregue (un)";
-      $("#m-qty").textContent = fmt(Math.round(qty / 0.3));
+      $("#m-qty").textContent = fmt(Math.round(qty / SACO_KG_PER_UNIT));
     } else {
       if (qtyLabel) qtyLabel.textContent = "Qtd. Entregue (kg)";
       $("#m-qty").textContent = fmtDec(qty);
@@ -639,9 +642,9 @@
     // Gap will be updated when PvD loads
     $("#m-verified-pct").textContent = pct + "%";
     // Per-status weight subtitle. Flip to "un" if the saco filter is active
-    // (saco delivered_qty is stored in kg = units × 0.3, see parseCSV in app.js).
+    // (saco delivered_qty is stored in kg = units × SACO_KG_PER_UNIT, see parseCSV in app.js).
     const fmtWeight = filterIsSacos
-      ? (n) => fmt(Math.round(n / 0.3)) + " un"
+      ? (n) => fmt(Math.round(n / SACO_KG_PER_UNIT)) + " un"
       : (n) => fmtDec(n) + " kg";
     // Seeds are always in kg (sacos are not seeds, so no unit flip needed here).
     const fmtSeedKg = (n) => fmtDec(n) + " kg";
@@ -677,7 +680,7 @@
     $("#m-errors").textContent = fmt(errors);
 
     // Breakdown da quantidade entregue por categoria.
-    // Sementes/Químicos/Outros em kg. Sacos em unidades (kg interno / 0.3).
+    // Sementes/Químicos/Outros em kg. Sacos em unidades (kg interno / SACO_KG_PER_UNIT).
     const cats = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (un)": 0, "Outros (kg)": 0 };
     rows.forEach((r) => {
       const q = Number(r.delivered_qty) || 0;
@@ -685,7 +688,7 @@
       const name = String(r.product || "").toLowerCase();
       if (/milho|feij|arroz|maize|bean|rice|seed/.test(name)) cats["Sementes (kg)"] += q;
       else if (/emamectin|imidaclop|mcpa/.test(name)) cats["Químicos (kg)"] += q;
-      else if (/saco|hermetic/.test(name)) cats["Sacos (un)"] += q / 0.3; // kg stored → back to units
+      else if (/saco|hermetic/.test(name)) cats["Sacos (un)"] += q / SACO_KG_PER_UNIT; // kg stored → back to units
       else cats["Outros (kg)"] += q;
     });
     const bdq = $("#m-qty-breakdown");
@@ -1806,7 +1809,7 @@
       provs.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
     if (provs.includes(curProv)) provSel.value = curProv;
 
-    // Update top gap card — tudo em kg (sacos já convertidos 0.3 kg/un).
+    // Update top gap card — tudo em kg (sacos já convertidos 0.145 kg/un).
     // Se o filtro activo for sacos, mostrar o card em unidades para coerência.
     const gap = Math.max(0, t.planned_kg - t.delivered_kg);
     const productFilterG = fProduct.value;
@@ -1814,7 +1817,7 @@
     const gapLabel = $("#m-gap-label");
     if (filterIsSacosG) {
       if (gapLabel) gapLabel.textContent = "Falta Entregar (un)";
-      $("#m-gap").textContent = fmt(Math.round(gap / 0.3));
+      $("#m-gap").textContent = fmt(Math.round(gap / SACO_KG_PER_UNIT));
     } else {
       if (gapLabel) gapLabel.textContent = "Falta Entregar (kg)";
       $("#m-gap").textContent = fmtDec(gap);
@@ -1827,7 +1830,7 @@
       const name = String(p.product || p.product_plan || "").toLowerCase();
       if (/milho|feij|arroz|maize|bean|rice|sementes?|seed/.test(name)) categories["Sementes (kg)"] += g;
       else if (/emamectin|imidaclop|mcpa|qu[ií]m|chem/.test(name)) categories["Químicos (kg)"] += g;
-      else if (/saco|hermetic/.test(name)) categories["Sacos (un)"] += g / 0.3; // back to units for display
+      else if (/saco|hermetic/.test(name)) categories["Sacos (un)"] += g / SACO_KG_PER_UNIT; // back to units for display
       else categories["Outros (kg)"] += g;
     });
     const bd = $("#m-gap-breakdown");
@@ -1990,14 +1993,14 @@
     $("#pvd-table-body").innerHTML = page
       .map((r) => {
         const isSacos = /saco|hermetic/i.test(String(r.product || ""));
-        // For sacos, display in units (kg / 0.3). For everything else, kg.
+        // For sacos, display in units (kg / SACO_KG_PER_UNIT). For everything else, kg.
         const displayVal = (kg) => isSacos
-          ? `${fmt(Math.round(kg / 0.3))} <span class="bd-unit">un</span>`
+          ? `${fmt(Math.round(kg / SACO_KG_PER_UNIT))} <span class="bd-unit">un</span>`
           : fmtDec(kg);
         const diffSign = r.diff > 0 ? "+" : r.diff < 0 ? "-" : "";
         const diffAbs = Math.abs(r.diff);
         const diffHtml = isSacos
-          ? `${diffSign}${fmt(Math.round(diffAbs / 0.3))} <span class="bd-unit">un</span>`
+          ? `${diffSign}${fmt(Math.round(diffAbs / SACO_KG_PER_UNIT))} <span class="bd-unit">un</span>`
           : `${diffSign}${fmtDec(diffAbs)}`;
         return `<tr>
           <td>${esc(r.district)}</td>

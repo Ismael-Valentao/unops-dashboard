@@ -38,6 +38,12 @@ const COLUMN_KEYS = [
 const sheetCache = require("./lib/sheet-cache");
 const cache = sheetCache.cache;
 
+// Saco hermético: 0.145 kg cada. Constante única no app — mudar aqui propaga
+// a todas as conversões kg ↔ unidades. Usado pelo parseCSV (Sheet) e
+// /api/logistics/compare. lib/distribution-bootstrap.js e db/distribution-repo.js
+// têm a sua própria constante (mesmo valor) por estarem em módulos separados.
+const SACO_KG_PER_UNIT = 0.145;
+
 // ── Fetch CSV from Google Sheets ──────────────────────────────
 function fetchCSV(url) {
   return new Promise((resolve, reject) => {
@@ -124,12 +130,12 @@ function parseCSV(text) {
       row.packages = parseFloat(row.packages) || 0;
       row.delivered_qty = parseFloat(row.delivered_qty) || 0;
 
-      // Convert Hermetic Bags from units (un) to kg (0.3 kg/un) so everything
+      // Convert Hermetic Bags from units (un) to kg (0.145 kg/un) so everything
       // aggregates consistently in kg. Keep the original count for reference.
       const lowerProd = String(row.product || "").toLowerCase();
       if (lowerProd.includes("hermetic") || lowerProd.includes("saco")) {
         row.delivered_qty_units = row.delivered_qty;
-        row.delivered_qty = +(row.delivered_qty * 0.3).toFixed(2);
+        row.delivered_qty = +(row.delivered_qty * SACO_KG_PER_UNIT).toFixed(3);
       }
 
       // Normalise backslashes in delivery note number
