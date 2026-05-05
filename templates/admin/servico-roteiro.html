@@ -30,6 +30,17 @@
     /* Indicador A4 só visível em ecrã */
     .page::before { content:"A4 · 210 × 297 mm"; position:absolute; top:-1.4rem; left:0;
       font-size:.66rem; color:#64748b; letter-spacing:.06em; text-transform:uppercase; font-weight:700 }
+
+    /* Marcadores de quebra de página (calculados via JS após render).
+       Cada marcador é uma linha tracejada full-width com label "Página N". */
+    .page-break-marker { position:absolute; left:0; right:0; height:0;
+      border-top:2px dashed #d97706; pointer-events:none; z-index:50 }
+    .page-break-marker::after { content:attr(data-label); position:absolute; top:-0.7rem; left:50%;
+      transform:translateX(-50%); background:#d97706; color:#fff; font-size:.62rem; font-weight:800;
+      padding:.1rem .5rem; border-radius:3px; letter-spacing:.05em; text-transform:uppercase;
+      font-family:-apple-system,sans-serif }
+    .page-est-tag { background:rgba(255,255,255,.15); color:#fff; font-size:.7rem; font-weight:600;
+      padding:.15rem .55rem; border-radius:4px; margin-left:.4rem; letter-spacing:.04em }
     .page-head { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:1rem;
       border-bottom:3px solid #0f4c75; margin-bottom:1.5rem }
     .doc-title { font-size:1.6rem; color:#0f4c75; font-weight:800; letter-spacing:.5px; margin:0 }
@@ -95,7 +106,7 @@
 
     @media print {
       body { background:#fff }
-      .toolbar, .no-print, .page-num { display:none !important }
+      .toolbar, .no-print, .page-num, .page-break-marker { display:none !important }
       /* Em print, o @page já dá os margins; o .page deixa de simular paper.
          width 100% para preencher a página e cancelar shadows/box-sizing. */
       .page-shell { padding:0; gap:0 }
@@ -108,13 +119,29 @@
         -webkit-print-color-adjust:exact; print-color-adjust:exact }
       h3.section-title { page-break-after:avoid }
       .driver-sig-block { page-break-inside:avoid }
-      @page { size:A4; margin:1.5cm 1cm }
+      /* Numeração de página fiél (counters CSS — gerados pelo browser
+         a partir do número real de páginas após pagination). Aparece no
+         canto inferior direito de cada folha impressa. */
+      @page {
+        size:A4; margin:1.5cm 1cm 2cm 1cm;
+        @bottom-right {
+          content: "Página " counter(page) " de " counter(pages);
+          font-size:9pt; color:#64748b; font-family:-apple-system,sans-serif;
+        }
+        @bottom-left {
+          content: "Roteiro AQI";
+          font-size:8pt; color:#94a3b8;
+        }
+      }
     }
   </style>
 </head>
 <body>
   <div class="toolbar no-print">
-    <h2>Roteiro de Entrega <span class="a4-tag">A4 · 210 × 297 mm</span></h2>
+    <h2>Roteiro de Entrega
+      <span class="a4-tag">A4 · 210 × 297 mm</span>
+      <span class="page-est-tag" id="page-est">a calcular…</span>
+    </h2>
     <div class="btns">
       <a id="btn-back" href="#">← Voltar ao serviço</a>
       <button onclick="window.print()">Imprimir / PDF</button>
@@ -344,10 +371,54 @@
           `;
           document.getElementById("page").innerHTML = html;
           document.title = "Roteiro " + svc.service_number;
+          // Estimar quantas páginas A4 a impressão vai ocupar e marcar visualmente
+          // os pontos de quebra no ecrã. Re-corre quando fonts/imagens carregam.
+          setTimeout(estimatePages, 100);
+          if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(estimatePages);
+          }
+          window.addEventListener("resize", estimatePages);
         } catch (e) {
           document.getElementById("page").innerHTML = `<div style="color:#dc2626;text-align:center;padding:3rem">Erro: ${esc(e.message)}</div>`;
         }
       }
+
+      function estimatePages() {
+        const page = document.getElementById("page");
+        if (!page) return;
+        // Remove marcadores anteriores antes de recalcular
+        page.querySelectorAll(".page-break-marker").forEach((m) => m.remove());
+        // 297mm em px @ 96dpi = 297 * (96/25.4) = 1122.5 px aprox.
+        // Padding interno top+bottom: 2 * 1.5cm = 3cm = ~113.4px
+        // Conteúdo útil por página = ~1009px
+        const PX_PER_MM = 96 / 25.4;
+        const PAGE_HEIGHT_PX = 297 * PX_PER_MM;     // altura A4
+        const PADDING_PX = 2 * 15 * PX_PER_MM;       // 1.5cm topo + 1.5cm base
+        const USABLE_PX = PAGE_HEIGHT_PX - PADDING_PX;
+        // Altura total do conteúdo da página
+        const total = page.scrollHeight;
+        const contentH = total - PADDING_PX; // exclui padding
+        const pages = Math.max(1, Math.ceil(contentH / USABLE_PX));
+        // Actualiza tag na toolbar
+        const tag = document.getElementById("page-est");
+        if (tag) {
+          tag.textContent = pages === 1
+            ? "1 página"
+            : `≈ ${pages} páginas (estimado)`;
+          tag.title = "Estimativa baseada em conteúdo / 297mm. Print real pode variar ±5mm por scaling/zoom do browser.";
+        }
+        // Inserir marcador de quebra a cada PAGE_HEIGHT_PX a partir do topo do .page
+        for (let i = 1; i < pages; i++) {
+          const top = (i * PAGE_HEIGHT_PX);
+          if (top >= total - 20) break; // já passou do conteúdo
+          const m = document.createElement("div");
+          m.className = "page-break-marker";
+          m.style.top = top + "px";
+          m.setAttribute("data-label", "Página " + (i + 1));
+          page.appendChild(m);
+        }
+      }
+
       load();
     })();
   </script>
