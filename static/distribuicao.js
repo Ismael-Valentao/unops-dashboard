@@ -569,20 +569,59 @@
   }
 
   // ── Modal: create service ──────────────────────────────────
+  // Calcula o distrito/província "principal" da selecção: aquele com mais
+  // beneficiários. Em empate, o primeiro encontrado (ordem da selecção).
+  // Esses ficam guardados no header do service; cada item mantém o seu real.
+  function pickPrimaryLocation(sel) {
+    const counts = new Map();
+    for (const r of sel) {
+      const key = (r.province || "") + "|" + (r.district || "");
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    let best = null, bestN = 0;
+    for (const [k, n] of counts) {
+      if (n > bestN) { best = k; bestN = n; }
+    }
+    const [prov, dist] = (best || "|").split("|");
+    return { province: prov, district: dist };
+  }
+
   function openCreateModal() {
     const sel = selectedRows();
     if (!sel.length) return;
     const totalKg = selectedKgEquiv();
     const districts = new Set(sel.map((r) => r.district).filter(Boolean));
     const provinces = new Set(sel.map((r) => r.province).filter(Boolean));
-    if (districts.size > 1 || provinces.size > 1) {
-      toast("Selecciona apenas beneficiários do mesmo distrito para um serviço", { kind: "warn" });
-      return;
-    }
     const beneficiaries = new Set(sel.map((r) => r.extensionist_id));
+    const isMulti = districts.size > 1 || provinces.size > 1;
+    const primary = pickPrimaryLocation(sel);
+
+    // Linha principal do header (distrito/província)
+    let locLine;
+    if (isMulti) {
+      // Lista distritos com contagem de benefs
+      const breakdown = [...sel.reduce((m, r) => {
+        const k = (r.province || "—") + " › " + (r.district || "—");
+        m.set(k, (m.get(k) || 0) + 1);
+        return m;
+      }, new Map())].sort((a, b) => b[1] - a[1])
+        .map(([loc, n]) => `<span style="display:inline-block;background:#fef3c7;color:#92400e;padding:.1rem .4rem;border-radius:3px;font-size:.7rem;margin-right:.3rem;margin-bottom:.15rem">${esc(loc)} (${n})</span>`)
+        .join("");
+      locLine = `
+        <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:.55rem .8rem;margin-bottom:.7rem">
+          <div style="font-weight:700;color:#92400e;font-size:.82rem;margin-bottom:.3rem">⚠️ Camião com beneficiários de ${districts.size} distritos</div>
+          ${breakdown}
+          <div style="margin-top:.4rem;font-size:.73rem;color:#78350f">
+            O serviço fica registado em <strong>${esc(primary.province)} › ${esc(primary.district)}</strong>
+            (distrito com mais benefs). Cada item preserva a sua localização real.
+          </div>
+        </div>`;
+    } else {
+      locLine = `<strong>Distrito:</strong> ${esc(primary.province || "—")} › ${esc(primary.district || "—")}<br>`;
+    }
 
     $("#modal-summary").innerHTML = `
-      <strong>Distrito:</strong> ${esc([...provinces][0] || "—")} › ${esc([...districts][0] || "—")}<br>
+      ${locLine}
       <strong>Total carregado:</strong> ${fmt(totalKg)} kg <span style="color:${totalKg > truckCapacity ? "#dc2626" : "#16a34a"}">(${Math.round((totalKg/truckCapacity)*100)}% do camião)</span><br>
       <strong>${beneficiaries.size}</strong> beneficiários • <strong>${sel.length}</strong> linhas (produto×pessoa)
     `;
@@ -610,8 +649,26 @@
     if (!plate) { errBox.textContent = "Matrícula é obrigatória"; errBox.classList.add("show"); return; }
     if (!driver) { errBox.textContent = "Nome do motorista é obrigatório"; errBox.classList.add("show"); return; }
 
-    const province = sel[0].province;
-    const district = sel[0].district;
+    // Multi-distrito → pedir confirmação adicional antes de submeter
+    const districts = new Set(sel.map((r) => r.district).filter(Boolean));
+    const provinces = new Set(sel.map((r) => r.province).filter(Boolean));
+    if (districts.size > 1 || provinces.size > 1) {
+      const ok = await window.AdminUI.confirm(
+        `Este camião carrega beneficiários de ${districts.size} distritos diferentes. Continuar?`,
+        {
+          title: "Confirmar multi-distrito",
+          confirmLabel: "Continuar",
+          details: "O serviço fica registado no distrito principal mas cada item preserva a localização real do beneficiário. Útil quando um camião faz várias paragens em rota.",
+        }
+      );
+      if (!ok) return;
+    }
+
+    // Usa o distrito/província principal (com mais benefs) para o header.
+    // Itens individuais já trazem a sua location real (preservada no DB).
+    const primary = pickPrimaryLocation(sel);
+    const province = primary.province || sel[0].province;
+    const district = primary.district || sel[0].district;
     // Usa qty parcial (decompor) quando definida, senão a falta total da linha.
     const items = sel.map((r) => ({
       extensionist_id: r.extensionist_id,
