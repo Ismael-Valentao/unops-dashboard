@@ -77,12 +77,20 @@
     .footer-note { font-size:.7rem; color:#94a3b8; text-align:center; margin-top:2rem; padding-top:.75rem;
       border-top:1px solid #e2e8f0 }
 
+    /* District section rows (multi-distrito grouping) */
+    table.benef-list tr.district-section td { background:#0f4c75 !important; color:#fff !important;
+      padding:.55rem .85rem; font-weight:800 }
+    table.benef-list tr.district-section + tr td { border-top:0 }
+
     @media print {
       body { background:#fff }
       .toolbar, .no-print { display:none !important }
       .page { box-shadow:none; padding:1rem 1.25rem; max-width:100%; margin:0 }
       table.benef-list { page-break-inside:auto }
       table.benef-list tbody tr { page-break-inside:avoid; page-break-after:auto }
+      table.benef-list tr.district-section { page-break-before:auto; page-break-after:avoid }
+      table.benef-list tr.district-section td { background:#0f4c75 !important;
+        -webkit-print-color-adjust:exact; print-color-adjust:exact }
       h3.section-title { page-break-after:avoid }
       .driver-sig-block { page-break-inside:avoid }
       @page { size:A4; margin:1.5cm 1cm }
@@ -130,6 +138,52 @@
           // Distintas postos / localidades como índice de paragens
           const postos = [...new Set(benefs.map((b) => b.posto).filter(Boolean))];
 
+          // Multi-distrito / multi-província: agrupa benefs por (província, distrito)
+          // mantendo a ordem (já vem ordenado do backend).
+          const groups = new Map(); // "Provincia|Distrito" → { province, district, benefs[] }
+          for (const b of benefs) {
+            const k = (b.province || "—") + "|" + (b.district || "—");
+            if (!groups.has(k)) groups.set(k, { province: b.province || "—", district: b.district || "—", benefs: [] });
+            groups.get(k).benefs.push(b);
+          }
+          const groupList = [...groups.values()];
+          const isMulti = groupList.length > 1;
+          const districts = [...new Set(benefs.map((b) => b.district).filter(Boolean))];
+          const provinces = [...new Set(benefs.map((b) => b.province).filter(Boolean))];
+
+          // Cabeçalho de localização varia conforme single/multi
+          let locationHeader;
+          if (isMulti) {
+            // Lista todas combinações província/distrito como pills + contagem
+            const pills = groupList
+              .sort((a, b) => b.benefs.length - a.benefs.length)
+              .map((g) =>
+                `<span style="display:inline-block;background:#fef3c7;color:#92400e;padding:.18rem .5rem;border-radius:4px;font-size:.74rem;font-weight:700;margin-right:.35rem;margin-bottom:.25rem">
+                  ${esc(g.province)} › ${esc(g.district)} <span style="opacity:.7;font-weight:600">(${g.benefs.length})</span>
+                </span>`).join("");
+            locationHeader = `
+              <div style="background:#fffbeb;border:1px solid #fde68a;border-left:5px solid #f59e0b;border-radius:6px;padding:.75rem 1rem;margin-bottom:1.5rem">
+                <div style="font-size:.7rem;color:#92400e;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:.4rem">⚠️ Rota multi-distrito · ${districts.length} distritos${provinces.length > 1 ? " · " + provinces.length + " províncias" : ""}</div>
+                ${pills}
+                <div style="margin-top:.5rem;font-size:.75rem;color:#78350f">
+                  <strong>Atenção motorista:</strong> esta carga cobre múltiplas localizações.
+                  Ver tabela abaixo — paragens estão agrupadas por distrito (em ordem de visita sugerida).
+                </div>
+              </div>
+              <div class="info-grid">
+                <div><div class="lbl">Origem (Fornecedor)</div><div class="val">${esc(svc.origem_supplier || "—")}</div></div>
+                <div><div class="lbl">Capacidade do Camião</div><div class="val">${fmt(svc.truck_capacity_kg)} kg</div></div>
+              </div>`;
+          } else {
+            locationHeader = `
+              <div class="info-grid">
+                <div><div class="lbl">Província</div><div class="val">${esc(svc.province || "—")}</div></div>
+                <div><div class="lbl">Distrito</div><div class="val">${esc(svc.district || "—")}</div></div>
+                <div><div class="lbl">Origem (Fornecedor)</div><div class="val">${esc(svc.origem_supplier || "—")}</div></div>
+                <div><div class="lbl">Capacidade do Camião</div><div class="val">${fmt(svc.truck_capacity_kg)} kg</div></div>
+              </div>`;
+          }
+
           // Cabeçalho
           let html = `
             <div class="page-head">
@@ -145,12 +199,7 @@
               </div>
             </div>
 
-            <div class="info-grid">
-              <div><div class="lbl">Província</div><div class="val">${esc(svc.province || "—")}</div></div>
-              <div><div class="lbl">Distrito</div><div class="val">${esc(svc.district || "—")}</div></div>
-              <div><div class="lbl">Origem (Fornecedor)</div><div class="val">${esc(svc.origem_supplier || "—")}</div></div>
-              <div><div class="lbl">Capacidade do Camião</div><div class="val">${fmt(svc.truck_capacity_kg)} kg</div></div>
-            </div>
+            ${locationHeader}
 
             <div class="truck-banner">
               <div>
@@ -182,11 +231,13 @@
             <div class="totals-summary">
               <div><div class="t-lbl">Beneficiários</div><div class="t-val">${benefs.length}</div></div>
               <div><div class="t-lbl">Linhas (item)</div><div class="t-val">${totalItems}</div></div>
-              <div><div class="t-lbl">Postos</div><div class="t-val">${postos.length || "—"}</div></div>
+              <div><div class="t-lbl">Distritos</div><div class="t-val" style="${districts.length > 1 ? "color:#d97706" : ""}">${districts.length || "—"}</div></div>
               <div><div class="t-lbl">Total Carga</div><div class="t-val">${fmt(svc.total_kg || totalKg)} kg</div></div>
             </div>
 
-            <h3 class="section-title">Lista de Paragens (${benefs.length} beneficiários${postos.length ? " · ordenado por posto" : ""})</h3>
+            <h3 class="section-title">
+              Lista de Paragens (${benefs.length} beneficiários · agrupado por ${isMulti ? "distrito → " : ""}posto)
+            </h3>
             <table class="benef-list">
               <thead><tr>
                 <th style="width:30px">#</th>
@@ -196,35 +247,59 @@
                 <th class="sig-cell">Recebido / Assinatura</th>
               </tr></thead>
               <tbody>
-                ${benefs.map((b, i) => {
-                  const wa = whatsappLink(b.contact);
-                  const items = b.items.map((it) => `<span class="item-line">• ${esc(it.product_name || it.sku)}: <span class="item-qty">${fmtItemQty(it.qty, it.unit)}</span></span>`).join("");
-                  return `<tr>
-                    <td style="font-weight:700;color:#0f4c75;text-align:center">${i + 1}</td>
-                    <td>
-                      <div class="benef-name">${esc(b.beneficiary_name)}</div>
-                      <span class="benef-id">${esc(b.extensionist_id)} · NUIT ${esc(b.nuit || "—")}</span>
-                      ${b.posto ? `<div class="benef-loc"><strong>Posto:</strong> ${esc(b.posto)}${b.localidade ? " · " + esc(b.localidade) : ""}</div>` : ""}
-                    </td>
-                    <td>
-                      ${b.contact ? `<div class="benef-contact">${esc(b.contact)}${wa ? ` <span class="no-print">(<a href="${wa}" target="_blank" style="color:#16a34a;text-decoration:none">WhatsApp</a>)</span>` : ""}</div>` : '<div style="color:#cbd5e1">—</div>'}
-                      ${b.supervisor_name ? `<div class="benef-supervisor"><strong>Sup:</strong> ${esc(b.supervisor_name)}${b.supervisor_phone ? ` · ${esc(b.supervisor_phone)}` : ""}</div>` : ""}
-                    </td>
-                    <td>
-                      ${items}
-                      <div class="item-total">Total: ${fmt(Math.round(b.total_kg))} kg eq.</div>
-                    </td>
-                    <td class="sig-cell">
-                      <div style="display:flex;align-items:center;justify-content:center;gap:.6rem;margin-bottom:.5rem;font-size:.66rem;color:#64748b">
-                        <span><span class="check-circle"></span>OK</span>
-                        <span><span class="check-circle"></span>Parcial</span>
-                        <span><span class="check-circle"></span>Recusou</span>
-                      </div>
-                      <div class="sig-line"></div>
-                      <div class="sig-label">Assinatura</div>
-                    </td>
-                  </tr>`;
-                }).join("")}
+                ${(() => {
+                  // Render: secção por (provincia/distrito) quando multi.
+                  // Numeração contínua através dos grupos.
+                  let counter = 0;
+                  const renderBenef = (b) => {
+                    counter++;
+                    const wa = whatsappLink(b.contact);
+                    const items = b.items.map((it) => `<span class="item-line">• ${esc(it.product_name || it.sku)}: <span class="item-qty">${fmtItemQty(it.qty, it.unit)}</span></span>`).join("");
+                    return `<tr>
+                      <td style="font-weight:700;color:#0f4c75;text-align:center">${counter}</td>
+                      <td>
+                        <div class="benef-name">${esc(b.beneficiary_name)}</div>
+                        <span class="benef-id">${esc(b.extensionist_id)} · NUIT ${esc(b.nuit || "—")}</span>
+                        ${b.posto ? `<div class="benef-loc"><strong>Posto:</strong> ${esc(b.posto)}${b.localidade ? " · " + esc(b.localidade) : ""}</div>` : ""}
+                      </td>
+                      <td>
+                        ${b.contact ? `<div class="benef-contact">${esc(b.contact)}${wa ? ` <span class="no-print">(<a href="${wa}" target="_blank" style="color:#16a34a;text-decoration:none">WhatsApp</a>)</span>` : ""}</div>` : '<div style="color:#cbd5e1">—</div>'}
+                        ${b.supervisor_name ? `<div class="benef-supervisor"><strong>Sup:</strong> ${esc(b.supervisor_name)}${b.supervisor_phone ? ` · ${esc(b.supervisor_phone)}` : ""}</div>` : ""}
+                      </td>
+                      <td>
+                        ${items}
+                        <div class="item-total">Total: ${fmt(Math.round(b.total_kg))} kg eq.</div>
+                      </td>
+                      <td class="sig-cell">
+                        <div style="display:flex;align-items:center;justify-content:center;gap:.6rem;margin-bottom:.5rem;font-size:.66rem;color:#64748b">
+                          <span><span class="check-circle"></span>OK</span>
+                          <span><span class="check-circle"></span>Parcial</span>
+                          <span><span class="check-circle"></span>Recusou</span>
+                        </div>
+                        <div class="sig-line"></div>
+                        <div class="sig-label">Assinatura</div>
+                      </td>
+                    </tr>`;
+                  };
+
+                  if (!isMulti) {
+                    return benefs.map(renderBenef).join("");
+                  }
+                  // Multi-distrito: section header row a cada novo grupo
+                  const groupKgEq = (g) => g.benefs.reduce((s, b) => s + (Number(b.total_kg) || 0), 0);
+                  return groupList.map((g, gi) => {
+                    const kgEq = Math.round(groupKgEq(g));
+                    return `
+                      <tr class="district-section">
+                        <td colspan="5" style="background:#0f4c75;color:#fff;padding:.55rem .85rem;font-weight:800;letter-spacing:.04em;font-size:.82rem;text-transform:uppercase">
+                          PARAGEM ${gi + 1} · ${esc(g.province)} › ${esc(g.district)}
+                          <span style="float:right;font-weight:600;opacity:.85">${g.benefs.length} benef${g.benefs.length === 1 ? "" : "s"} · ${fmt(kgEq)} kg eq.</span>
+                        </td>
+                      </tr>
+                      ${g.benefs.map(renderBenef).join("")}
+                    `;
+                  }).join("");
+                })()}
               </tbody>
             </table>
 

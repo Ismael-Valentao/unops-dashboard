@@ -914,8 +914,14 @@ const Services = {
       // Total kg-equivalente para sortar/mostrar (sacos × 0.3)
       g.total_kg += (it.unit === "un" ? Number(it.qty) * 0.3 : Number(it.qty)) || 0;
     }
+    // Ordenação para roteiro: província > distrito > posto > nome.
+    // Importante para multi-distrito — operador agrupa paragens por
+    // localização real, não por nome de benef.
     const beneficiaries = [...benefMap.values()].sort((a, b) =>
-      (a.posto || "").localeCompare(b.posto || "") || (a.beneficiary_name || "").localeCompare(b.beneficiary_name || "")
+      (a.province || "").localeCompare(b.province || "") ||
+      (a.district || "").localeCompare(b.district || "") ||
+      (a.posto || "").localeCompare(b.posto || "") ||
+      (a.beneficiary_name || "").localeCompare(b.beneficiary_name || "")
     );
     return { ...svc, beneficiaries };
   },
