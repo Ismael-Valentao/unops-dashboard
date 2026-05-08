@@ -85,17 +85,55 @@
       padding:.55rem .85rem; font-weight:800 }
     table.benef-list tr.district-section + tr td { border-top:0 }
 
+    /* ── Page-break rules (aplicam-se em SCREEN também, para o html2pdf
+       respeitar — html2pdf.js não usa @media print, lê CSS regular) ── */
+    table.benef-list { page-break-inside:auto }
+    table.benef-list thead { display:table-header-group }
+    table.benef-list tbody tr { page-break-inside:avoid !important; page-break-after:auto;
+      break-inside:avoid !important }
+    table.benef-list tr.district-section { page-break-before:auto; page-break-after:avoid;
+      break-after:avoid }
+    h3.section-title { page-break-after:avoid; break-after:avoid }
+    .driver-sig-block { page-break-inside:avoid !important; break-inside:avoid !important }
+    .truck-banner, .totals-summary, .info-grid { page-break-inside:avoid; break-inside:avoid }
+    .footer-note { page-break-inside:avoid }
+
+    /* ── Modo PDF: aplicado via classe .pdf-rendering antes de html2pdf
+       capturar. A largura do .page é 790px (≈A4 quase total). A "margem
+       A4" vem do jsPDF (margin: 8mm) — fica com margem visível pequena
+       mas o layout das colunas continua a ter espaço para respirar.
+       CRUCIAL: box-sizing:border-box para o padding não ser somado. ── */
+    body.pdf-rendering .page {
+      box-sizing:border-box !important;
+      box-shadow:none !important;
+      padding:12px 16px !important;
+      max-width:790px !important;
+      width:790px !important;
+      margin:0 auto !important;
+    }
+    body.pdf-rendering * { box-sizing:border-box !important }
+    body.pdf-rendering .toolbar { display:none !important }
+    body.pdf-rendering table.benef-list { font-size:.74rem !important;
+      width:100% !important; table-layout:fixed !important }
+    body.pdf-rendering table.benef-list td,
+    body.pdf-rendering table.benef-list th {
+      padding:.45rem .5rem !important;
+      word-wrap:break-word !important;
+      overflow-wrap:break-word !important;
+    }
+    body.pdf-rendering .item-line { font-size:.72rem !important }
+    body.pdf-rendering .benef-name { font-size:.8rem !important;
+      word-wrap:break-word !important }
+    /* Banner com 3 colunas em modo PDF — evita conteúdo a empurrar a largura */
+    body.pdf-rendering .truck-banner { gap:.5rem !important }
+    body.pdf-rendering .info-grid { gap:.4rem 1rem !important }
+
     @media print {
       body { background:#fff }
       .toolbar, .no-print { display:none !important }
       .page { box-shadow:none; padding:1rem 1.25rem; max-width:100%; margin:0 }
-      table.benef-list { page-break-inside:auto }
-      table.benef-list tbody tr { page-break-inside:avoid; page-break-after:auto }
-      table.benef-list tr.district-section { page-break-before:auto; page-break-after:avoid }
       table.benef-list tr.district-section td { background:#0f4c75 !important;
         -webkit-print-color-adjust:exact; print-color-adjust:exact }
-      h3.section-title { page-break-after:avoid }
-      .driver-sig-block { page-break-inside:avoid }
       @page { size:A4; margin:1.5cm 1cm }
     }
   </style>
@@ -361,24 +399,58 @@
         const original = btn.textContent;
         btn.disabled = true;
         btn.textContent = "A gerar…";
+        // Adiciona classe que reduz a largura do .page para A4 (790px @96dpi)
+        // e desabilita estilos caros (sombras). Sem isto o conteúdo é
+        // renderizado a 920px, depois reduzido pelo jsPDF, e os
+        // page-breaks ficam desalinhados → páginas em branco / cortes.
+        document.body.classList.add("pdf-rendering");
         try {
           const html2pdf = await loadHtml2Pdf();
           const page = document.getElementById("page");
           const filename = `Roteiro_${serviceNumber}_${new Date().toISOString().slice(0, 10)}.pdf`;
+          // Pequeno delay para o browser aplicar a classe .pdf-rendering
+          // antes do html2canvas capturar. Sem este delay, captura ainda no
+          // estado anterior em alguns browsers (Firefox sobretudo).
+          await new Promise((r) => setTimeout(r, 150));
+
+          // Cálculo de larguras (96 DPI):
+          //   A4 = 210mm × 297mm = 793.7px × 1122.5px
+          //   Margem PDF = 8mm (compromisso: visível mas tabela cabe bem)
+          //   Largura útil = 210 − 16 = 194mm = ~733px
+          //   .page: 790px capturado, escalado para caber em 194mm
+          //   (canvas ligeiramente maior que área PDF — html2pdf escala)
           await html2pdf()
             .set({
-              margin: [10, 10, 10, 10],
+              margin: 8,
               filename,
               image: { type: "jpeg", quality: 0.95 },
-              html2canvas: { scale: 2, useCORS: true, letterRendering: true },
-              jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-              pagebreak: { mode: ["css", "legacy"], avoid: ["tr", ".district-section", ".driver-sig-block"] },
+              html2canvas: {
+                scale: 2,
+                useCORS: true,
+                letterRendering: true,
+                windowWidth: 794,
+                width: 790,
+                scrollX: 0,
+                scrollY: 0,
+                x: 0, y: 0,
+              },
+              jsPDF: {
+                unit: "mm", format: "a4", orientation: "portrait",
+                compress: true,
+              },
+              pagebreak: {
+                mode: ["avoid-all", "css", "legacy"],
+                avoid: ["tr", ".district-section", ".driver-sig-block",
+                        ".truck-banner", ".totals-summary", ".page-head"],
+              },
             })
             .from(page)
             .save();
         } catch (e) {
+          console.error("PDF gen error:", e);
           alert("Erro ao gerar PDF: " + e.message + "\n\nAlternativa: usa o botão Imprimir e escolhe \"Guardar como PDF\".");
         } finally {
+          document.body.classList.remove("pdf-rendering");
           btn.disabled = false;
           btn.textContent = original;
         }

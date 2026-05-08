@@ -13,13 +13,46 @@
     .dist-controls select,.dist-controls input{width:100%;padding:.5rem .65rem;border:1px solid #cbd5e1;border-radius:6px;font-size:.85rem;background:#fff}
     .dist-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem}
     .dist-sum{background:#f8fafc;border-radius:8px;padding:.75rem .9rem;border-left:3px solid #0f4c75}
-    .dist-sum-lbl{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:700}
+    .dist-sum-lbl{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:700;margin-bottom:.3rem}
     .dist-sum-val{font-size:1.3rem;font-weight:800;color:#0f4c75;line-height:1.1;margin-top:.15rem}
     .dist-sum-sub{font-size:.7rem;color:#94a3b8;margin-top:.2rem}
     .dist-sum-falta{border-left-color:#dc2626}
     .dist-sum-falta .dist-sum-val{color:#dc2626}
+    .dist-sum-falta .ms-num{color:#dc2626}
     .dist-sum-done{border-left-color:#16a34a}
     .dist-sum-done .dist-sum-val{color:#16a34a}
+    .dist-sum-done .ms-num{color:#16a34a}
+
+    /* Multi-unit summary (Sementes / Químicos / Sacos) */
+    .multi-sum{display:flex;flex-direction:column;gap:.25rem}
+    .ms-line{display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;
+      padding:.15rem 0;border-bottom:1px dashed #e2e8f0}
+    .ms-line:last-child{border-bottom:none}
+    .ms-cat{font-size:.7rem;text-transform:uppercase;letter-spacing:.03em;color:#64748b;font-weight:700;flex-shrink:0}
+    .ms-num{font-size:1rem;font-weight:800;color:#0f4c75;font-variant-numeric:tabular-nums;line-height:1.1}
+    .ms-num-pct{font-size:.7rem;color:#16a34a;font-weight:700;margin-left:.25rem}
+    .ms-empty{color:#cbd5e1;font-style:italic;font-size:.85rem;font-weight:400}
+
+    /* Breakdown por produto */
+    .prod-breakdown{margin-top:1rem;padding:.85rem 1rem;background:#fff;border:1px solid #e2e8f0;border-radius:8px}
+    .prod-breakdown h4{margin:0 0 .6rem;font-size:.78rem;text-transform:uppercase;
+      letter-spacing:.05em;color:#475569;font-weight:700}
+    .pb-tbl{width:100%;font-size:.78rem;border-collapse:collapse}
+    .pb-tbl th{text-align:right;padding:.35rem .55rem;color:#64748b;font-size:.68rem;
+      text-transform:uppercase;letter-spacing:.04em;font-weight:700;border-bottom:1px solid #e2e8f0}
+    .pb-tbl th:first-child{text-align:left}
+    .pb-tbl td{padding:.4rem .55rem;border-bottom:1px solid #f1f5f9;font-variant-numeric:tabular-nums}
+    .pb-tbl td.num{text-align:right}
+    .pb-tbl td.cat{font-weight:700;color:#475569}
+    .pb-tbl tr.cat-header td{background:#f8fafc;font-weight:800;color:#0f4c75;
+      text-transform:uppercase;font-size:.7rem;letter-spacing:.04em}
+    .pb-tbl tr.total-row td{background:#f1f5f9;font-weight:800;color:#0f4c75;
+      border-top:2px solid #0f4c75}
+    .pb-pct{display:inline-block;padding:.05rem .3rem;border-radius:4px;font-size:.65rem;
+      font-weight:700;margin-left:.3rem}
+    .pb-pct-low{background:#fee2e2;color:#991b1b}
+    .pb-pct-mid{background:#fef3c7;color:#92400e}
+    .pb-pct-high{background:#dcfce7;color:#166534}
 
     /* Truck capacity panel */
     .truck-panel{background:#f8fafc;border-radius:10px;padding:1rem 1.15rem;
@@ -172,12 +205,52 @@
       </div>
       <div class="filter-chips" id="dist-filter-chips"></div>
 
-      <!-- Summary -->
+      <!-- Summary: 4 cards. Sem filtro de SKU mostra 3 categorias por card
+           (Sementes/Químicos/Sacos); com filtro mostra só a unidade do SKU. -->
       <div class="dist-summary" id="summary">
-        <div class="dist-sum"><div class="dist-sum-lbl">Beneficiários</div><div class="dist-sum-val" id="s-benef">—</div><div class="dist-sum-sub" id="s-benef-sub">com saldo &gt; 0</div></div>
-        <div class="dist-sum"><div class="dist-sum-lbl" id="s-planned-label">Plano (kg)</div><div class="dist-sum-val" id="s-planned">—</div><div class="dist-sum-sub" id="s-planned-other">—</div></div>
-        <div class="dist-sum dist-sum-done"><div class="dist-sum-lbl" id="s-delivered-label">Entregue (kg)</div><div class="dist-sum-val" id="s-delivered">—</div><div class="dist-sum-sub" id="s-delivered-pct">—</div><div class="dist-sum-sub" id="s-delivered-other" style="color:#7c3aed">—</div></div>
-        <div class="dist-sum dist-sum-falta"><div class="dist-sum-lbl" id="s-available-label">Falta (kg)</div><div class="dist-sum-val" id="s-available">—</div><div class="dist-sum-sub" id="s-available-other">—</div></div>
+        <div class="dist-sum">
+          <div class="dist-sum-lbl">Beneficiários</div>
+          <div class="dist-sum-val" id="s-benef">—</div>
+          <div class="dist-sum-sub" id="s-benef-sub">com saldo &gt; 0</div>
+        </div>
+        <div class="dist-sum">
+          <div class="dist-sum-lbl" id="s-planned-label">Plano</div>
+          <div id="s-planned-multi" class="multi-sum"></div>
+          <div class="dist-sum-val" id="s-planned" style="display:none">—</div>
+          <div class="dist-sum-sub" id="s-planned-other">—</div>
+        </div>
+        <div class="dist-sum dist-sum-done">
+          <div class="dist-sum-lbl" id="s-delivered-label">Entregue</div>
+          <div id="s-delivered-multi" class="multi-sum"></div>
+          <div class="dist-sum-val" id="s-delivered" style="display:none">—</div>
+          <div class="dist-sum-sub" id="s-delivered-pct">—</div>
+          <div class="dist-sum-sub" id="s-delivered-other" style="color:#7c3aed">—</div>
+        </div>
+        <div class="dist-sum dist-sum-falta">
+          <div class="dist-sum-lbl" id="s-available-label">Falta</div>
+          <div id="s-available-multi" class="multi-sum"></div>
+          <div class="dist-sum-val" id="s-available" style="display:none">—</div>
+          <div class="dist-sum-sub" id="s-available-other">—</div>
+        </div>
+      </div>
+
+      <!-- Breakdown por produto (só aparece quando há dados) -->
+      <div class="prod-breakdown" id="prod-breakdown" style="display:none">
+        <h4>Detalhe por produto</h4>
+        <table class="pb-tbl">
+          <thead>
+            <tr>
+              <th style="width:30%">Produto</th>
+              <th>Plano</th>
+              <th>Realocações</th>
+              <th>Entregue</th>
+              <th>Falta</th>
+              <th>Cumprido</th>
+              <th>Benef.</th>
+            </tr>
+          </thead>
+          <tbody id="prod-breakdown-body"></tbody>
+        </table>
       </div>
 
       <!-- Truck panel -->

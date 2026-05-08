@@ -144,14 +144,15 @@
 
     if (sku) {
       // Filtro por SKU → usa só a unidade dessa categoria.
+      // Modo single-value (mostra um número grande, esconde o multi-unit).
       const [unit, v] = units[0] || ["kg", { planned: 0, committed: 0, available: 0 }];
       const fmtU = unit === "L" ? fmtL : unit === "un" ? fmtUn : fmtKg;
-      // "Cumprido" = SUM(LEAST(planned, committed)) — o que efectivamente
-      // foi entregue dentro do plano (não conta over-delivery). Mostrar isto
-      // em vez de committed bruto faz com que Plano − Cumprido = Falta ✓
       const fulfilled = v.fulfilled != null ? v.fulfilled : v.committed;
       const surplus = v.surplus || 0;
       const nOver = v.n_over_delivered || 0;
+      // Esconde os multi-line, mostra os valores únicos
+      ["#s-planned-multi", "#s-delivered-multi", "#s-available-multi"].forEach((s) => $(s).style.display = "none");
+      ["#s-planned", "#s-delivered", "#s-available"].forEach((s) => $(s).style.display = "");
       $("#s-planned-label").textContent = "Plano (" + unit + ")";
       $("#s-delivered-label").textContent = "Entregue (" + unit + ")";
       $("#s-available-label").textContent = "Falta (" + unit + ")";
@@ -160,12 +161,10 @@
       $("#s-available").textContent = fmtU(v.available || 0);
       const pct = v.planned > 0 ? ((fulfilled / v.planned) * 100).toFixed(1) + "%" : "—";
       $("#s-delivered-pct").textContent = "Cumprido: " + pct;
-      // Sub-row do Plano: original + realocado recebido (se houver)
       const realocText = v.realocado_recebido > 0 ? "Realoc. recebido: " + fmtU(v.realocado_recebido) : "";
       $("#s-planned-other").textContent = v.planned_original
         ? "Original: " + fmtU(v.planned_original) + (realocText ? "  •  " + realocText : "")
         : "—";
-      // Sub-row do Entregue: total real (com excesso) se houver over-delivery
       if (surplus > 0) {
         $("#s-delivered-other").textContent = "Total: " + fmtU(v.committed) + "  (+ " + fmtU(surplus) + " excesso a " + nOver + " benef" + (nOver === 1 ? "" : "s") + ")";
         $("#s-delivered-other").title = "Cumprido = entregue dentro do plano de cada benef. Excesso = entregue além do plano.";
@@ -176,30 +175,108 @@
       $("#s-available-other").textContent = "—";
       $("#s-available-other").title = "";
     } else {
-      // Sem filtro SKU — modo agregado (kg principal, L/un secundários).
+      // Sem filtro SKU — modo MULTI-UNIT: cada card mostra 3 linhas
+      // (Sementes kg / Sacos un / Químicos L) para vermos tudo num só sítio.
+      ["#s-planned-multi", "#s-delivered-multi", "#s-available-multi"].forEach((s) => $(s).style.display = "");
+      ["#s-planned", "#s-delivered", "#s-available"].forEach((s) => $(s).style.display = "none");
+      $("#s-planned-label").textContent = "Plano";
+      $("#s-delivered-label").textContent = "Entregue";
+      $("#s-available-label").textContent = "Falta";
+
+      // Render 3 linhas por card. Cada linha = (categoria, valor formatado).
       const fulfilledKg = kg.fulfilled != null ? kg.fulfilled : kg.committed;
-      const surplusKg = kg.surplus || 0;
-      const nOverKg = kg.n_over_delivered || 0;
-      $("#s-planned-label").textContent = "Plano (kg)";
-      $("#s-delivered-label").textContent = "Entregue (kg)";
-      $("#s-available-label").textContent = "Falta (kg)";
-      $("#s-planned").textContent   = fmtKg(kg.planned   || 0);
-      $("#s-delivered").textContent = fmtKg(fulfilledKg);
-      $("#s-available").textContent = fmtKg(kg.available || 0);
-      const pct = kg.planned > 0 ? ((fulfilledKg / kg.planned) * 100).toFixed(1) + "%" : "—";
-      $("#s-delivered-pct").textContent = "Cumprido: " + pct;
-      $("#s-planned-other").textContent =
-        [(L.planned   ? fmtL(L.planned) : null), (un.planned   ? fmtUn(un.planned)   : null)].filter(Boolean).join("  •  ") || "—";
-      if (surplusKg > 0) {
-        $("#s-delivered-other").textContent = "Total: " + fmtKg(kg.committed) + "  (+ " + fmtKg(surplusKg) + " excesso a " + nOverKg + " benefs)";
+      const fulfilledL  = L.fulfilled  != null ? L.fulfilled  : (L.committed  || 0);
+      const fulfilledUn = un.fulfilled != null ? un.fulfilled : (un.committed || 0);
+      const renderMulti = (containerId, val, fmtFn, unitLabel, catLabel) => {
+        return `<div class="ms-line">
+          <span class="ms-cat">${catLabel}</span>
+          <span class="ms-num">${val > 0 ? fmtFn(val) : '<span class="ms-empty">—</span>'} <span style="font-size:.65rem;font-weight:600;color:#94a3b8">${unitLabel}</span></span>
+        </div>`;
+      };
+      $("#s-planned-multi").innerHTML =
+        renderMulti("planned", kg.planned, fmtKg, "kg", "Sementes") +
+        renderMulti("planned", un.planned, fmtUn, "un", "Sacos") +
+        renderMulti("planned", L.planned,  fmtL,  "L",  "Químicos");
+      $("#s-delivered-multi").innerHTML =
+        renderMulti("delivered", fulfilledKg, fmtKg, "kg", "Sementes") +
+        renderMulti("delivered", fulfilledUn, fmtUn, "un", "Sacos") +
+        renderMulti("delivered", fulfilledL,  fmtL,  "L",  "Químicos");
+      $("#s-available-multi").innerHTML =
+        renderMulti("available", kg.available, fmtKg, "kg", "Sementes") +
+        renderMulti("available", un.available, fmtUn, "un", "Sacos") +
+        renderMulti("available", L.available,  fmtL,  "L",  "Químicos");
+
+      // % global (kg-equivalente, usando 0,145 por saco e tratando L como kg
+      // só para indicador agregado — não para somar nos cards)
+      const SACO = 0.145;
+      const totalPlannedKgEq = (kg.planned || 0) + (un.planned || 0) * SACO + (L.planned || 0);
+      const totalDeliveredKgEq = (fulfilledKg || 0) + (fulfilledUn || 0) * SACO + (fulfilledL || 0);
+      const pctGlobal = totalPlannedKgEq > 0 ? (totalDeliveredKgEq / totalPlannedKgEq * 100).toFixed(1) : 0;
+      $("#s-delivered-pct").textContent = "Cumprido global: " + pctGlobal + "%";
+
+      // Sub-rows extras
+      const surplusKg = kg.surplus || 0, surplusL = L.surplus || 0, surplusUn = un.surplus || 0;
+      const surplusParts = [];
+      if (surplusKg > 0) surplusParts.push(fmtKg(surplusKg));
+      if (surplusUn > 0) surplusParts.push(fmtUn(surplusUn) + " un");
+      if (surplusL > 0)  surplusParts.push(fmtL(surplusL));
+      if (surplusParts.length) {
+        $("#s-delivered-other").textContent = "Excesso: " + surplusParts.join(" • ");
+        $("#s-delivered-other").title = "Quantidade entregue além do plano (não conta para o cumprido).";
       } else {
         $("#s-delivered-other").textContent = "—";
+        $("#s-delivered-other").title = "";
       }
-      $("#s-delivered-other").title = "";
-      $("#s-available-other").textContent =
-        [(L.available ? fmtL(L.available) : null), (un.available ? fmtUn(un.available) : null)].filter(Boolean).join("  •  ") || "—";
-      $("#s-available-other").title = "";
+      $("#s-planned-other").textContent = "—";
+      $("#s-available-other").textContent = "—";
     }
+
+    // Render breakdown por produto (sempre que houver dados)
+    renderProductBreakdown(data.by_product || []);
+  }
+
+  // Renderiza tabela com Plano/Realoc/Entregue/Falta/Cumprido% por produto.
+  // Agrupa por categoria (sementes/sacos/químicos) com cabeçalhos.
+  function renderProductBreakdown(products) {
+    const tbody = $("#prod-breakdown-body");
+    const wrap = $("#prod-breakdown");
+    if (!products || !products.length) { wrap.style.display = "none"; return; }
+    wrap.style.display = "";
+    const fmtByUnit = (v, u) => {
+      if (!(v > 0)) return "—";
+      if (u === "L") return fmtL(v) + " L";
+      if (u === "un") return fmtUn(v) + " un";
+      return fmtKg(v) + " kg";
+    };
+    const pctClass = (p) => p < 30 ? "pb-pct-low" : (p < 80 ? "pb-pct-mid" : "pb-pct-high");
+    const catLabel = { sementes: "Sementes (kg)", sacos: "Sacos Hermeticos (un)", quimicos: "Químicos (L)", outros: "Outros" };
+    let html = "";
+    let lastCat = null;
+    let totals = { sementes: { p: 0, r: 0, d: 0, a: 0, b: new Set() }, sacos: { p: 0, r: 0, d: 0, a: 0, b: new Set() }, quimicos: { p: 0, r: 0, d: 0, a: 0, b: new Set() } };
+    for (const p of products) {
+      if (p.categoria !== lastCat) {
+        html += `<tr class="cat-header"><td colspan="7">${catLabel[p.categoria] || p.categoria}</td></tr>`;
+        lastCat = p.categoria;
+      }
+      const pct = p.planned > 0 ? Math.round(p.fulfilled / p.planned * 1000) / 10 : 0;
+      html += `<tr>
+        <td class="cat">${p.produto}</td>
+        <td class="num">${fmtByUnit(p.planned, p.unit)}</td>
+        <td class="num" style="color:${p.realocado_recebido > 0 ? '#dc2626' : '#94a3b8'}">${p.realocado_recebido > 0 ? '−' + fmtByUnit(p.realocado_recebido, p.unit) : '—'}</td>
+        <td class="num">${fmtByUnit(p.fulfilled, p.unit)}</td>
+        <td class="num" style="color:#dc2626;font-weight:700">${fmtByUnit(p.available, p.unit)}</td>
+        <td class="num"><span class="pb-pct ${pctClass(pct)}">${pct.toFixed(1)}%</span></td>
+        <td class="num">${fmt(p.n_benef)}</td>
+      </tr>`;
+      // Acumula totais por categoria
+      if (totals[p.categoria]) {
+        totals[p.categoria].p += p.planned;
+        totals[p.categoria].r += p.realocado_recebido;
+        totals[p.categoria].d += p.fulfilled;
+        totals[p.categoria].a += p.available;
+      }
+    }
+    tbody.innerHTML = html;
   }
 
   // ── Balance table ──────────────────────────────────────────

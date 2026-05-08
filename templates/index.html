@@ -433,12 +433,12 @@
         <div class="pvd-card">
           <div class="pvd-card-label">Total Planeado</div>
           <div class="pvd-card-value" id="pvd-planned">—</div>
-          <div class="pvd-card-unit">kg</div>
+          <div class="pvd-card-unit" id="pvd-planned-unit">kg</div>
         </div>
         <div class="pvd-card">
           <div class="pvd-card-label">Total Entregue</div>
           <div class="pvd-card-value" id="pvd-delivered">—</div>
-          <div class="pvd-card-unit">kg</div>
+          <div class="pvd-card-unit" id="pvd-delivered-unit">kg</div>
         </div>
         <div class="pvd-card pvd-card-main">
           <div class="pvd-card-label">Taxa de Execucao <span id="pvd-pct-scope" style="opacity:.75;font-weight:500">(global)</span></div>
@@ -633,7 +633,20 @@
         <canvas id="chart-district"></canvas>
       </div>
       <div class="chart-box chart-wide">
-        <h3>Evolução de Entregas por Data (por Produto)</h3>
+        <div class="tl-header">
+          <h3 style="margin:0">Evolução de Entregas por Data (por Produto)</h3>
+          <div id="timeline-filter" class="tl-filter">
+            <button class="tl-preset" data-days="7">7 dias</button>
+            <button class="tl-preset" data-days="14">14 dias</button>
+            <button class="tl-preset" data-days="30">30 dias</button>
+            <button class="tl-preset" data-days="90">90 dias</button>
+            <button class="tl-preset" data-days="all">Tudo</button>
+            <span class="tl-sep">|</span>
+            <input type="date" id="tl-from" class="tl-date">
+            <span class="tl-arrow">→</span>
+            <input type="date" id="tl-to" class="tl-date">
+          </div>
+        </div>
         <canvas id="chart-timeline"></canvas>
       </div>
     </section>

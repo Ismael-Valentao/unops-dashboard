@@ -850,11 +850,87 @@
 
   // renderVerificationChart() removed — Execucao Global chart was deleted
 
+  // Timeline period filter — começa em "7 dias" para evitar que muitos
+  // dias quebrem o layout do gráfico (barras minúsculas, X-axis ilegível).
+  // Estado mantido em memória; o utilizador pode alternar entre presets
+  // (7/14/30/90/all) ou usar datepickers para um intervalo custom.
+  const tlState = { mode: "preset", days: 7, from: null, to: null };
+
+  function applyTimelineFilter(rows) {
+    if (tlState.mode === "preset" && tlState.days === "all") return rows;
+    let fromIso, toIso;
+    if (tlState.mode === "custom") {
+      fromIso = tlState.from || null;
+      toIso   = tlState.to   || null;
+      if (!fromIso && !toIso) return rows; // sem datas custom = mostrar tudo
+    } else {
+      // Janela "últimos N dias" baseada na MAIS RECENTE delivery_date dos
+      // dados (não na data de hoje) — assim em fins-de-semana ou após
+      // uma pausa o gráfico continua a mostrar algo útil.
+      let maxDate = "";
+      rows.forEach((r) => { if (r.delivery_date_iso > maxDate) maxDate = r.delivery_date_iso; });
+      if (!maxDate) return rows;
+      const d = new Date(maxDate);
+      d.setDate(d.getDate() - (Number(tlState.days) - 1));
+      fromIso = d.toISOString().slice(0, 10);
+      toIso = maxDate;
+    }
+    return rows.filter((r) => {
+      const d = r.delivery_date_iso || "";
+      if (!d) return false;
+      if (fromIso && d < fromIso) return false;
+      if (toIso   && d > toIso)   return false;
+      return true;
+    });
+  }
+
+  // Determina o intervalo [from, to] que o gráfico vai mostrar.
+  // Retorna sempre limites válidos (ISO yyyy-mm-dd) — mesmo quando não há
+  // entregas, escolhemos o último dia disponível ou hoje como fallback.
+  function getTimelineRange(rows) {
+    let maxDate = "";
+    rows.forEach((r) => { if (r.delivery_date_iso > maxDate) maxDate = r.delivery_date_iso; });
+    if (tlState.mode === "custom" && (tlState.from || tlState.to)) {
+      // Custom dates — usa o que o user pôs, com fallbacks razoáveis
+      let minOverall = "9999-99-99";
+      rows.forEach((r) => { if (r.delivery_date_iso && r.delivery_date_iso < minOverall) minOverall = r.delivery_date_iso; });
+      return {
+        from: tlState.from || (minOverall === "9999-99-99" ? maxDate : minOverall),
+        to:   tlState.to   || maxDate || tlState.from,
+      };
+    }
+    if (tlState.mode === "preset" && tlState.days === "all") {
+      let minOverall = "9999-99-99";
+      rows.forEach((r) => { if (r.delivery_date_iso && r.delivery_date_iso < minOverall) minOverall = r.delivery_date_iso; });
+      return { from: minOverall === "9999-99-99" ? maxDate : minOverall, to: maxDate };
+    }
+    // Preset N dias — calcula janela contínua a contar para trás do maxDate
+    if (!maxDate) return { from: null, to: null };
+    const d = new Date(maxDate);
+    d.setDate(d.getDate() - (Number(tlState.days) - 1));
+    return { from: d.toISOString().slice(0, 10), to: maxDate };
+  }
+
+  // Gera lista de datas ISO entre 2 limites (inclusive). Garante CONTINUIDADE
+  // — dias sem entregas aparecem na lista (com 0 no gráfico) em vez de
+  // serem saltados, evitando o efeito de "buraco" entre datas distantes.
+  function expandDateRange(fromIso, toIso) {
+    if (!fromIso || !toIso) return [];
+    const out = [];
+    const d = new Date(fromIso);
+    const end = new Date(toIso);
+    while (d <= end) {
+      out.push(d.toISOString().slice(0, 10));
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
+  }
+
   function renderTimelineChart() {
-    // Stacked bars per day, one stack per product, value = delivered kg
     const dateProductMap = {}; // { iso: { product: kg } }
     const productSet = new Set();
-    filteredRows.forEach((r) => {
+    const rowsForChart = applyTimelineFilter(filteredRows);
+    rowsForChart.forEach((r) => {
       const d = r.delivery_date_iso || "";
       if (!d) return;
       const product = r.product || "Sem produto";
@@ -864,7 +940,20 @@
       productSet.add(product);
     });
 
-    const sortedDates = Object.keys(dateProductMap).sort();
+    // Expande para TODOS os dias do período (sem saltos). Para presets
+    // numéricos (7/14/30/90) e custom-dates, geramos a sequência contínua
+    // — dias sem entregas aparecem como barra a 0. Para "Tudo" (período
+    // potencialmente longo) mantemos só os dias com entregas para o
+    // gráfico não ficar com centenas de barras vazias.
+    let sortedDates;
+    const expand = !(tlState.mode === "preset" && tlState.days === "all");
+    if (expand) {
+      const range = getTimelineRange(filteredRows);
+      sortedDates = expandDateRange(range.from, range.to);
+      sortedDates.forEach((iso) => { if (!dateProductMap[iso]) dateProductMap[iso] = {}; });
+    } else {
+      sortedDates = Object.keys(dateProductMap).sort();
+    }
     const labels = sortedDates.map((iso) => {
       const parts = iso.split("-");
       return parts[2] + "/" + parts[1] + "/" + parts[0];
@@ -1776,9 +1865,24 @@
       renderProvRankTable(provRank);
     }
 
-    // Cards
-    $("#pvd-planned").textContent = fmtDec(t.planned_kg);
-    $("#pvd-delivered").textContent = fmtDec(t.delivered_kg);
+    // Cards — quando o filtro de produto é Sacos Hermeticos, mostrar
+    // valores em UNIDADES (que é como sacos são contados no terreno).
+    // Caso contrário, mostrar em kg (incluindo sacos convertidos a 0.145).
+    const productFilterCard = fProduct.value;
+    const filterIsSacosCard = /saco|hermetic/i.test(String(productFilterCard || ""));
+    const plannedUnit = $("#pvd-planned-unit");
+    const deliveredUnit = $("#pvd-delivered-unit");
+    if (filterIsSacosCard) {
+      $("#pvd-planned").textContent = fmt(Math.round((t.planned_kg || 0) / SACO_KG_PER_UNIT));
+      $("#pvd-delivered").textContent = fmt(Math.round((t.delivered_kg || 0) / SACO_KG_PER_UNIT));
+      if (plannedUnit) plannedUnit.textContent = "un";
+      if (deliveredUnit) deliveredUnit.textContent = "un";
+    } else {
+      $("#pvd-planned").textContent = fmtDec(t.planned_kg);
+      $("#pvd-delivered").textContent = fmtDec(t.delivered_kg);
+      if (plannedUnit) plannedUnit.textContent = "kg";
+      if (deliveredUnit) deliveredUnit.textContent = "kg";
+    }
     $("#pvd-pct").textContent = t.pct + "%";
     $("#pvd-progress-bar").style.width = Math.min(t.pct, 100) + "%";
 
@@ -2214,6 +2318,39 @@
       renderTable();
       $("#table-search").focus();
     });
+
+    // Timeline chart period filter
+    function activateTimelinePreset(daysAttr) {
+      tlState.mode = "preset";
+      tlState.days = daysAttr === "all" ? "all" : Number(daysAttr);
+      // Limpa datepickers (já não são o filtro activo)
+      const fromEl = $("#tl-from"), toEl = $("#tl-to");
+      if (fromEl) fromEl.value = "";
+      if (toEl)   toEl.value   = "";
+      // Visual: marca botão activo
+      document.querySelectorAll("#timeline-filter .tl-preset").forEach((b) => {
+        b.classList.toggle("active", b.dataset.days === String(daysAttr));
+      });
+      renderTimelineChart();
+    }
+    document.querySelectorAll("#timeline-filter .tl-preset").forEach((btn) => {
+      btn.addEventListener("click", () => activateTimelinePreset(btn.dataset.days));
+    });
+    function applyCustomDates() {
+      const from = ($("#tl-from") || {}).value || "";
+      const to   = ($("#tl-to")   || {}).value || "";
+      if (!from && !to) return;
+      tlState.mode = "custom";
+      tlState.from = from || null;
+      tlState.to   = to   || null;
+      // Tira destaque dos preset buttons
+      document.querySelectorAll("#timeline-filter .tl-preset").forEach((b) => b.classList.remove("active"));
+      renderTimelineChart();
+    }
+    if ($("#tl-from")) $("#tl-from").addEventListener("change", applyCustomDates);
+    if ($("#tl-to"))   $("#tl-to").addEventListener("change", applyCustomDates);
+    // Inicial: marca o "7 dias" como activo
+    activateTimelinePreset("7");
 
     // Planned vs Delivered
     $("#pvd-chart-province").addEventListener("change", () => {
