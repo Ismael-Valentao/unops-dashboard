@@ -4,7 +4,16 @@
   "description": "AQI Delivery Monitoring Dashboard",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js"
+    "start": "node app.js",
+    "service:diagnose":  "node scripts/diagnose-services.js",
+    "service:install":   "node scripts/install-all-services.js",
+    "service:uninstall": "node scripts/uninstall-all-services.js",
+    "service:install-app":   "node scripts/install-service.js",
+    "service:uninstall-app": "node scripts/uninstall-service.js",
+    "service:install-mysql":   "node scripts/install-mysql-service.js",
+    "service:uninstall-mysql": "node scripts/install-mysql-service.js --uninstall",
+    "service:status": "sc query \"AQI Dashboard\" && sc query \"MySQL_AQI\"",
+    "service:restart": "net stop \"AQI Dashboard\" & net start \"AQI Dashboard\""
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -16,6 +25,7 @@
     "express": "^4.21.0",
     "multer": "^2.1.1",
     "mysql2": "^3.20.0",
+    "node-windows": "^1.0.0-beta.8",
     "pdf-parse": "^2.4.5",
     "xlsx": "^0.18.5"
   }

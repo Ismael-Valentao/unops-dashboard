@@ -3,6 +3,10 @@ data/snapshots.db
 data/snapshots.db-wal
 data/snapshots.db-shm
 data/uploads/
+data/maap-conflitos-*.xlsx
+data/servicos.bak.*.xlsx
+data/sample-*.pdf
+data/sample-*.xlsx
 *.output
 test_*.xlsx
 verify.js
@@ -10,4 +14,8 @@ app.py
 requirements.txt
 .env
 .env.local
+# Logs locais de execução / serviços Windows
+server.log
+daemon/
+*.log
 
