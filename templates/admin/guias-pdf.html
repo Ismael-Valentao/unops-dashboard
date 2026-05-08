@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Converter Guias PDF → Excel</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    .upload-zone {
+      border: 2px dashed #cbd5e1; border-radius: 12px; padding: 2.5rem 1.5rem;
+      text-align: center; background: #f8fafc; transition: all .15s;
+      cursor: pointer; margin: 1rem 0;
+    }
+    .upload-zone:hover { border-color: #0f4c75; background: #eff6ff; }
+    .upload-zone.drag-over { border-color: #0f4c75; background: #dbeafe;
+      box-shadow: 0 0 0 4px rgba(15,76,117,.15); }
+    .upload-zone .ico { font-size: 3rem; opacity: .4; margin-bottom: .5rem }
+    .upload-zone .hint { color: #64748b; font-size: .85rem; margin-top: .4rem }
+    .upload-zone input[type=file] { display: none }
+    .files-list { margin: 1rem 0; display: flex; flex-direction: column; gap: .35rem }
+    .file-item { display: flex; align-items: center; gap: .75rem; padding: .55rem .75rem;
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; font-size: .85rem }
+    .file-item .name { flex: 1; font-family: ui-monospace, monospace; font-size: .8rem; color: #334155 }
+    .file-item .size { color: #94a3b8; font-size: .75rem }
+    .file-item button { background: #fee2e2; color: #991b1b; border: 0; padding: .25rem .5rem;
+      border-radius: 4px; cursor: pointer; font-size: .75rem }
+    .actions { display: flex; gap: .75rem; justify-content: flex-end; margin-top: 1rem }
+    .actions button.btn-primary { background: #0f4c75; color: #fff }
+    .actions button.btn-primary:hover { background: #0c3a5c }
+    .actions button:disabled { opacity: .5; cursor: not-allowed }
+    .status-box { padding: .85rem 1rem; border-radius: 8px; margin-top: 1rem;
+      font-size: .85rem; display: none }
+    .status-box.show { display: block }
+    .status-box.processing { background: #fef3c7; border-left: 4px solid #d97706; color: #78350f }
+    .status-box.success { background: #dcfce7; border-left: 4px solid #16a34a; color: #166534 }
+    .status-box.error { background: #fee2e2; border-left: 4px solid #dc2626; color: #991b1b }
+    .info-card { background: #eff6ff; border-left: 4px solid #3b82f6; padding: .85rem 1rem;
+      border-radius: 6px; margin-bottom: 1rem; font-size: .82rem; color: #1e40af }
+    .info-card strong { color: #1e3a8a }
+    .col-sample { font-size: .72rem; color: #64748b; margin-top: .8rem; padding: .55rem .75rem;
+      background: #f8fafc; border-radius: 6px; font-family: ui-monospace, monospace }
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Converter Guias PDF → Excel</h1>
+      <span class="admin-sub">Carrega 1 ou mais PDFs de Guia Transporte (ADICIONAL Logistics) e baixa um Excel consolidado</span>
+    </header>
+
+    <section class="admin-section">
+      <div class="info-card">
+        <strong>Como funciona:</strong> O PDF deve ser a Guia Transporte da ADICIONAL Logistics
+        (formato com ENTREGA / Código Adicional ADSN). Cada beneficiário gera 1 linha no Excel
+        de saída, no mesmo formato que a equipa AQI usa (<code>guias_*.xlsx</code>).
+        Pode-se carregar vários PDFs de uma vez — todos os ADSNs ficam no mesmo Excel.
+      </div>
+
+      <label for="file-input" class="upload-zone" id="upload-zone">
+        <div class="ico">📄</div>
+        <div style="font-weight:600;color:#0f4c75">Clica ou arrasta PDFs aqui</div>
+        <div class="hint">Aceita até 20 ficheiros (max 30 MB cada)</div>
+        <input type="file" id="file-input" accept=".pdf" multiple>
+      </label>
+
+      <div class="files-list" id="files-list"></div>
+
+      <div class="actions">
+        <button class="btn" id="btn-clear" disabled>Limpar</button>
+        <button class="btn btn-primary" id="btn-convert" disabled>Converter para Excel</button>
+      </div>
+
+      <div class="status-box" id="status"></div>
+
+      <div class="col-sample">
+        <strong style="color:#475569">Colunas extraídas:</strong> Código Serviço (ADSN), Nome Extensionista,
+        Telf Extensionista, NUIT, Matrícula, Artigo, GTU/GTS, Distrito, Volumes (kg), Peso (kg)
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { toast } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+      const fileInput = $("#file-input");
+      const uploadZone = $("#upload-zone");
+      const filesList = $("#files-list");
+      const btnConvert = $("#btn-convert");
+      const btnClear = $("#btn-clear");
+      const statusBox = $("#status");
+      let files = [];
+
+      function fmtSize(bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+        return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+      }
+
+      function renderFiles() {
+        filesList.innerHTML = files.map((f, i) => `
+          <div class="file-item">
+            <span style="font-size:1.2rem">📄</span>
+            <span class="name">${f.name}</span>
+            <span class="size">${fmtSize(f.size)}</span>
+            <button data-idx="${i}">Remover</button>
+          </div>
+        `).join("");
+        filesList.querySelectorAll("button").forEach((b) => {
+          b.addEventListener("click", () => {
+            files.splice(Number(b.dataset.idx), 1);
+            renderFiles();
+            updateButtons();
+          });
+        });
+      }
+
+      function updateButtons() {
+        btnConvert.disabled = files.length === 0;
+        btnClear.disabled = files.length === 0;
+      }
+
+      function addFiles(newFiles) {
+        for (const f of newFiles) {
+          if (!/\.pdf$/i.test(f.name)) {
+            toast("Ignorado (não é PDF): " + f.name, { kind: "warn" });
+            continue;
+          }
+          if (f.size > 30 * 1024 * 1024) {
+            toast("Demasiado grande (max 30MB): " + f.name, { kind: "err" });
+            continue;
+          }
+          files.push(f);
+        }
+        renderFiles();
+        updateButtons();
+      }
+
+      function setStatus(kind, html) {
+        statusBox.className = "status-box show " + kind;
+        statusBox.innerHTML = html;
+      }
+      function clearStatus() {
+        statusBox.className = "status-box";
+        statusBox.innerHTML = "";
+      }
+
+      // Drag & drop
+      ["dragenter", "dragover"].forEach((ev) => {
+        uploadZone.addEventListener(ev, (e) => { e.preventDefault(); uploadZone.classList.add("drag-over"); });
+      });
+      ["dragleave", "drop"].forEach((ev) => {
+        uploadZone.addEventListener(ev, (e) => { e.preventDefault(); uploadZone.classList.remove("drag-over"); });
+      });
+      uploadZone.addEventListener("drop", (e) => {
+        addFiles(e.dataTransfer.files);
+      });
+      fileInput.addEventListener("change", (e) => {
+        addFiles(e.target.files);
+        fileInput.value = ""; // permite re-seleccionar mesmo ficheiro
+      });
+
+      btnClear.addEventListener("click", () => {
+        files = [];
+        renderFiles();
+        updateButtons();
+        clearStatus();
+      });
+
+      btnConvert.addEventListener("click", async () => {
+        if (!files.length) return;
+        btnConvert.disabled = true;
+        btnClear.disabled = true;
+        setStatus("processing", `<strong>A processar ${files.length} ficheiro${files.length === 1 ? "" : "s"}…</strong> Pode demorar alguns segundos por PDF.`);
+
+        const fd = new FormData();
+        for (const f of files) fd.append("files", f);
+        try {
+          const r = await fetch("/admin/api/distribution/guias-pdf-to-excel", {
+            method: "POST",
+            body: fd,
+            credentials: "same-origin",
+          });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({ error: "Erro " + r.status }));
+            throw new Error(err.error || "Falhou (" + r.status + ")");
+          }
+          // Ficheiro Excel — extrai filename do header
+          const cd = r.headers.get("Content-Disposition") || "";
+          const m = cd.match(/filename="?([^"]+)"?/);
+          const filename = m ? m[1] : "guias_extraidas.xlsx";
+          const blob = await r.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          a.click();
+          URL.revokeObjectURL(url);
+          setStatus("success",
+            `<strong>✓ Excel descarregado: ${filename}</strong>` +
+            `<div style="margin-top:.4rem;font-size:.78rem">Verifica os dados antes de usar — alguns PDFs podem ter formatos especiais que precisem de ajuste manual.</div>`);
+          toast("Excel gerado com sucesso", { kind: "ok" });
+          // Limpa lista após sucesso
+          files = [];
+          renderFiles();
+        } catch (e) {
+          setStatus("error", `<strong>Erro:</strong> ${e.message}`);
+          toast("Erro: " + e.message, { kind: "err", duration: 6000 });
+        } finally {
+          btnConvert.disabled = files.length === 0;
+          btnClear.disabled = files.length === 0;
+        }
+      });
+
+      updateButtons();
+    })();
+
+    // Renderiza a sidebar — chave tem de bater com a entrada em static/admin.js → NAV
+    AdminUI.renderLayout("guias-pdf");
+  </script>
+</body>
+</html>

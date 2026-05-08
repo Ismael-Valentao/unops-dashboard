@@ -1216,6 +1216,7 @@ const distUpload = multer({
 
 // ── Pages (HTML) ────────────────────────────────────────────
 router.get("/distribuicao",        (_req, res) => send(res, "distribuicao.html"));
+router.get("/guias-pdf",           (_req, res) => send(res, "guias-pdf.html"));
 router.get("/servicos",              (_req, res) => send(res, "servicos.html"));
 router.get("/servicos/:id",          (_req, res) => send(res, "servico-detalhe.html"));
 router.get("/servicos/:id/roteiro",  (_req, res) => send(res, "servico-roteiro.html"));
@@ -1443,8 +1444,9 @@ router.post("/api/distribution/services", express.json(), auth.requireRole("oper
   }
 }));
 
-// IMPORTANTE: rotas estáticas (pending-approval) ANTES da paramétrica /:id
-// caso contrário Express casa "pending-approval" como :id e dá 404.
+// IMPORTANTE: rotas estáticas (pending-approval, bulk/*) ANTES da
+// paramétrica /:id — caso contrário Express casa "pending-approval" ou
+// "bulk" como :id e a chamada acaba a falhar com "Serviço não existe".
 router.get("/api/distribution/services/pending-approval", ah(async (_req, res) => {
   res.json({ rows: await DistServices.listPendingApproval() });
 }));
@@ -1456,6 +1458,81 @@ router.get("/api/distribution/services", ah(async (req, res) => {
   if (Array.isArray(result)) res.json({ rows: result, counts });
   else res.json({ ...result, counts });
 }));
+
+// ── Bulk operations ────────────────────────────────────────
+// Têm de estar ANTES das rotas paramétricas /:id/X (linha ~1500), senão
+// Express captura "bulk" como :id e os handlers /:id/in-transit, /:id/cancel
+// e /:id/approve são chamados em vez destes — resultando em "Serviço não
+// existe" (preflightCheck não encontra serviço com id="bulk").
+router.post("/api/distribution/services/bulk/deliver",
+  express.json(),
+  auth.requireRole("operator", "admin", "superadmin"),
+  ah(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
+    const result = await DistServices.bulkSetDelivered(ids);
+    await auth.logAction(req, "bulk_deliver", "delivery_service", null,
+      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length }));
+    res.json(result);
+  })
+);
+
+router.post("/api/distribution/services/bulk/cancel",
+  express.json(),
+  auth.requireRole("admin", "superadmin"),
+  ah(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
+    const opts = { category: req.body?.category, reason: req.body?.reason };
+    const result = await DistServices.bulkCancel(ids, opts);
+    await auth.logAction(req, "bulk_cancel", "delivery_service", null,
+      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length, ...opts }));
+    res.json(result);
+  })
+);
+
+// Bulk approve — aprovar N serviços pendentes de uma vez (admin+)
+router.post("/api/distribution/services/bulk/approve",
+  express.json(),
+  auth.requireRole("admin", "superadmin"),
+  ah(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
+    const result = await DistServices.bulkApprove(ids, req.user?.id, req.body?.notes);
+    await auth.logAction(req, "bulk_approve", "delivery_service", null,
+      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length }));
+    res.json(result);
+  })
+);
+
+// Bulk in-transit — pôr N serviços em trânsito de uma vez
+router.post("/api/distribution/services/bulk/in-transit",
+  express.json(),
+  auth.requireRole("operator", "admin", "superadmin"),
+  ah(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
+    // Auto-aprovar todos os pending desta lista se o utilizador é admin+,
+    // antes de bulk in-transit (cobre o caso "estava pendente, agora vou pôr todos a andar")
+    const role = req.user?.role;
+    if (role === "admin" || role === "superadmin") {
+      const { query: q } = require("../db/mysql");
+      const placeholders = ids.map(() => "?").join(",");
+      const pending = await q(
+        `SELECT id FROM delivery_services WHERE id IN (${placeholders}) AND approval_status = 'pending'`,
+        ids
+      );
+      for (const p of pending) {
+        await DistServices.approve(p.id, req.user.id, "Auto-aprovado em bulk in-transit (utilizador é " + role + ")");
+        await auth.logAction(req, "approve", "delivery_service", p.id, "auto-aprovado em bulk in-transit");
+      }
+    }
+    const result = await DistServices.bulkSetInTransit(ids, { force: req.body?.force });
+    await auth.logAction(req, "bulk_in_transit", "delivery_service", null,
+      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length, needs_confirm: result.needs_confirm.length }));
+    res.json(result);
+  })
+);
 
 router.get("/api/distribution/services/:id", ah(async (req, res) => {
   const svc = await DistServices.byId(req.params.id);
@@ -1586,77 +1663,6 @@ router.get("/api/distribution/cancel-categories", ah(async (_req, res) => {
   res.json({ categories: DistServices.CANCEL_CATEGORIES });
 }));
 
-// ── Bulk operations ────────────────────────────────────────
-router.post("/api/distribution/services/bulk/deliver",
-  express.json(),
-  auth.requireRole("operator", "admin", "superadmin"),
-  ah(async (req, res) => {
-    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
-    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
-    const result = await DistServices.bulkSetDelivered(ids);
-    await auth.logAction(req, "bulk_deliver", "delivery_service", null,
-      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length }));
-    res.json(result);
-  })
-);
-
-router.post("/api/distribution/services/bulk/cancel",
-  express.json(),
-  auth.requireRole("admin", "superadmin"),
-  ah(async (req, res) => {
-    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
-    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
-    const opts = { category: req.body?.category, reason: req.body?.reason };
-    const result = await DistServices.bulkCancel(ids, opts);
-    await auth.logAction(req, "bulk_cancel", "delivery_service", null,
-      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length, ...opts }));
-    res.json(result);
-  })
-);
-
-// Bulk approve — aprovar N serviços pendentes de uma vez (admin+)
-router.post("/api/distribution/services/bulk/approve",
-  express.json(),
-  auth.requireRole("admin", "superadmin"),
-  ah(async (req, res) => {
-    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
-    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
-    const result = await DistServices.bulkApprove(ids, req.user?.id, req.body?.notes);
-    await auth.logAction(req, "bulk_approve", "delivery_service", null,
-      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length }));
-    res.json(result);
-  })
-);
-
-// Bulk in-transit — pôr N serviços em trânsito de uma vez
-router.post("/api/distribution/services/bulk/in-transit",
-  express.json(),
-  auth.requireRole("operator", "admin", "superadmin"),
-  ah(async (req, res) => {
-    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
-    if (!ids.length) return jsonError(res, 400, "Nenhum serviço seleccionado");
-    // Auto-aprovar todos os pending desta lista se o utilizador é admin+,
-    // antes de bulk in-transit (cobre o caso "estava pendente, agora vou pôr todos a andar")
-    const role = req.user?.role;
-    if (role === "admin" || role === "superadmin") {
-      const { query: q } = require("../db/mysql");
-      const placeholders = ids.map(() => "?").join(",");
-      const pending = await q(
-        `SELECT id FROM delivery_services WHERE id IN (${placeholders}) AND approval_status = 'pending'`,
-        ids
-      );
-      for (const p of pending) {
-        await DistServices.approve(p.id, req.user.id, "Auto-aprovado em bulk in-transit (utilizador é " + role + ")");
-        await auth.logAction(req, "approve", "delivery_service", p.id, "auto-aprovado em bulk in-transit");
-      }
-    }
-    const result = await DistServices.bulkSetInTransit(ids, { force: req.body?.force });
-    await auth.logAction(req, "bulk_in_transit", "delivery_service", null,
-      JSON.stringify({ count: ids.length, ok: result.ok.length, failed: result.failed.length, needs_confirm: result.needs_confirm.length }));
-    res.json(result);
-  })
-);
-
 router.get("/api/distribution/in-transit", ah(async (_req, res) => {
   res.json({ rows: await DistServices.inTransit() });
 }));
@@ -1705,6 +1711,226 @@ router.post("/api/distribution/bootstrap/services",
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
+  })
+);
+
+// Service → Excel: pega num serviço criado na plataforma e exporta o
+// mesmo formato Excel que a página /admin/guias-pdf produz a partir de
+// PDFs. Útil quando ainda não tens o PDF da ADICIONAL mas já tens o
+// serviço criado e queres preparar o Excel para enviar.
+//
+// Nota: como o serviço foi criado internamente (sem ADSN/GTU vindos do
+// sistema da ADICIONAL), as colunas "Código Serviço" e "GTU/GTS" ficam
+// VAZIAS — preenches-as depois quando vier a guia oficial.
+router.get("/api/distribution/services/:id/guias-excel",
+  ah(async (req, res) => {
+    const svc = await DistServices.byIdForRoteiro(req.params.id);
+    if (!svc) return jsonError(res, 404, "Serviço não encontrado");
+    // byIdForRoteiro retorna `beneficiaries` (agrupado), não `items`.
+    // Re-achatamos para uma lista de items, anotados com info do beneficiário.
+    const flatItems = [];
+    for (const b of (svc.beneficiaries || [])) {
+      for (const it of (b.items || [])) {
+        flatItems.push({
+          sku: it.sku,
+          product_name: it.product_name,
+          qty: Number(it.qty) || 0,
+          unit: it.unit,
+          beneficiary_name: b.beneficiary_name,
+          nuit: b.nuit,
+          contact: b.contact,
+          district: b.district || svc.district,
+          province: b.province || svc.province,
+        });
+      }
+    }
+    if (!flatItems.length) {
+      return jsonError(res, 400, "Serviço não tem itens — nada para exportar.");
+    }
+
+    const ExcelJS = require("exceljs");
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "AQI Dashboard — Service→Excel";
+    wb.created = new Date();
+    const ws = wb.addWorksheet("Guias");
+    ws.columns = [
+      { header: "Código Serviço",     key: "adsn",      width: 24 },
+      { header: "Nome Extensionista", key: "nome",      width: 32 },
+      { header: "Telf Extensionista", key: "tel",       width: 14 },
+      { header: "NUIT",               key: "nuit",      width: 12 },
+      { header: "Matrícula",          key: "matricula", width: 16 },
+      { header: "Artigo",             key: "artigo",    width: 14 },
+      { header: "GTU/GTS",            key: "gtu",       width: 18 },
+      { header: "Distrito",           key: "distrito",  width: 18 },
+      { header: "Volumes (kg)",       key: "volumes",   width: 14 },
+      { header: "Peso (kg)",          key: "peso",      width: 14 },
+    ];
+    ws.getRow(1).eachCell((c) => {
+      c.font = { bold: true };
+      c.alignment = { horizontal: "center" };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+      c.border = { bottom: { style: "thin", color: { argb: "FF94A3B8" } } };
+    });
+
+    // Sacos hermeticos = 0,145 kg/un. Para os outros (kg/L) volume = peso = qty.
+    const SACO_KG = 0.145;
+    let totalVolumes = 0, totalPeso = 0;
+
+    for (const it of flatItems) {
+      const isSaco = it.sku === "SUSSACO" || /saco|hermet/i.test(it.product_name || "");
+      const qty = Number(it.qty) || 0;
+      const volumes = isSaco ? qty : qty;               // unidade do item (un ou kg)
+      const peso    = isSaco ? qty * SACO_KG : qty;     // sempre em kg-equivalente
+
+      // Artigo no formato AQI: "MILHO KG", "FEIJAO KG", etc.
+      // Normalizamos do product_name: maiúsculas, remove acentos.
+      const artigoBase = (it.product_name || it.sku || "")
+        .toUpperCase()
+        .normalize("NFD").replace(/[̀-ͯ]/g, "");
+      const artigoSuffix = it.unit ? " " + (it.unit === "un" ? "UN" : it.unit.toUpperCase()) : "";
+      const artigo = artigoBase + artigoSuffix;
+
+      ws.addRow({
+        adsn:      "",                                   // ainda sem ADSN
+        nome:      it.beneficiary_name || "",
+        tel:       it.contact || "",
+        nuit:      it.nuit || "",
+        matricula: svc.truck_plate || "",
+        artigo:    artigo,
+        gtu:       "",                                   // ainda sem GTU
+        distrito:  String(it.district || svc.district || "").toUpperCase(),
+        volumes,
+        peso,
+      });
+      totalVolumes += volumes;
+      totalPeso += peso;
+    }
+
+    // Linha TOTAL no fim (estilo do exemplo)
+    const totalRow = ws.addRow({ adsn: "TOTAL", volumes: totalVolumes, peso: totalPeso });
+    totalRow.eachCell((c) => { c.font = { bold: true }; });
+    totalRow.getCell("adsn").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+
+    const safeName = String(svc.service_number).replace(/[^a-zA-Z0-9_-]/g, "_");
+    const outName = `guias_${safeName}.xlsx`;
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${outName}"`);
+    await wb.xlsx.write(res);
+    res.end();
+
+    await auth.logAction(req, "service_to_excel", "delivery_service", svc.id,
+      JSON.stringify({ service_number: svc.service_number, items: svc.items.length }));
+  })
+);
+
+// PDF → Excel: extrai todas as guias do PDF (ADICIONAL Guia Transporte) e
+// devolve um Excel com a tabela "Guias" no formato que a equipa AQI usa.
+// Aceita 1 PDF; pode aceitar N e concatenar resultados (todas as guias num
+// só Excel) — útil para múltiplos camiões/dias.
+//
+// Body: multipart com campo "files" (1 ou N PDFs)
+// Response: ficheiro .xlsx para download (não JSON)
+router.post("/api/distribution/guias-pdf-to-excel",
+  auth.requireRole("viewer", "operator", "admin", "superadmin"),
+  distUpload.array("files", 20),
+  ah(async (req, res) => {
+    if (!req.files || !req.files.length) return jsonError(res, 400, "Nenhum PDF fornecido");
+    const fs = require("fs");
+
+    // 1. Parse cada PDF e agrega deliveries
+    const allDeliveries = [];
+    const fileSummary = [];
+    for (const f of req.files) {
+      try {
+        const buf = fs.readFileSync(f.path);
+        const result = await parseAdicionalGuia(buf);
+        for (const d of (result.deliveries || [])) {
+          allDeliveries.push({ ...d, _source_file: f.originalname });
+        }
+        fileSummary.push({
+          file: f.originalname,
+          deliveries: result.deliveries.length,
+          warnings: result.warnings.length,
+        });
+      } catch (e) {
+        fileSummary.push({ file: f.originalname, error: e.message });
+      } finally {
+        try { fs.unlinkSync(f.path); } catch (_) { /* ignore */ }
+      }
+    }
+
+    if (!allDeliveries.length) {
+      return jsonError(res, 400, "Nenhuma guia (ADSN) detectada nos PDFs. Verifica se o ficheiro é a Guia Transporte ADICIONAL.");
+    }
+
+    // 2. Construir Excel no formato igual ao guias_*.xlsx do utilizador
+    const ExcelJS = require("exceljs");
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "AQI Dashboard — PDF→Excel";
+    wb.created = new Date();
+    const ws = wb.addWorksheet("Guias");
+    ws.columns = [
+      { header: "Código Serviço",     key: "adsn",      width: 24 },
+      { header: "Nome Extensionista", key: "nome",      width: 32 },
+      { header: "Telf Extensionista", key: "tel",       width: 14 },
+      { header: "NUIT",               key: "nuit",      width: 12 },
+      { header: "Matrícula",          key: "matricula", width: 16 },
+      { header: "Artigo",             key: "artigo",    width: 14 },
+      { header: "GTU/GTS",            key: "gtu",       width: 18 },
+      { header: "Distrito",           key: "distrito",  width: 18 },
+      { header: "Volumes (kg)",       key: "volumes",   width: 14 },
+      { header: "Peso (kg)",          key: "peso",      width: 14 },
+    ];
+    // Estilo header
+    ws.getRow(1).eachCell((c) => {
+      c.font = { bold: true };
+      c.alignment = { horizontal: "center" };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+      c.border = { bottom: { style: "thin", color: { argb: "FF94A3B8" } } };
+    });
+
+    // 3. Adicionar linhas — distrito em UPPERCASE para casar com formato AQI
+    let totalVolumes = 0, totalPeso = 0;
+    for (const d of allDeliveries) {
+      ws.addRow({
+        adsn:      d.adsn || "",
+        nome:      d.destinatario || "",
+        tel:       d.telefone_destinatario || "",
+        nuit:      d.nuit || "",
+        matricula: d.matricula || "",
+        artigo:    d.sku_label || "",
+        gtu:       d.gtu || "",
+        distrito:  (d.distrito || "").toUpperCase(),
+        volumes:   d.volumes || d.qty || 0,
+        peso:      d.peso || d.qty || 0,
+      });
+      totalVolumes += Number(d.volumes || d.qty || 0);
+      totalPeso += Number(d.peso || d.qty || 0);
+    }
+    // Linha TOTAL no fim (estilo do exemplo)
+    const totalRow = ws.addRow({
+      adsn: "TOTAL",
+      volumes: totalVolumes,
+      peso: totalPeso,
+    });
+    totalRow.eachCell((c) => { c.font = { bold: true }; });
+    totalRow.getCell("adsn").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+
+    // 4. Nome do ficheiro: deriva do 1º ficheiro (ou genérico)
+    const baseName = req.files.length === 1
+      ? req.files[0].originalname.replace(/\.pdf$/i, "")
+      : `guias_extraidas_${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
+    const outName = `guias_${baseName.replace(/[^a-zA-Z0-9_-]/g, "_")}.xlsx`;
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${outName}"`);
+    await wb.xlsx.write(res);
+    res.end();
+
+    // Audit log
+    await auth.logAction(req, "guias_pdf_to_excel", null, null,
+      JSON.stringify({ files: fileSummary, total_deliveries: allDeliveries.length }));
   })
 );
 

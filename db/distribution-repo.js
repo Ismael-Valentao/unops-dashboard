@@ -263,6 +263,60 @@ const Balances = {
       `SELECT COUNT(DISTINCT extensionist_id) AS n FROM delivery_balances ${w}`,
       params
     ))[0]?.n || 0;
+
+    // Breakdown por produto — útil para mostrar tudo num só relance
+    // (sementes em kg, químicos em L, sacos em un) sem precisar de filtrar.
+    // Canonicaliza nomes (Feijão Vulgar → Feijão, Emamectim Benzoato → Emamectim,
+    // Imadocloprid → Imidacloprid) para colapsar duplicados.
+    const byProductRaw = await query(
+      `SELECT
+         CASE
+           WHEN sku='MXIXMILHOKG' OR product_name LIKE '%Milho%' THEN 'Milho'
+           WHEN sku='MXIXFEIJAOKG' OR product_name LIKE '%Feij%' THEN 'Feijão'
+           WHEN product_name LIKE '%Arroz%' THEN 'Arroz'
+           WHEN sku='SUSSACO' OR product_name LIKE '%Saco%' THEN 'Sacos Hermeticos'
+           WHEN product_name LIKE '%Emamectim%' OR product_name LIKE '%Emamectin%' THEN 'Emamectim'
+           WHEN product_name LIKE '%Imidacloprid%' OR product_name LIKE '%Imadocloprid%' THEN 'Imidacloprid'
+           WHEN product_name LIKE '%MCPA%' THEN 'MCPA'
+           ELSE COALESCE(product_name, sku)
+         END AS produto,
+         unit,
+         CASE
+           WHEN sku='MXIXMILHOKG' OR product_name LIKE '%Milho%' THEN 'sementes'
+           WHEN sku='MXIXFEIJAOKG' OR product_name LIKE '%Feij%' THEN 'sementes'
+           WHEN product_name LIKE '%Arroz%' THEN 'sementes'
+           WHEN sku='SUSSACO' OR product_name LIKE '%Saco%' THEN 'sacos'
+           WHEN product_name LIKE '%Emamectim%' OR product_name LIKE '%Emamectin%' THEN 'quimicos'
+           WHEN product_name LIKE '%Imidacloprid%' OR product_name LIKE '%Imadocloprid%' THEN 'quimicos'
+           WHEN product_name LIKE '%MCPA%' THEN 'quimicos'
+           ELSE 'outros'
+         END AS categoria,
+         SUM(planned_original)        AS planned_original,
+         SUM(realocado_recebido)      AS realocado_recebido,
+         SUM(planned_qty)             AS planned,
+         SUM(committed_qty)           AS committed,
+         SUM(delivered_qty)           AS delivered,
+         SUM(GREATEST(0, planned_qty - committed_qty)) AS available,
+         SUM(LEAST(planned_qty, committed_qty))        AS fulfilled,
+         COUNT(DISTINCT extensionist_id) AS n_benef
+       FROM delivery_balances ${w}
+       GROUP BY produto, unit, categoria
+       ORDER BY FIELD(categoria,'sementes','sacos','quimicos','outros'), planned DESC`,
+      params
+    );
+    out.by_product = byProductRaw.map((r) => ({
+      produto: r.produto,
+      categoria: r.categoria,
+      unit: r.unit,
+      planned_original: Number(r.planned_original) || 0,
+      realocado_recebido: Number(r.realocado_recebido) || 0,
+      planned: Number(r.planned) || 0,
+      committed: Number(r.committed) || 0,
+      delivered: Number(r.delivered) || 0,
+      available: Number(r.available) || 0,
+      fulfilled: Number(r.fulfilled) || 0,
+      n_benef: Number(r.n_benef) || 0,
+    }));
     return out;
   },
 };
@@ -830,6 +884,23 @@ const Services = {
     if (opts.sku) {
       where.push("EXISTS (SELECT 1 FROM delivery_service_items WHERE service_id = s.id AND sku = ?)");
       params.push(opts.sku);
+    }
+
+    // Filtro "Hoje" — coluna de timestamp varia consoante o status filtrado:
+    //   draft       → created_at
+    //   in_transit  → dispatched_at
+    //   delivered   → delivered_at
+    //   cancelled   → cancelled_at
+    //   (sem status) → created_at (mais natural)
+    // Usa CURDATE() do MySQL para apanhar o dia local do servidor.
+    if (opts.today) {
+      const tsCol = {
+        draft:      "created_at",
+        in_transit: "dispatched_at",
+        delivered:  "delivered_at",
+        cancelled:  "cancelled_at",
+      }[opts.status] || "created_at";
+      where.push(`DATE(${tsCol}) = CURDATE()`);
     }
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
 

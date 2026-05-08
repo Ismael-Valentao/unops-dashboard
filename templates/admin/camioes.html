@@ -133,6 +133,13 @@
           <label for="f-max-kg">Carga ≤ (kg)</label>
           <input id="f-max-kg" type="number" min="0" step="100" placeholder="∞">
         </div>
+        <div>
+          <label for="f-today">Período</label>
+          <label style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;font-weight:500;text-transform:none;letter-spacing:0;color:#0f172a;padding:.55rem .65rem;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;height:1px;box-sizing:content-box">
+            <input type="checkbox" id="f-today" style="cursor:pointer;width:16px;height:16px">
+            <span id="f-today-label">Apenas hoje</span>
+          </label>
+        </div>
       </div>
 
       <div class="filter-chips" id="filter-chips" style="margin-top:.5rem"></div>
@@ -211,7 +218,22 @@
           sku:      $("#f-sku").value,
           min_kg:   $("#f-min-kg").value.trim(),
           max_kg:   $("#f-max-kg").value.trim(),
+          today:    $("#f-today").checked ? "1" : "",
         };
+      }
+
+      // Atualiza a label do checkbox conforme o estado escolhido,
+      // para o utilizador perceber exactamente o que "hoje" está a filtrar.
+      function updateTodayLabel() {
+        const status = $("#f-status").value;
+        const map = {
+          draft:      "Criados hoje",
+          in_transit: "Despachados hoje",
+          delivered:  "Entregues hoje",
+          cancelled:  "Cancelados hoje",
+          "":         "Criados hoje",
+        };
+        $("#f-today-label").textContent = map[status] || "Apenas hoje";
       }
       function buildQuery(extra = {}) {
         const f = { ...getFilters(), ...extra };
@@ -266,11 +288,30 @@
         "f-max-kg":   "max_kg",
       }, { onPopState: () => refresh() });
 
+      // f-today é checkbox — urlState só lida com .value, não checked.
+      // Trato manualmente: lê ?today=1 do URL no load, e re-escreve em
+      // cada mudança para que o link da página seja partilhável.
+      function syncTodayFromUrl() {
+        const v = new URLSearchParams(location.search).get("today");
+        $("#f-today").checked = v === "1";
+      }
+      function syncTodayToUrl() {
+        const params = new URLSearchParams(location.search);
+        if ($("#f-today").checked) params.set("today", "1");
+        else params.delete("today");
+        const qs = params.toString();
+        history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+      }
+
       function renderChips() {
         const f = getFilters();
         const STATUS_LBL = { in_transit: "Em Trânsito", delivered: "Entregue", draft: "Rascunho", cancelled: "Cancelado" };
         const skuSel = $("#f-sku");
         const skuLbl = skuSel.selectedOptions[0]?.textContent?.trim() || "";
+        const todayLbl = {
+          draft: "Criados hoje", in_transit: "Despachados hoje",
+          delivered: "Entregues hoje", cancelled: "Cancelados hoje",
+        }[f.status] || "Hoje";
         renderFilterChips($("#filter-chips"), [
           { key: "f-status",   label: "Estado",   value: f.status ? (STATUS_LBL[f.status] || f.status) : "" },
           { key: "f-province", label: "Província", value: f.province },
@@ -279,11 +320,14 @@
           { key: "f-sku",      label: "Artigo",    value: f.sku ? skuLbl : "" },
           { key: "f-min-kg",   label: "Carga ≥",   value: f.min_kg ? f.min_kg + " kg" : "" },
           { key: "f-max-kg",   label: "Carga ≤",   value: f.max_kg ? f.max_kg + " kg" : "" },
+          { key: "f-today",    label: "Período",   value: f.today ? todayLbl : "" },
         ], (key) => {
           if (key === "__all__") {
-            ["f-status","f-province","f-district","f-supplier","f-sku","f-min-kg","f-max-kg"].forEach((id) => {
+            ["f-status","f-province","f-district","f-supplier","f-sku","f-min-kg","f-max-kg","f-today"].forEach((id) => {
               const el = $("#" + id);
-              if (id === "f-status") el.value = "in_transit"; else el.value = "";
+              if (id === "f-today") el.checked = false;
+              else if (id === "f-status") el.value = "in_transit";
+              else el.value = "";
             });
             $$("#presets .preset-chip").forEach((c) => c.classList.remove("active"));
             loadDistrictOptions();
@@ -476,12 +520,15 @@
         ["f-status", "f-province", "f-district", "f-sku"].forEach((id) =>
           $("#" + id).addEventListener("change", () => {
             if (id === "f-province") loadDistrictOptions();
+            if (id === "f-status") updateTodayLabel();
             refresh();
           })
         );
         ["f-supplier", "f-min-kg", "f-max-kg"].forEach((id) =>
           $("#" + id).addEventListener("input", debounced(refresh))
         );
+        // Checkbox "Hoje"
+        $("#f-today").addEventListener("change", () => { syncTodayToUrl(); refresh(); });
 
         // Tonelagem presets
         $$("#presets .preset-chip").forEach((b) => {
@@ -508,6 +555,8 @@
         urlSync.read();
         loadDistrictOptions();
         urlSync.read();
+        syncTodayFromUrl();   // lê ?today=1 e marca o checkbox
+        updateTodayLabel();   // sincroniza label inicial
         refresh();
       });
     })();

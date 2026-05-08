@@ -30,6 +30,7 @@ window.AdminUI = (function () {
     { key: "camioes",         label: "Camiões",           icon: ICO.truck,      href: "/admin/camioes" },
     { key: "aprovacoes",      label: "Aprovações",        icon: ICO.shield,     href: "/admin/aprovacoes", roles: ["admin", "superadmin"] },
     { key: "anexar-guias",    label: "Anexar Guias",      icon: ICO.file,       href: "/admin/anexar-guias" },
+    { key: "guias-pdf",       label: "PDF → Excel",       icon: ICO.file,       href: "/admin/guias-pdf" },
     { key: "reconciliacao",   label: "Reconciliação",     icon: ICO.clipboard,  href: "/admin/reconciliacao" },
     { key: "relatorio-provincias", label: "Relatório por Província", icon: ICO.map, href: "/admin/relatorio-provincias" },
     { section: "Compras" },
