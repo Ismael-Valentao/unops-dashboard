@@ -140,11 +140,11 @@ async function list(opts = {}) {
     where.push("product LIKE ?");
     params.push("%" + opts.product + "%");
   }
-  // Usa COALESCE(delivery_date_iso, detected_date) para alinhar com a matriz Por Batedor/Dia.
-  // Assim o drill-down mostra entregas pelo dia REAL da entrega (formulário) e cai para a
-  // data de detecção apenas quando o formulário não tem data.
-  if (opts.from)      { where.push("COALESCE(delivery_date_iso, detected_date) >= ?"); params.push(opts.from); }
-  if (opts.to)        { where.push("COALESCE(delivery_date_iso, detected_date) <= ?"); params.push(opts.to); }
+  // Filtra por delivery_date_iso (alinhado com byDayPerSubmitter). Rows sem data
+  // preenchida no formulário ficam fora do drill-down — esperado, são excluídas
+  // do ranking também. Para ver rows sem data usa a tab "Sem data" do admin.
+  if (opts.from)      { where.push("delivery_date_iso >= ?"); params.push(opts.from); }
+  if (opts.to)        { where.push("delivery_date_iso <= ?"); params.push(opts.to); }
   if (opts.q) {
     const term = "%" + opts.q + "%";
     where.push("(gtu LIKE ? OR adsn LIKE ? OR beneficiary_name LIKE ?)");
@@ -352,11 +352,14 @@ async function byDayPerSubmitter(arg = 14) {
   }
 
   // 1. Linhas raw: 1 row por (submitter, day)
-  // Usa COALESCE(delivery_date_iso, detected_date) para apanhar entregas que ainda não tinham
-  // a data preenchida no formulário; detected_date é o fallback (dia em que o audit captou).
+  // Usa SOMENTE delivery_date_iso (data real da entrega no formulário).
+  // Rows sem delivery_date_iso preenchido são EXCLUÍDAS — caso contrário, em
+  // arranques frios da DB (ex. primeira captura em prod), todas essas rows
+  // caíam para detected_date=hoje e inflavam massivamente o "hoje" do ranking.
+  // Em dev isto não aparecia porque a captura era progressiva ao longo de dias.
   const rows = await query(
     `SELECT submitted_by AS email,
-            COALESCE(delivery_date_iso, detected_date) AS date,
+            delivery_date_iso AS date,
             COUNT(*) AS n,
             COALESCE(SUM(delivered_qty), 0) AS kg,
             COALESCE(SUM(CASE WHEN verification_status = 'Verified'             THEN delivered_qty ELSE 0 END), 0) AS kg_verified,
@@ -364,8 +367,9 @@ async function byDayPerSubmitter(arg = 14) {
             COALESCE(SUM(CASE WHEN verification_status = 'Rejected'             THEN delivered_qty ELSE 0 END), 0) AS kg_rejected
      FROM delivery_audit
      WHERE submitted_by IS NOT NULL AND submitted_by <> ''
-       AND COALESCE(delivery_date_iso, detected_date) BETWEEN ? AND ?
-     GROUP BY submitted_by, COALESCE(delivery_date_iso, detected_date)`,
+       AND delivery_date_iso IS NOT NULL
+       AND delivery_date_iso BETWEEN ? AND ?
+     GROUP BY submitted_by, delivery_date_iso`,
     [fromDate, toDate]
   );
 
