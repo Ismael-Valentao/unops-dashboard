@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — SMS</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    /* Status pill */
+    .sms-status { padding: .25rem .85rem; border-radius: 99px; font-size: .78rem; font-weight: 700;
+      display: inline-flex; align-items: center; gap: .35rem; }
+    .sms-status.ok    { background: #dcfce7; color: #166534 }
+    .sms-status.warn  { background: #fef3c7; color: #92400e }
+    .sms-status.err   { background: #fee2e2; color: #991b1b }
+    .sms-status .dot  { width: 8px; height: 8px; border-radius: 50% }
+    .sms-status.ok   .dot { background: #16a34a }
+    .sms-status.warn .dot { background: #d97706 }
+    .sms-status.err  .dot { background: #dc2626 }
+
+    /* Counts cards */
+    .sms-counts { display: grid; grid-template-columns: repeat(5, 1fr); gap: .75rem; margin-bottom: 1rem; }
+    .sms-count { padding: .8rem 1rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      border-left-width: 4px; }
+    .sms-count.sent     { border-left-color: #16a34a }
+    .sms-count.failed   { border-left-color: #dc2626 }
+    .sms-count.queued   { border-left-color: #d97706 }
+    .sms-count.dryrun   { border-left-color: #7c3aed }
+    .sms-count.last24h  { border-left-color: #0f4c75 }
+    .sms-count .lbl { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; font-weight: 700; }
+    .sms-count .val { font-size: 1.5rem; font-weight: 800; line-height: 1.1; margin-top: .15rem; color: #0f172a; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: .35rem; border-bottom: 2px solid #e2e8f0; margin-bottom: 1rem; }
+    .tab { padding: .55rem 1.1rem; border: 0; background: transparent; cursor: pointer; font-size: .9rem;
+      color: #64748b; border-bottom: 2px solid transparent; margin-bottom: -2px; font-family: inherit; }
+    .tab:hover { color: #0f4c75 }
+    .tab.active { color: #0f4c75; border-bottom-color: #0f4c75; font-weight: 700 }
+    .tab-panel { display: none }
+    .tab-panel.active { display: block }
+
+    /* Templates */
+    .tpl-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: .75rem; }
+    .tpl-card { padding: 1rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      border-left-width: 4px; }
+    .tpl-card.kind-plan       { border-left-color: #0f4c75 }
+    .tpl-card.kind-arriving   { border-left-color: #d97706 }
+    .tpl-card.kind-delivered  { border-left-color: #16a34a }
+    .tpl-card.kind-custom     { border-left-color: #7c3aed }
+    .tpl-card.kind-supervisor { border-left-color: #0891b2 }
+    .tpl-card.disabled { opacity: .55 }
+    .tpl-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; }
+    .tpl-card-kind { font-size: .65rem; text-transform: uppercase; letter-spacing: .06em;
+      font-weight: 800; padding: .15rem .5rem; border-radius: 4px; }
+    .tpl-card.kind-plan       .tpl-card-kind { background: #dbeafe; color: #0f4c75 }
+    .tpl-card.kind-arriving   .tpl-card-kind { background: #fef3c7; color: #92400e }
+    .tpl-card.kind-delivered  .tpl-card-kind { background: #dcfce7; color: #166534 }
+    .tpl-card.kind-custom     .tpl-card-kind { background: #ede9fe; color: #6b21a8 }
+    .tpl-card.kind-supervisor .tpl-card-kind { background: #cffafe; color: #155e75 }
+    .tpl-card-name { font-size: 1rem; font-weight: 700; color: #0f172a; }
+    .tpl-card-body { font-size: .85rem; color: #475569; line-height: 1.5; margin-top: .5rem;
+      background: #f8fafc; padding: .65rem; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word; }
+    .tpl-card-meta { display: flex; gap: .5rem; align-items: center; margin-top: .65rem; flex-wrap: wrap;
+      font-size: .72rem; color: #64748b; }
+    .tpl-card-actions { display: flex; gap: .35rem; margin-top: .65rem; }
+    .tpl-card-actions button { padding: .35rem .75rem; border: 1px solid #cbd5e1; background: #fff;
+      border-radius: 5px; font-size: .78rem; cursor: pointer; color: #475569; font-family: inherit; }
+    .tpl-card-actions button:hover { border-color: #0f4c75; color: #0f4c75 }
+    .tpl-card-actions .btn-edit { background: #0f4c75; color: #fff; border-color: #0f4c75 }
+    .tpl-card-actions .btn-edit:hover { background: #0c3a5c }
+
+    /* Log table */
+    .log-tbl { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    .log-tbl thead th { background: #f1f5f9; padding: .5rem .65rem; text-align: left; font-weight: 700;
+      color: #475569; border-bottom: 2px solid #cbd5e1; font-size: .72rem;
+      text-transform: uppercase; letter-spacing: .03em; position: sticky; top: 0; }
+    .log-tbl tbody td { padding: .5rem .65rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .log-tbl tbody tr:hover { background: #f8fafc }
+    .log-msg { font-size: .76rem; color: #475569; white-space: pre-wrap; word-wrap: break-word; max-width: 400px }
+    .log-err { font-size: .72rem; color: #991b1b; margin-top: .15rem }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.6); display: none;
+      align-items: center; justify-content: center; z-index: 9999; padding: 1rem; }
+    .modal-overlay.show { display: flex }
+    .modal { background: #fff; border-radius: 10px; max-width: 600px; width: 100%; padding: 1.5rem;
+      box-shadow: 0 20px 50px rgba(0,0,0,.3); max-height: 90vh; overflow-y: auto; }
+    .modal h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #0f4c75 }
+    .modal label { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
+      color: #64748b; font-weight: 600; margin-top: .8rem; margin-bottom: .25rem; }
+    .modal input, .modal textarea, .modal select {
+      width: 100%; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 5px;
+      font-size: .88rem; font-family: inherit; box-sizing: border-box; }
+    .modal textarea { resize: vertical; min-height: 100px; font-family: ui-monospace, monospace; font-size: .82rem; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.25rem; }
+    .modal-actions .btn-primary { background: #0f4c75; color: #fff; border: 0;
+      padding: .55rem 1.2rem; border-radius: 5px; font-weight: 700; cursor: pointer; }
+    .modal-actions .btn-cancel { background: #fff; color: #475569;
+      padding: .55rem 1rem; border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; }
+    .preview-box { background: #f8fafc; border: 1px dashed #cbd5e1; padding: .75rem; border-radius: 5px;
+      font-size: .82rem; color: #1e293b; margin-top: .5rem; min-height: 60px; white-space: pre-wrap; }
+    .placeholder-list { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .35rem; }
+    .placeholder-list code { background: #eff6ff; color: #0f4c75; padding: .15rem .45rem;
+      border-radius: 3px; font-size: .72rem; cursor: pointer; }
+    .placeholder-list code:hover { background: #dbeafe }
+    .seg-info { font-size: .72rem; color: #64748b; margin-top: .25rem; }
+
+    /* Filters */
+    .filters { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .85rem; align-items: center; }
+    .filters select, .filters input { padding: .35rem .6rem; border: 1px solid #cbd5e1;
+      border-radius: 5px; font-size: .82rem; font-family: inherit; }
+
+    .empty { text-align: center; padding: 3rem 1rem; color: #94a3b8 }
+
+    /* Status box */
+    .status-box { padding: .75rem 1rem; border-radius: 6px; margin-bottom: 1rem;
+      display: flex; align-items: center; gap: .65rem; font-size: .85rem; }
+    .status-box.ok { background: #dcfce7; color: #166534; border-left: 4px solid #16a34a }
+    .status-box.warn { background: #fef3c7; color: #92400e; border-left: 4px solid #d97706 }
+    .status-box.err { background: #fee2e2; color: #991b1b; border-left: 4px solid #dc2626 }
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <div>
+        <h1>SMS — Notificações</h1>
+        <span class="admin-sub">Templates editáveis + histórico de envios via easysendsms</span>
+      </div>
+    </header>
+
+    <!-- Status de configuração -->
+    <div id="status-box" style="display:none"></div>
+
+    <section class="admin-section">
+      <!-- Counts -->
+      <div class="sms-counts">
+        <div class="sms-count last24h"><div class="lbl">Últimas 24h</div><div class="val" id="c-24h">—</div></div>
+        <div class="sms-count sent"><div class="lbl">Enviados</div><div class="val" id="c-sent">—</div></div>
+        <div class="sms-count failed"><div class="lbl">Falhados</div><div class="val" id="c-failed">—</div></div>
+        <div class="sms-count queued"><div class="lbl">Em fila</div><div class="val" id="c-queued">—</div></div>
+        <div class="sms-count dryrun"><div class="lbl">Dry-run (teste)</div><div class="val" id="c-dryrun">—</div></div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" data-tab="templates">Templates (3)</button>
+        <button class="tab" data-tab="log">Histórico de Envios</button>
+      </div>
+
+      <!-- Tab: Templates -->
+      <div class="tab-panel active" id="tab-templates">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem">
+          <p style="margin:0;font-size:.85rem;color:#64748b">
+            Edita os corpos para personalizar as mensagens. Placeholders válidos: <code>{nome}</code>,
+            <code>{items}</code>, <code>{matricula}</code>, <code>{distrito}</code>,
+            <code>{motorista}</code>, <code>{motorista_tel}</code>, <code>{servico}</code>, <code>{data}</code>.
+          </p>
+          <button id="btn-new-tpl" class="btn" style="background:#0f4c75;color:#fff;border:0;padding:.45rem 1rem;border-radius:5px;font-weight:700;cursor:pointer">+ Novo template</button>
+        </div>
+        <div id="tpl-list" class="tpl-list">
+          <div class="empty">A carregar…</div>
+        </div>
+      </div>
+
+      <!-- Tab: Log -->
+      <div class="tab-panel" id="tab-log">
+        <div class="filters">
+          <select id="f-status">
+            <option value="">Todos os status</option>
+            <option value="sent">Enviados</option>
+            <option value="failed">Falhados</option>
+            <option value="queued">Em fila</option>
+          </select>
+          <select id="f-kind">
+            <option value="">Todos os tipos</option>
+            <option value="plan">Plano criado</option>
+            <option value="arriving">Camião a chegar</option>
+            <option value="delivered">Pós-entrega</option>
+            <option value="supervisor">Supervisor</option>
+            <option value="adhoc">Ad-hoc</option>
+            <option value="custom">Custom</option>
+          </select>
+          <input id="f-benef" type="text" placeholder="Beneficiário ID">
+          <button id="btn-refresh" class="btn" style="background:#fff;border:1px solid #cbd5e1;padding:.35rem .7rem;border-radius:5px;cursor:pointer">↻</button>
+        </div>
+        <div style="overflow-x:auto;max-height:600px">
+          <table class="log-tbl">
+            <thead><tr>
+              <th>Data</th>
+              <th>Tipo</th>
+              <th>Beneficiário</th>
+              <th>Telefone</th>
+              <th>Mensagem</th>
+              <th>Status</th>
+              <th>Origem</th>
+            </tr></thead>
+            <tbody id="log-body">
+              <tr><td colspan="7" class="empty">A carregar…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal de edição/criação de template -->
+  <div class="modal-overlay" id="tpl-modal">
+    <div class="modal">
+      <h2 id="tpl-modal-title">Editar Template</h2>
+      <label>Tipo</label>
+      <select id="m-kind">
+        <option value="plan">Plano criado</option>
+        <option value="arriving">Camião a chegar</option>
+        <option value="delivered">Pós-entrega</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="custom">Custom</option>
+      </select>
+      <label>Nome (interno)</label>
+      <input id="m-name" type="text" maxlength="128">
+      <label>Corpo da mensagem</label>
+      <textarea id="m-body" placeholder="Caro(a) {nome}, ..."></textarea>
+      <div class="placeholder-list" id="placeholders">
+        <code>{nome}</code><code>{items}</code><code>{matricula}</code><code>{distrito}</code><code>{provincia}</code><code>{motorista}</code><code>{motorista_tel}</code><code>{servico}</code><code>{data}</code>
+        <span style="font-size:.7rem;color:#94a3b8;width:100%;margin-top:.3rem;display:block">Para template <strong>Supervisor</strong>:</span>
+        <code>{n_extensionistas}</code><code>{total_kg}</code>
+      </div>
+      <div class="seg-info"><span id="char-count">0</span> caracteres · <span id="seg-count">1</span> segmento(s) (cada SMS = 160 caracteres)</div>
+      <label>Pré-visualização (com dados de exemplo)</label>
+      <div id="tpl-preview" class="preview-box">—</div>
+      <div style="display:flex;gap:.4rem;margin-top:.5rem;align-items:center">
+        <input type="checkbox" id="m-enabled" checked style="width:auto;margin:0">
+        <label for="m-enabled" style="margin:0;font-size:.85rem;text-transform:none;letter-spacing:0;color:#0f172a;font-weight:500">Activo</label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="m-cancel">Cancelar</button>
+        <button class="btn-primary" id="m-save">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, fmtDate, esc, toast } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+
+      let templates = [];
+      let editingTpl = null;
+      const KIND_LABEL = {
+        plan: "Plano criado", arriving: "Camião a chegar",
+        delivered: "Pós-entrega", supervisor: "Supervisor",
+        custom: "Custom", adhoc: "Ad-hoc",
+      };
+
+      // Vars de exemplo para preview (cobre extensionistas + supervisor)
+      const EXAMPLE_VARS = {
+        nome: "João Mussa",
+        nome_completo: "João Carlos Mussa Tembe",
+        items: "Milho 50kg, Feijão 30kg",
+        produto: "Milho",
+        qty: 50,
+        matricula: "AAB 123 MP",
+        distrito: "Manhiça",
+        provincia: "Maputo",
+        motorista: "Pedro Sitoe",
+        motorista_tel: "84 123 4567",
+        servico: "SRV-2026-0042",
+        data: new Date().toLocaleDateString("pt-MZ"),
+        // Vars do supervisor:
+        n_extensionistas: 12,
+        total_kg: 1500,
+      };
+
+      // ── Status de configuração ───────────────────────────
+      async function loadStatus() {
+        try {
+          const s = await fetchJSON("/admin/api/sms/status");
+          const box = $("#status-box");
+          if (!s.configured) {
+            box.className = "status-box err";
+            box.innerHTML = `<strong>⚠ Easysendsms não configurada.</strong> Define <code>EASYSENDSMS_API_KEY</code> em <code>.env</code> e reinicia o servidor. Sem isto, os botões de envio devolvem erro.`;
+            box.style.display = "";
+          } else if (s.dry_run) {
+            box.className = "status-box warn";
+            box.innerHTML = `<strong>⚙ Modo DRY-RUN activo.</strong> SMS são simulados (não enviam de verdade). Sender: <code>${esc(s.sender)}</code>. Para activar envio real, define <code>SMS_DRY_RUN=0</code> em <code>.env</code>.`;
+            box.style.display = "";
+          } else {
+            box.className = "status-box ok";
+            box.innerHTML = `<strong>✓ SMS configurado.</strong> Sender: <code>${esc(s.sender)}</code> · Prefixo MZ: <code>${esc(s.prefix)}</code>`;
+            box.style.display = "";
+          }
+        } catch (_) { /* não autenticado, etc. */ }
+      }
+
+      // ── Counts ─────────────────────────────────────────────
+      async function loadCounts() {
+        try {
+          const c = await fetchJSON("/admin/api/sms/log/counts");
+          $("#c-24h").textContent = fmt(c.last_24h);
+          $("#c-sent").textContent = fmt(c.sent);
+          $("#c-failed").textContent = fmt(c.failed);
+          $("#c-queued").textContent = fmt(c.queued);
+          $("#c-dryrun").textContent = fmt(c.dry_runs);
+        } catch (_) { /* ignore */ }
+      }
+
+      // ── Templates ──────────────────────────────────────────
+      async function loadTemplates() {
+        const list = $("#tpl-list");
+        try {
+          const data = await fetchJSON("/admin/api/sms/templates");
+          templates = data.rows || [];
+          if (!templates.length) {
+            list.innerHTML = `<div class="empty">Sem templates.</div>`;
+            return;
+          }
+          list.innerHTML = templates.map((t) => `
+            <div class="tpl-card kind-${esc(t.kind)} ${t.enabled ? "" : "disabled"}" data-id="${t.id}">
+              <div class="tpl-card-head">
+                <span class="tpl-card-kind">${esc(KIND_LABEL[t.kind] || t.kind)}</span>
+                ${t.enabled ? "" : '<span style="color:#94a3b8;font-size:.7rem">desactivado</span>'}
+              </div>
+              <div class="tpl-card-name">${esc(t.name)}</div>
+              <div class="tpl-card-body">${esc(t.body)}</div>
+              <div class="tpl-card-meta">
+                ${(t.body || "").length} caracteres · ${Math.ceil((t.body || "").length / 160) || 1} segmento(s)
+              </div>
+              <div class="tpl-card-actions">
+                <button class="btn-edit" data-act="edit" data-id="${t.id}">✏️ Editar</button>
+                <button data-act="toggle" data-id="${t.id}">${t.enabled ? "Desactivar" : "Activar"}</button>
+              </div>
+            </div>
+          `).join("");
+          list.querySelectorAll("button[data-act]").forEach((b) => {
+            b.addEventListener("click", (e) => {
+              e.stopPropagation();
+              const id = Number(b.dataset.id);
+              const tpl = templates.find((t) => t.id === id);
+              if (!tpl) return;
+              if (b.dataset.act === "edit") openTemplateModal(tpl);
+              else toggleTemplate(tpl);
+            });
+          });
+        } catch (e) {
+          list.innerHTML = `<div class="empty" style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
+        }
+      }
+
+      async function toggleTemplate(tpl) {
+        try {
+          await fetchJSON(`/admin/api/sms/templates/${tpl.id}`, {
+            method: "PATCH", body: { enabled: !tpl.enabled },
+          });
+          toast(tpl.enabled ? "Desactivado" : "Activado", { kind: "ok" });
+          await loadTemplates();
+        } catch (e) { toast("Erro: " + e.message, { kind: "err" }); }
+      }
+
+      function openTemplateModal(tpl) {
+        editingTpl = tpl;
+        $("#tpl-modal-title").textContent = tpl ? "Editar Template" : "Novo Template";
+        $("#m-kind").value = tpl ? tpl.kind : "custom";
+        $("#m-kind").disabled = !!tpl;  // não permite mudar kind ao editar
+        $("#m-name").value = tpl ? tpl.name : "";
+        $("#m-body").value = tpl ? tpl.body : "";
+        $("#m-enabled").checked = tpl ? !!tpl.enabled : true;
+        updatePreview();
+        $("#tpl-modal").classList.add("show");
+        setTimeout(() => $("#m-name").focus(), 50);
+      }
+      function closeTemplateModal() { $("#tpl-modal").classList.remove("show"); editingTpl = null; }
+
+      function updatePreview() {
+        const body = $("#m-body").value;
+        const text = renderTemplate(body, EXAMPLE_VARS);
+        $("#tpl-preview").textContent = text || "—";
+        $("#char-count").textContent = text.length;
+        $("#seg-count").textContent = Math.ceil(text.length / 160) || 1;
+      }
+      function renderTemplate(body, vars) {
+        if (!body) return "";
+        return String(body).replace(/\{(\w+)\}/g, (_, k) => vars[k] != null ? String(vars[k]) : "");
+      }
+
+      async function saveTemplate() {
+        const payload = {
+          kind: $("#m-kind").value,
+          name: $("#m-name").value.trim(),
+          body: $("#m-body").value.trim(),
+          enabled: $("#m-enabled").checked,
+        };
+        if (!payload.name) { toast("Nome obrigatório", { kind: "err" }); return; }
+        if (!payload.body) { toast("Corpo obrigatório", { kind: "err" }); return; }
+        try {
+          if (editingTpl) {
+            await fetchJSON(`/admin/api/sms/templates/${editingTpl.id}`, {
+              method: "PATCH", body: payload,
+            });
+            toast("Template actualizado", { kind: "ok" });
+          } else {
+            await fetchJSON("/admin/api/sms/templates", { method: "POST", body: payload });
+            toast("Template criado", { kind: "ok" });
+          }
+          closeTemplateModal();
+          await loadTemplates();
+        } catch (e) { toast("Erro: " + e.message, { kind: "err" }); }
+      }
+
+      // ── Log ───────────────────────────────────────────────
+      async function loadLog() {
+        const tbody = $("#log-body");
+        const params = new URLSearchParams();
+        if ($("#f-status").value)  params.set("status", $("#f-status").value);
+        if ($("#f-kind").value)    params.set("template_kind", $("#f-kind").value);
+        const benef = $("#f-benef").value.trim();
+        if (benef) params.set("beneficiary_id", benef);
+        try {
+          const data = await fetchJSON("/admin/api/sms/log?" + params);
+          const rows = data.rows || [];
+          if (!rows.length) {
+            tbody.innerHTML = `<tr><td colspan="7" class="empty">Sem registos.</td></tr>`;
+            return;
+          }
+          tbody.innerHTML = rows.map((r) => {
+            const statusKind = r.status === "sent" ? "ok" : (r.status === "failed" ? "err" : "warn");
+            const statusIcon = r.status === "sent" ? "✓" : (r.status === "failed" ? "✗" : "⏳");
+            const statusLbl  = ({ sent: "Enviado", failed: "Falhou", queued: "Em fila" })[r.status] || r.status;
+            const related = r.related_kind && r.related_id
+              ? `<a href="${r.related_kind === "service" ? "/admin/servicos/" + r.related_id : "#"}" style="color:#0f4c75">${esc(r.related_kind)} #${esc(r.related_id)}</a>`
+              : "—";
+            return `<tr>
+              <td>${fmtDate(r.created_at)}</td>
+              <td><span style="font-size:.72rem;background:#f1f5f9;padding:.15rem .4rem;border-radius:3px;color:#475569">${esc(KIND_LABEL[r.template_kind] || r.template_kind)}</span></td>
+              <td>${esc(r.beneficiary_name || "—")}<br><small style="color:#94a3b8">${esc(r.beneficiary_id || "")}</small></td>
+              <td><code>${esc(r.phone_normalized || r.phone_raw || "—")}</code></td>
+              <td><div class="log-msg">${esc(r.message || "")}</div>${r.error_message ? `<div class="log-err">⚠ ${esc(r.error_message)}</div>` : ""}</td>
+              <td><span class="sms-status ${statusKind}"><span class="dot"></span>${statusIcon} ${statusLbl}${r.dry_run ? " (dry)" : ""}</span></td>
+              <td>${related}</td>
+            </tr>`;
+          }).join("");
+        } catch (e) {
+          tbody.innerHTML = `<tr><td colspan="7" class="empty" style="color:#dc2626">Erro: ${esc(e.message)}</td></tr>`;
+        }
+      }
+
+      // ── Tabs ──────────────────────────────────────────────
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+          document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+          tab.classList.add("active");
+          document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+          if (tab.dataset.tab === "log") loadLog();
+        });
+      });
+
+      // ── Wire up ───────────────────────────────────────────
+      $("#btn-new-tpl").addEventListener("click", () => openTemplateModal(null));
+      $("#m-cancel").addEventListener("click", closeTemplateModal);
+      $("#m-save").addEventListener("click", saveTemplate);
+      $("#m-body").addEventListener("input", updatePreview);
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && $("#tpl-modal").classList.contains("show")) closeTemplateModal();
+      });
+      $("#tpl-modal").addEventListener("click", (e) => {
+        if (e.target.id === "tpl-modal") closeTemplateModal();
+      });
+      // Click em placeholder insere no body
+      document.querySelectorAll("#placeholders code").forEach((el) => {
+        el.addEventListener("click", () => {
+          const ta = $("#m-body");
+          const start = ta.selectionStart, end = ta.selectionEnd;
+          const v = ta.value;
+          ta.value = v.slice(0, start) + el.textContent + v.slice(end);
+          ta.focus();
+          ta.selectionStart = ta.selectionEnd = start + el.textContent.length;
+          updatePreview();
+        });
+      });
+      // Filtros
+      $("#f-status").addEventListener("change", loadLog);
+      $("#f-kind").addEventListener("change", loadLog);
+      $("#f-benef").addEventListener("input", () => { clearTimeout(window._smsT); window._smsT = setTimeout(loadLog, 300); });
+      $("#btn-refresh").addEventListener("click", () => { loadCounts(); loadLog(); });
+
+      // Init
+      loadStatus();
+      loadCounts();
+      loadTemplates();
+      AdminUI.renderLayout("sms");
+    })();
+  </script>
+</body>
+</html>

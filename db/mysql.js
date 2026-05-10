@@ -226,6 +226,233 @@ async function migrate() {
     try { await getPool().query("ALTER TABLE beneficiaries ADD INDEX idx_alias_for (alias_for)"); } catch(_) {}
     console.log("[DB] migrated beneficiaries.alias_for");
   }
+
+  // ── Audit de entregas (captura imutável do Google Sheet) ───
+  //
+  // Salvaguarda contra perda de delivery_date no AppSheet:
+  // sempre que vemos uma row nova no sheet, gravamos aqui com
+  // detected_at = NOW(), preservando QUEM submeteu e QUANDO foi
+  // detectada. A própria linha pode desaparecer do sheet ou perder
+  // a delivery_date — a nossa cópia mantém-se.
+  //
+  // dedup_key:
+  //   - Se há GTU → "gtu|qty" (composto, distingue múltiplas entregas
+  //     com mesmo GTU mas qty diferente — caso raro mas existe)
+  //   - Se não há GTU → "syn|md5(adsn|benef|prod|qty|district|submitted_by)"
+  //     para deduplicar mesmo sem GTU
+  //
+  // verification_status: o que vem do sheet (Verified, Pending,
+  // Rejected, Not Reachable, Partially Verified, etc.). Tracked
+  // através de status_changed_at para histórico de mudanças.
+  //
+  // last_seen_at: actualizado a cada fetch — útil para detectar
+  // linhas que foram apagadas no sheet (last_seen_at antigo).
+  await getPool().query(
+    `CREATE TABLE IF NOT EXISTS delivery_audit (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      dedup_key VARCHAR(80) NOT NULL UNIQUE,
+      gtu VARCHAR(64) NULL,
+      adsn VARCHAR(64) NULL,
+      beneficiary_name VARCHAR(255) NULL,
+      extensionist_id VARCHAR(32) NULL,
+      nuit VARCHAR(32) NULL,
+      product VARCHAR(128) NULL,
+      delivered_qty DECIMAL(14,3) NULL,
+      packages DECIMAL(14,3) NULL,
+      unit VARCHAR(16) NULL,
+      district VARCHAR(64) NULL,
+      province VARCHAR(64) NULL,
+      submitted_by VARCHAR(255) NULL,
+      delivery_date_iso VARCHAR(20) NULL,
+      verification_status VARCHAR(64) NULL,
+      detected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      detected_date DATE NOT NULL DEFAULT (CURRENT_DATE),
+      status_changed_at DATETIME NULL,
+      last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      raw_data JSON NULL,
+      INDEX idx_audit_detected_date (detected_date),
+      INDEX idx_audit_submitter (submitted_by),
+      INDEX idx_audit_status (verification_status),
+      INDEX idx_audit_gtu (gtu),
+      INDEX idx_audit_district (district)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+
+  // ── Audit-history (histórico de mudanças de status) ────────
+  // Sempre que delivery_audit.verification_status muda, gravamos
+  // 1 row aqui para forensics: "este GTU passou de Pending → Verified
+  // a 12/05/2026 14:30". Útil para investigar ciclo de vida de cada
+  // submissão e medir tempo médio até verificação.
+  await getPool().query(
+    `CREATE TABLE IF NOT EXISTS delivery_audit_history (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      audit_id INT NOT NULL,
+      from_status VARCHAR(64) NULL,
+      to_status   VARCHAR(64) NULL,
+      changed_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_audhist_audit (audit_id),
+      INDEX idx_audhist_changed (changed_at),
+      FOREIGN KEY (audit_id) REFERENCES delivery_audit(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+
+  // ── SMS templates + log ─────────────────────────────────────
+  // sms_templates: 3 templates default + custom (editáveis em /admin/sms).
+  //   kind:
+  //     plan      → "Plano criado" — info ao extensionista de que foi planeado
+  //     arriving  → "Camião a chegar" — notifica destinatário do despacho
+  //     delivered → "Pós-entrega"    — agradece e pede bom uso
+  //     custom    → templates extra criados pelo utilizador
+  //   body com placeholders {nome}, {qty}, {produto}, {matricula}, {distrito},
+  //   {motorista}, {motorista_tel}, {servico}, {data}.
+  await getPool().query(
+    `CREATE TABLE IF NOT EXISTS sms_templates (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      kind ENUM('plan','arriving','delivered','custom','supervisor') NOT NULL DEFAULT 'custom',
+      name VARCHAR(128) NOT NULL,
+      body TEXT NOT NULL,
+      enabled TINYINT(1) NOT NULL DEFAULT 1,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      updated_by INT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_smstpl_kind (kind),
+      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+  // Migração para adicionar 'supervisor' ao ENUM em DBs já criadas
+  await getPool().query(
+    `ALTER TABLE sms_templates MODIFY COLUMN kind
+       ENUM('plan','arriving','delivered','custom','supervisor') NOT NULL DEFAULT 'custom'`
+  );
+  // sms_log: 1 linha por SMS tentado (sucesso ou falha).
+  //   provider_id: id retornado pela API
+  //   related_kind/related_id: ex 'service'/42, 'beneficiary'/'0102-0001'
+  //   template_id: opcional (NULL para envios ad-hoc fora dos templates)
+  await getPool().query(
+    `CREATE TABLE IF NOT EXISTS sms_log (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      template_id INT NULL,
+      template_kind ENUM('plan','arriving','delivered','custom','adhoc','supervisor') NOT NULL DEFAULT 'adhoc',
+      beneficiary_id VARCHAR(16) NULL,
+      beneficiary_name VARCHAR(255) NULL,
+      phone_raw VARCHAR(64) NULL,
+      phone_normalized VARCHAR(32) NULL,
+      message TEXT NOT NULL,
+      status ENUM('queued','sent','failed') NOT NULL DEFAULT 'queued',
+      provider_id VARCHAR(128) NULL,
+      provider_response TEXT NULL,
+      error_message TEXT NULL,
+      related_kind VARCHAR(32) NULL,
+      related_id   VARCHAR(64) NULL,
+      sent_by INT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      sent_at    DATETIME NULL,
+      dry_run TINYINT(1) NOT NULL DEFAULT 0,
+      INDEX idx_smslog_status (status),
+      INDEX idx_smslog_kind (template_kind),
+      INDEX idx_smslog_related (related_kind, related_id),
+      INDEX idx_smslog_benef (beneficiary_id),
+      INDEX idx_smslog_created (created_at),
+      FOREIGN KEY (template_id) REFERENCES sms_templates(id) ON DELETE SET NULL,
+      FOREIGN KEY (sent_by) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+  // Migração ENUM idempotente para DBs já criadas (sms_log)
+  await getPool().query(
+    `ALTER TABLE sms_log MODIFY COLUMN template_kind
+       ENUM('plan','arriving','delivered','custom','adhoc','supervisor') NOT NULL DEFAULT 'adhoc'`
+  );
+
+  // Seeds dos templates (idempotentes — só insere se kind não existir).
+  // Bodies optimizados para 1 segmento (≤160 chars) com placeholders típicos
+  // — assim 1 SMS = 1 crédito.
+  const seeds = [
+    { kind: "plan",       name: "Plano criado",
+      body: "AQI: {nome}, foi-lhe atribuido um plano de distribuicao da Casa do Agricultor com {plano}. Aguarde aviso quando o camiao chegar a sua zona. Em caso de duvida, contacte o seu supervisor." },
+    { kind: "arriving",   name: "Camiao a chegar",
+      body: "AQI: {nome}, hoje recebe {items}. Camiao {matricula}, motorista {motorista} ({motorista_tel}). Confirme presenca em {distrito}." },
+    { kind: "delivered",  name: "Pos-entrega",
+      body: "AQI: {nome}, confirmamos a sua entrega de {items}. Mantenha as sementes em local seco e fresco. Boa campanha agricola - sucesso!" },
+    { kind: "supervisor", name: "Aviso ao supervisor",
+      body: "AQI/Supervisor {nome}: camiao {matricula} a caminho de {distrito} com entrega para {n_extensionistas} extensionistas (~{total_kg} kg). Motorista: {motorista} ({motorista_tel}). {servico}." },
+  ];
+  for (const t of seeds) {
+    const exists = await getPool().query(
+      "SELECT id FROM sms_templates WHERE kind = ? LIMIT 1", [t.kind]
+    );
+    if (!exists[0].length) {
+      await getPool().query(
+        "INSERT INTO sms_templates (kind, name, body, enabled) VALUES (?, ?, ?, 1)",
+        [t.kind, t.name, t.body]
+      );
+      console.log(`[DB] seeded sms_templates kind=${t.kind}`);
+    }
+  }
+
+  // Migração suave dos 3 templates antigos → versões optimizadas
+  // (só actualiza se o body actual for IGUAL à versão antiga — preserva
+  // edições feitas pelo utilizador no admin/sms).
+  const TEMPLATE_UPGRADES = [
+    {
+      kind: "plan",
+      old_body: "Caro(a) {nome}, foi-lhe atribuido um plano de distribuicao AQI: {plano}. Aguarde notificacao de entrega. Casa do Agricultor.",
+    },
+    {
+      kind: "arriving",
+      old_body: "Caro(a) {nome}, o camiao {matricula} esta a caminho com a sua entrega: {items}. Por favor confirme presenca em {distrito}. Motorista: {motorista} {motorista_tel}. AQI.",
+    },
+    {
+      kind: "delivered",
+      old_body: "Caro(a) {nome}, recebemos confirmacao da sua entrega de {items}. Faca bom uso das sementes — sucesso na campanha! Casa do Agricultor.",
+    },
+  ];
+  const seedByKind = Object.fromEntries(seeds.map((s) => [s.kind, s]));
+  for (const u of TEMPLATE_UPGRADES) {
+    const newBody = seedByKind[u.kind].body;
+    const [r] = await getPool().query(
+      "UPDATE sms_templates SET body = ? WHERE kind = ? AND body = ?",
+      [newBody, u.kind, u.old_body]
+    );
+    if (r.affectedRows > 0) {
+      console.log(`[DB] upgraded sms_templates kind=${u.kind} (texto antigo → optimizado)`);
+    }
+  }
+
+  // ── Lembretes / Informações ─────────────────────────────────
+  // Notas livres com data opcional para recordar. Podem (mas não têm
+  // de) estar ligadas a um recurso (serviço/camião/beneficiário) — neste
+  // caso o lembrete fica "ancorado" e aparece no detalhe desse recurso.
+  //
+  // Estados:
+  //   active    — pendente (default)
+  //   done      — utilizador marcou como tratado
+  //   dismissed — descartado sem fazer
+  //
+  // Vencimento:
+  //   remind_at = NULL  → só info, nunca vence
+  //   remind_at <= NOW() & status='active' → "vencido", aparece em banner
+  await getPool().query(
+    `CREATE TABLE IF NOT EXISTS reminders (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      body TEXT NULL,
+      remind_at DATETIME NULL,
+      priority ENUM('low','normal','high') NOT NULL DEFAULT 'normal',
+      status ENUM('active','done','dismissed') NOT NULL DEFAULT 'active',
+      related_kind VARCHAR(32) NULL,
+      related_id   VARCHAR(64) NULL,
+      created_by INT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      done_at    DATETIME NULL,
+      done_by    INT NULL,
+      INDEX idx_rem_status (status),
+      INDEX idx_rem_remindat (remind_at),
+      INDEX idx_rem_related (related_kind, related_id),
+      INDEX idx_rem_creator (created_by),
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+      FOREIGN KEY (done_by)    REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
 }
 
 async function init() {

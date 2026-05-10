@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Auditoria de Entregas</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <style>
+    /* === Banners de alerta === */
+    .alert-bar { display:flex; align-items:center; gap:.85rem; padding:.85rem 1rem; border-radius:8px;
+      margin-bottom:.75rem; font-size:.88rem; border-left:5px solid }
+    .alert-bar.danger { background:#fef2f2; border-left-color:#dc2626; color:#7f1d1d }
+    .alert-bar.warn   { background:#fffbeb; border-left-color:#d97706; color:#78350f }
+    .alert-bar.info   { background:#eff6ff; border-left-color:#0f4c75; color:#1e40af }
+    .alert-bar strong { font-weight:800 }
+    .alert-bar a { margin-left:auto; padding:.4rem .85rem; background:#fff; border:1px solid currentColor;
+      border-radius:5px; text-decoration:none; font-weight:700; font-size:.78rem }
+
+    /* === KPIs === */
+    .kpi { display:grid; grid-template-columns:repeat(6,1fr); gap:.65rem; margin-bottom:1rem; }
+    .kpi-card { padding:.85rem 1rem; background:#fff; border:1px solid #e2e8f0;
+      border-radius:8px; border-left-width:4px; position:relative; }
+    .kpi-card.total    { border-left-color:#0f4c75 }
+    .kpi-card.verified { border-left-color:#16a34a }
+    .kpi-card.pending  { border-left-color:#d97706 }
+    .kpi-card.rejected { border-left-color:#dc2626 }
+    .kpi-card.today    { border-left-color:#7c3aed }
+    .kpi-card.lost     { border-left-color:#475569 }
+    .kpi-card .lbl { font-size:.65rem; text-transform:uppercase; letter-spacing:.04em;
+      color:#64748b; font-weight:700 }
+    .kpi-card .val { font-size:1.5rem; font-weight:800; line-height:1.1; margin-top:.15rem; color:#0f172a;
+      font-variant-numeric:tabular-nums }
+    .kpi-card.verified .val { color:#16a34a }
+    .kpi-card.pending  .val { color:#d97706 }
+    .kpi-card.rejected .val { color:#dc2626 }
+    .kpi-card.today    .val { color:#7c3aed }
+    .kpi-card .wow { font-size:.7rem; margin-top:.15rem; font-weight:700 }
+    .kpi-card .wow.up   { color:#16a34a }
+    .kpi-card .wow.down { color:#dc2626 }
+    .kpi-card .wow.flat { color:#94a3b8 }
+
+    /* === Tabs === */
+    .tabs { display:flex; gap:.35rem; border-bottom:2px solid #e2e8f0; margin-bottom:1rem;
+      overflow-x:auto; scrollbar-width:thin; }
+    .tab { padding:.55rem 1.1rem; border:0; background:transparent; cursor:pointer; font-size:.88rem;
+      color:#64748b; border-bottom:2px solid transparent; margin-bottom:-2px; font-family:inherit;
+      white-space:nowrap; flex-shrink:0; display:inline-flex; align-items:center; gap:.4rem }
+    .tab:hover { color:#0f4c75 }
+    .tab.active { color:#0f4c75; border-bottom-color:#0f4c75; font-weight:700 }
+    .tab .tab-badge { background:#dc2626; color:#fff; padding:.05rem .45rem; border-radius:99px;
+      font-size:.65rem; font-weight:700; min-width:18px; text-align:center }
+    .tab .tab-badge.warn { background:#d97706 }
+    .tab-panel { display:none }
+    .tab-panel.active { display:block }
+
+    /* Dropdown "Mais" */
+    .tab-more.active-child { color:#0f4c75; border-bottom-color:#0f4c75; font-weight:700 }
+    .tab-more-menu {
+      position:absolute; top:calc(100% + 4px); right:0; z-index:100;
+      background:#fff; border:1px solid #e2e8f0; border-radius:8px;
+      box-shadow:0 4px 18px rgba(15,23,42,.12);
+      min-width:200px; padding:.35rem 0;
+    }
+    .tab-more-menu[hidden] { display:none }
+    .tab-more-item {
+      display:flex; align-items:center; gap:.5rem; width:100%;
+      padding:.55rem .9rem; border:0; background:transparent; cursor:pointer;
+      font-size:.85rem; color:#0f172a; font-family:inherit; text-align:left;
+      white-space:nowrap;
+    }
+    .tab-more-item:hover { background:#f1f5f9 }
+    .tab-more-item.active { background:#e0f2fe; color:#0f4c75; font-weight:600 }
+    .tab-more-item .tab-badge {
+      background:#dc2626; color:#fff; padding:.05rem .45rem; border-radius:99px;
+      font-size:.65rem; font-weight:700; min-width:18px; text-align:center; margin-left:auto;
+    }
+    .tab-more-item .tab-badge.warn { background:#d97706 }
+    .tab-more-sep { height:1px; background:#e2e8f0; margin:.3rem 0 }
+
+    /* === Tabelas === */
+    .audit-tbl { width:100%; border-collapse:collapse; font-size:.82rem }
+    .audit-tbl thead th { background:#f1f5f9; padding:.55rem .65rem; text-align:left;
+      font-weight:700; color:#475569; border-bottom:2px solid #cbd5e1;
+      font-size:.7rem; text-transform:uppercase; letter-spacing:.03em;
+      position:sticky; top:0; cursor:pointer; user-select:none; z-index:1; white-space:nowrap; }
+    .audit-tbl thead th:hover { background:#e2e8f0 }
+    .audit-tbl tbody td { padding:.5rem .65rem; border-bottom:1px solid #f1f5f9; vertical-align:middle }
+    .audit-tbl tbody tr:hover { background:#f8fafc }
+    .audit-tbl tbody tr.expanded { background:#eff6ff }
+    .audit-tbl .num { text-align:right; font-variant-numeric:tabular-nums }
+
+    /* === Avatares === */
+    .avatar { display:inline-flex; align-items:center; justify-content:center;
+      width:28px; height:28px; border-radius:50%; color:#fff; font-weight:700;
+      font-size:.72rem; flex-shrink:0; letter-spacing:.02em }
+    .avatar-cell { display:flex; align-items:center; gap:.55rem }
+    .avatar-cell .info { display:flex; flex-direction:column; min-width:0 }
+    .avatar-cell .info strong { font-size:.84rem; color:#0f172a;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px }
+    .avatar-cell .info small { font-size:.68rem; color:#94a3b8 }
+
+    /* === Status pills === */
+    .pill { display:inline-block; padding:.15rem .55rem; border-radius:99px; font-size:.68rem;
+      font-weight:700; line-height:1.4; white-space:nowrap }
+    .pill-verified  { background:#dcfce7; color:#166534 }
+    .pill-pending   { background:#fef3c7; color:#92400e }
+    .pill-rejected  { background:#fee2e2; color:#991b1b }
+    .pill-notreach  { background:#e5e7eb; color:#475569 }
+    .pill-partial   { background:#fde68a; color:#78350f }
+    .pill-other     { background:#f1f5f9; color:#475569 }
+
+    /* === Sparkline canvas === */
+    .sparkline { display:inline-block; width:80px; height:22px; vertical-align:middle }
+
+    /* === Detalhe expansível === */
+    .sub-row { cursor:pointer }
+    .sub-detail-row td { padding:0 !important }
+    .sub-detail { display:none; background:#f8fafc; padding:.85rem 1.5rem;
+      border-bottom:2px solid #e2e8f0 }
+    .sub-detail.show { display:block }
+    .sub-detail h4 { margin:0 0 .65rem; font-size:.82rem; color:#0f4c75;
+      text-transform:uppercase; letter-spacing:.05em }
+    .sub-detail-tbl { width:100%; border-collapse:collapse; font-size:.78rem; background:#fff;
+      border:1px solid #e2e8f0; border-radius:6px; overflow:hidden }
+    .sub-detail-tbl th { background:#fff; padding:.45rem .55rem; font-size:.65rem;
+      text-transform:uppercase; color:#64748b; border-bottom:1px solid #e2e8f0; text-align:left }
+    .sub-detail-tbl td { padding:.4rem .55rem; border-bottom:1px solid #f1f5f9 }
+
+    /* === Charts === */
+    .chart-wrap { background:#fff; padding:1rem; border:1px solid #e2e8f0; border-radius:8px;
+      margin-bottom:1rem; height:280px; position:relative }
+    .chart-row { display:grid; grid-template-columns:1fr 1fr; gap:.85rem; margin-bottom:1rem }
+    @media (max-width:900px) { .chart-row { grid-template-columns:1fr } }
+    .chart-row .chart-wrap { margin-bottom:0; height:280px }
+
+    /* === Filters === */
+    .filters { display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:.85rem; align-items:center; }
+    .filters select, .filters input { padding:.35rem .6rem; border:1px solid #cbd5e1;
+      border-radius:5px; font-size:.82rem; font-family:inherit }
+
+    .btn-export { background:#16a34a !important; color:#fff !important; border:0;
+      padding:.4rem .9rem; border-radius:5px; cursor:pointer; font-size:.78rem; font-weight:700;
+      text-decoration:none; display:inline-flex; align-items:center; gap:.3rem }
+    .btn-export:hover { background:#15803d !important }
+    .btn-export.csv { background:#0f4c75 !important }
+    .btn-export.csv:hover { background:#0c3a5c !important }
+
+    /* === Pct bars === */
+    .pct-bar { display:inline-block; width:70px; height:8px; background:#e2e8f0;
+      border-radius:4px; overflow:hidden; vertical-align:middle; margin-left:.35rem }
+    .pct-bar-fill { height:100%; background:#16a34a }
+    .pct-bar-fill.warn { background:#d97706 }
+    .pct-bar-fill.bad  { background:#dc2626 }
+
+    /* === Pagination === */
+    .pagination { display:flex; gap:.3rem; align-items:center; justify-content:center;
+      padding:.85rem; flex-wrap:wrap }
+    .pagination button { padding:.35rem .7rem; border:1px solid #cbd5e1; background:#fff;
+      border-radius:4px; cursor:pointer; font-size:.78rem; min-width:32px }
+    .pagination button.active { background:#0f4c75; color:#fff; border-color:#0f4c75; font-weight:700 }
+    .pagination button:disabled { opacity:.4; cursor:not-allowed }
+    .pagination .info { color:#64748b; font-size:.78rem; margin:0 .5rem }
+
+    /* === Loading skeletons === */
+    @keyframes skel-shimmer { 0% { background-position:-200px 0 } 100% { background-position:200px 0 } }
+    .skel { background:linear-gradient(90deg,#f1f5f9 0px,#e2e8f0 50px,#f1f5f9 100px);
+      background-size:200px 100%; animation:skel-shimmer 1.2s infinite linear; border-radius:4px;
+      display:inline-block; height:.9rem; min-width:60px }
+    .skel.lg { height:1.4rem; min-width:80px }
+    .skel.full { width:100%; display:block }
+
+    /* === Map === */
+    #mz-map { height:480px; border:1px solid #e2e8f0; border-radius:8px; background:#f1f5f9 }
+
+    .empty { text-align:center; padding:3rem 1rem; color:#94a3b8 }
+
+    /* === Anomaly cards === */
+    .anomaly-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:.75rem }
+    .anomaly { padding:.75rem .9rem; background:#fff; border:1px solid #e2e8f0; border-radius:6px;
+      border-left:4px solid #d97706 }
+    .anomaly.high_burst { border-left-color:#7c3aed; background:#faf5ff }
+    .anomaly.inactive { border-left-color:#dc2626; background:#fef2f2 }
+    .anomaly h5 { margin:0 0 .25rem; font-size:.85rem; color:#0f172a }
+    .anomaly .reason { font-size:.72rem; color:#64748b; margin-bottom:.4rem }
+    .anomaly .stats { font-size:.72rem; color:#475569; line-height:1.5 }
+
+    /* === Matriz batedor × dia === */
+    .byday-tbl { font-size:.78rem; min-width:100%; }
+    .byday-tbl th { padding:.45rem .55rem; font-size:.65rem; white-space:nowrap; text-align:center; }
+    .byday-tbl th.col-email { text-align:left; min-width:240px; position:sticky; left:0; z-index:2;
+      background:#f1f5f9; border-right:2px solid #cbd5e1; }
+    .byday-tbl th.col-day { min-width:60px; cursor:default; }
+    .byday-tbl th.col-day.today { background:#dbeafe; color:#0f4c75; }
+    .byday-tbl th.col-total { min-width:80px; background:#0f4c75; color:#fff; cursor:default;
+      position:sticky; right:0; z-index:2; }
+    .byday-tbl tbody td { padding:.4rem .5rem; text-align:center; font-variant-numeric:tabular-nums;
+      border-right:1px solid #f1f5f9; }
+    .byday-tbl tbody td.col-email { text-align:left; position:sticky; left:0; z-index:1;
+      background:#fff; border-right:2px solid #cbd5e1; }
+    .byday-tbl tbody tr:hover td.col-email { background:#f8fafc; }
+    .byday-tbl tbody td.col-day { cursor:pointer; transition:filter .12s; }
+    .byday-tbl tbody td.col-day.has-data:hover { filter:brightness(.92); }
+    .byday-tbl tbody td.col-day.zero { color:#cbd5e1; }
+    .byday-tbl tbody td.col-day.today { border-left:2px solid #0f4c75; border-right:2px solid #0f4c75; }
+    .byday-tbl tbody td.col-total { font-weight:800; background:#f8fafc; color:#0f4c75;
+      position:sticky; right:0; z-index:1; }
+    .byday-tbl tfoot td { padding:.5rem .55rem; font-weight:800; background:#0f4c75; color:#fff;
+      text-align:center; }
+    .byday-tbl tfoot td.col-email { text-align:left; background:#0f4c75; }
+
+    /* Modal drill-down */
+    .drilldown-overlay { position:fixed; inset:0; background:rgba(15,23,42,.65); display:none;
+      align-items:flex-start; justify-content:center; z-index:9999; padding:2rem 1rem; overflow-y:auto; }
+    .drilldown-overlay.show { display:flex; }
+    .drilldown-modal { background:#fff; border-radius:10px; max-width:900px; width:100%;
+      padding:1.5rem; box-shadow:0 20px 50px rgba(0,0,0,.3); max-height:90vh; overflow-y:auto; }
+    .drilldown-modal h2 { margin:0 0 .5rem; font-size:1.1rem; color:#0f4c75; }
+    .drilldown-modal h2 small { color:#64748b; font-weight:500; font-size:.85rem }
+    .drilldown-close { float:right; background:transparent; border:0; font-size:1.4rem;
+      color:#64748b; cursor:pointer; padding:0 .25rem; line-height:1; }
+
+    @media print {
+      .toolbar, .no-print, .filters, .tabs, .alert-bar a, header button { display:none !important }
+      .kpi { grid-template-columns:repeat(3,1fr) }
+      .audit-tbl thead th { background:#fff !important; color:#000 !important; border-bottom:2px solid #000 }
+      body { background:#fff }
+    }
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <div>
+        <h1>Auditoria de Entregas</h1>
+        <span class="admin-sub">Captura imutável das submissões — preserva quem submeteu e quando, mesmo que a sheet perca dados</span>
+      </div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <button class="btn no-print" onclick="window.print()" style="background:#fff;border:1px solid #cbd5e1;padding:.4rem .85rem;border-radius:5px;cursor:pointer">🖨 Imprimir</button>
+        <button class="btn no-print" id="btn-refresh" style="background:#0f4c75;color:#fff;border:0;padding:.4rem .85rem;border-radius:5px;font-weight:700;cursor:pointer">↻ Refrescar</button>
+      </div>
+    </header>
+
+    <!-- Banners de alerta dinâmicos -->
+    <div id="alerts"></div>
+
+    <section class="admin-section">
+      <!-- KPIs com WoW comparison -->
+      <div class="kpi" id="kpi-cards">
+        <!-- Renderizados via JS -->
+      </div>
+
+      <!-- Tabs (4 principais visíveis + dropdown "Mais" para análises secundárias) -->
+      <div class="tabs" id="tabs" style="position:relative">
+        <button class="tab active" data-tab="byday">📅 Por Batedor / Dia</button>
+        <button class="tab" data-tab="ranking">📊 Ranking</button>
+        <button class="tab" data-tab="timeline">📈 Timeline</button>
+        <button class="tab" data-tab="all">📋 Todas</button>
+        <div class="tab-more-wrap" style="position:relative;display:inline-block">
+          <button type="button" class="tab tab-more" id="tab-more-btn" aria-haspopup="true" aria-expanded="false">
+            ⋯ Mais <span style="font-size:.7rem;opacity:.7">▾</span>
+          </button>
+          <div id="tab-more-menu" class="tab-more-menu" role="menu" hidden>
+            <button class="tab-more-item" data-tab="lost" role="menuitem">🔒 Removidas <span class="tab-badge" id="badge-lost" style="display:none">0</span></button>
+            <button class="tab-more-item" data-tab="missing" role="menuitem">⚠ Sem data <span class="tab-badge warn" id="badge-missing" style="display:none">0</span></button>
+            <button class="tab-more-item" data-tab="anomalies" role="menuitem">🚨 Anomalias</button>
+            <div class="tab-more-sep"></div>
+            <button class="tab-more-item" data-tab="topdist" role="menuitem">🏆 Top Distritos</button>
+            <button class="tab-more-item" data-tab="topprod" role="menuitem">🌾 Top Produtos</button>
+            <button class="tab-more-item" data-tab="planactual" role="menuitem">⚖ Plano vs Real</button>
+            <button class="tab-more-item" data-tab="map" role="menuitem">🗺 Mapa</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Ranking -->
+      <div class="tab-panel" id="tab-ranking">
+        <div class="filters">
+          <p style="margin:0;font-size:.82rem;color:#64748b;flex:1">
+            Click numa linha para ver detalhe. Sparkline = submissões dos últimos 7 dias.
+          </p>
+          <a href="#" class="btn-export csv" data-export="ranking" data-format="csv">↓ CSV</a>
+          <a href="#" class="btn-export" data-export="ranking" data-format="xlsx">↓ Excel</a>
+        </div>
+        <div style="overflow-x:auto;max-height:680px">
+          <table class="audit-tbl" id="rank-tbl">
+            <thead><tr>
+              <th data-sort="email">Submetedor</th>
+              <th>Atividade 7d</th>
+              <th data-sort="total" class="num">Total</th>
+              <th data-sort="today" class="num">Hoje</th>
+              <th data-sort="verified" class="num">✓ Verif.</th>
+              <th data-sort="pending" class="num">Pendente</th>
+              <th data-sort="rejected" class="num">Rejeitada</th>
+              <th data-sort="no_date" class="num">Sem data</th>
+              <th data-sort="avg_verif_hours" class="num">⏱ Verif. (h)</th>
+              <th data-sort="last_seen" class="num">Última</th>
+              <th class="num">% Verif.</th>
+            </tr></thead>
+            <tbody id="rank-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab: Por Batedor / Dia (DEFAULT) -->
+      <div class="tab-panel active" id="tab-byday">
+        <div class="alert-bar info">
+          <span style="font-size:1.4rem">💰</span>
+          <div style="flex:1">
+            <strong>Relatório de entregas por batedor por dia (kg).</strong>
+            Mesma vista que aparece em <a href="/batedores" target="_blank" style="color:#0f4c75;text-decoration:underline">/batedores</a> (página pública). Heatmap automático, click numa célula para ver as entregas desse batedor naquele dia.
+          </div>
+        </div>
+        <div class="filters">
+          <label style="font-size:.82rem;color:#475569">Período:
+            <select id="bd-days">
+              <option value="7">Últimos 7 dias</option>
+              <option value="14" selected>Últimos 14 dias</option>
+              <option value="30">Últimos 30 dias</option>
+              <option value="60">Últimos 60 dias</option>
+            </select>
+          </label>
+          <a href="#" class="btn-export csv" data-export-byday="csv">↓ CSV</a>
+          <a href="#" class="btn-export" data-export-byday="xlsx">↓ Excel</a>
+        </div>
+        <div id="byday-info" style="font-size:.8rem;color:#64748b;margin-bottom:.5rem"></div>
+        <div style="overflow:auto;max-height:600px;border:1px solid #e2e8f0;border-radius:6px">
+          <table class="audit-tbl byday-tbl" id="byday-tbl">
+            <thead id="byday-head"></thead>
+            <tbody id="byday-body"></tbody>
+            <tfoot id="byday-foot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab: Timeline -->
+      <div class="tab-panel" id="tab-timeline">
+        <div class="filters">
+          <label style="font-size:.82rem;color:#475569">Período:
+            <select id="tl-days">
+              <option value="7">7 dias</option>
+              <option value="14">14 dias</option>
+              <option value="30" selected>30 dias</option>
+              <option value="60">60 dias</option>
+              <option value="90">90 dias</option>
+            </select>
+          </label>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-timeline"></canvas></div>
+        <div class="chart-row">
+          <div class="chart-wrap"><canvas id="chart-status"></canvas></div>
+          <div class="chart-wrap"><canvas id="chart-submitters"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Tab: Todas com pagination -->
+      <div class="tab-panel" id="tab-all">
+        <div class="filters">
+          <input id="f-q" type="text" placeholder="🔍 GTU/ADSN/beneficiário…" style="flex:1;min-width:200px">
+          <select id="f-status">
+            <option value="">Todos os status</option>
+            <option value="Verified">Verified</option>
+            <option value="Pending Verification">Pending</option>
+            <option value="Rejected">Rejected</option>
+            <option value="Not Reachable">Not Reachable</option>
+            <option value="Partially Verified">Partial</option>
+          </select>
+          <input id="f-submitter" type="text" placeholder="Email" style="min-width:150px">
+          <input id="f-district" type="text" placeholder="Distrito" style="min-width:120px">
+          <input id="f-from" type="date" title="Detected from">
+          <input id="f-to" type="date" title="Detected to">
+          <button id="btn-filter" class="btn" style="background:#0f4c75;color:#fff;border:0;padding:.35rem .85rem;border-radius:5px;cursor:pointer">Filtrar</button>
+          <a href="#" class="btn-export csv" data-export="list" data-format="csv">↓ CSV</a>
+          <a href="#" class="btn-export" data-export="list" data-format="xlsx">↓ Excel</a>
+        </div>
+        <div style="overflow-x:auto;max-height:580px">
+          <table class="audit-tbl" id="all-tbl">
+            <thead><tr>
+              <th>Detected</th>
+              <th>GTU / ADSN</th>
+              <th>Beneficiário</th>
+              <th>Distrito</th>
+              <th>Produto</th>
+              <th class="num">Qty</th>
+              <th>Submetedor</th>
+              <th>Status</th>
+            </tr></thead>
+            <tbody id="all-body"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="all-pagination"></div>
+      </div>
+
+      <!-- Tab: Removidas (lost) -->
+      <div class="tab-panel" id="tab-lost">
+        <div class="alert-bar danger">
+          <span style="font-size:1.4rem">🔒</span>
+          <div style="flex:1">
+            <strong>Linhas que desapareceram do Google Sheet</strong> — capturámos antes de desaparecerem.
+            Preservadas para sempre nesta tabela. Útil quando alguém apaga ou re-organiza dados no sheet.
+          </div>
+        </div>
+        <div class="filters">
+          <label style="font-size:.82rem;color:#475569">Não vista há mais de:
+            <select id="lost-days">
+              <option value="1">1 dia</option>
+              <option value="2" selected>2 dias</option>
+              <option value="7">7 dias</option>
+              <option value="30">30 dias</option>
+            </select>
+          </label>
+          <a href="#" class="btn-export csv" data-export="lost" data-format="csv">↓ CSV</a>
+          <a href="#" class="btn-export" data-export="lost" data-format="xlsx">↓ Excel</a>
+        </div>
+        <div style="overflow-x:auto;max-height:600px">
+          <table class="audit-tbl">
+            <thead><tr>
+              <th>Detected</th>
+              <th class="num">Dias perdida</th>
+              <th>GTU / ADSN</th>
+              <th>Beneficiário</th>
+              <th>Distrito</th>
+              <th>Produto</th>
+              <th class="num">Qty</th>
+              <th>Submetedor</th>
+              <th>Última vez vista</th>
+            </tr></thead>
+            <tbody id="lost-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab: Sem data -->
+      <div class="tab-panel" id="tab-missing">
+        <div class="alert-bar warn">
+          <span style="font-size:1.4rem">⚠</span>
+          <div style="flex:1">
+            <strong>Linhas sem <code>delivery_date</code> no sheet</strong> — possível bug do AppSheet ou erro humano.
+            A nossa <code>detected_at</code> serve de salvaguarda.
+          </div>
+        </div>
+        <h3 style="margin:1rem 0 .5rem;font-size:.85rem;color:#0f4c75;text-transform:uppercase;letter-spacing:.05em">
+          % de linhas sem data por submetedor
+        </h3>
+        <div style="overflow-x:auto;margin-bottom:1.5rem">
+          <table class="audit-tbl" style="max-width:680px">
+            <thead><tr>
+              <th>Submetedor</th>
+              <th class="num">Total</th>
+              <th class="num">Sem data</th>
+              <th class="num">% Sem data</th>
+            </tr></thead>
+            <tbody id="missing-by-sub-body"></tbody>
+          </table>
+        </div>
+        <h3 style="margin:1.5rem 0 .5rem;font-size:.85rem;color:#0f4c75;text-transform:uppercase;letter-spacing:.05em">
+          Linhas individuais sem data
+          <a href="#" class="btn-export csv" data-export="missing-date" data-format="csv" style="float:right;margin-left:.5rem">↓ CSV</a>
+          <a href="#" class="btn-export" data-export="missing-date" data-format="xlsx" style="float:right">↓ Excel</a>
+        </h3>
+        <div style="overflow-x:auto;max-height:520px">
+          <table class="audit-tbl">
+            <thead><tr>
+              <th>Detected</th>
+              <th>GTU / ADSN</th>
+              <th>Beneficiário</th>
+              <th>Distrito</th>
+              <th>Produto</th>
+              <th class="num">Qty</th>
+              <th>Submetedor</th>
+              <th>Status</th>
+            </tr></thead>
+            <tbody id="missing-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab: Anomalias -->
+      <div class="tab-panel" id="tab-anomalies">
+        <div class="alert-bar info">
+          <span style="font-size:1.4rem">🚨</span>
+          <div style="flex:1">
+            <strong>Detecção automática de comportamentos fora do normal.</strong>
+            Compara cada submetedor com a sua média histórica.
+          </div>
+        </div>
+        <div class="anomaly-grid" id="anomalies-grid"></div>
+      </div>
+
+      <!-- Tab: Top Distritos -->
+      <div class="tab-panel" id="tab-topdist">
+        <div class="chart-wrap" style="height:560px"><canvas id="chart-topdist"></canvas></div>
+      </div>
+
+      <!-- Tab: Top Produtos -->
+      <div class="tab-panel" id="tab-topprod">
+        <div class="chart-wrap" style="height:480px"><canvas id="chart-topprod"></canvas></div>
+      </div>
+
+      <!-- Tab: Plano vs Real -->
+      <div class="tab-panel" id="tab-planactual">
+        <div class="alert-bar info">
+          <span style="font-size:1.4rem">⚖</span>
+          <div style="flex:1">
+            <strong>Plano (do MAAP) vs Submetido (audit)</strong>
+            por distrito + produto. Vê onde estás a falhar nas entregas.
+          </div>
+        </div>
+        <div style="overflow-x:auto;max-height:600px">
+          <table class="audit-tbl">
+            <thead><tr>
+              <th>Distrito</th>
+              <th>Província</th>
+              <th>Produto</th>
+              <th class="num">Planeado</th>
+              <th class="num">Submetido</th>
+              <th class="num">Falta</th>
+              <th class="num">% Cumprido</th>
+              <th class="num">Benef.</th>
+            </tr></thead>
+            <tbody id="planactual-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab: Mapa -->
+      <div class="tab-panel" id="tab-map">
+        <div class="alert-bar info">
+          <span style="font-size:1.4rem">🗺</span>
+          <div style="flex:1">
+            <strong>Heatmap de submissões por distrito.</strong>
+            Maiores círculos = mais submissões. Click para detalhe.
+          </div>
+        </div>
+        <div id="mz-map"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal drill-down: detalhe das entregas de 1 batedor num dia -->
+  <div class="drilldown-overlay" id="drill-overlay">
+    <div class="drilldown-modal">
+      <button class="drilldown-close" id="drill-close" title="Fechar">×</button>
+      <h2 id="drill-title">Detalhe</h2>
+      <div id="drill-body" style="margin-top:1rem"></div>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script src="/static/audit-entregas.js?v=pro-4-simplified"></script>
+</body>
+</html>

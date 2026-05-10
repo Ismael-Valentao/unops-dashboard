@@ -2,6 +2,7 @@
 (function () {
   const { fetchJSON, fmt, esc, sortRows, sortArrow, bindSortable,
           exportCSV, urlState, renderFilterChips, toast } = window.AdminUI;
+  const confirmDialog = window.AdminUI.confirm;
 
   // Saco hermético: 0.145 kg cada. Mantém alinhado com server-side
   // (db/distribution-repo.js, lib/distribution-bootstrap.js).
@@ -512,10 +513,12 @@
     const overText = overCapacity ? `  ⚠ EXCEDE em ${fmt(kg - truckCapacity)} kg` : "";
     $("#cap-text").textContent = `${fmt(kg)} / ${fmt(truckCapacity)} kg • ${sel.length} itens${overText}`;
     const btn = $("#btn-create");
-    btn.disabled = !sel.length || overCapacity;
+    // Botão fica disabled APENAS quando não há selecção. Sobrecarga já não
+    // bloqueia — o backend vai pedir confirmação se for o caso.
+    btn.disabled = !sel.length;
     btn.style.background = overCapacity ? "#dc2626" : "";
     btn.title = overCapacity
-      ? `Carga excede capacidade do camião em ${fmt(kg - truckCapacity)} kg. Remova items ou aumente capacidade.`
+      ? `Carga excede capacidade em ${fmt(kg - truckCapacity)} kg. Vai pedir confirmação ao criar.`
       : "";
   }
 
@@ -768,8 +771,39 @@
       items,
     };
 
+    // Helper: tenta criar; se vier warning de overload, pergunta ao
+    // utilizador e re-tenta com allow_overload:true. Devolve o result
+    // bem-sucedido OU null se utilizador cancelou.
+    async function tryCreate(reqBody) {
+      const result = await fetchJSON("/admin/api/distribution/services", { method: "POST", body: reqBody });
+      if (result.error === "Excede capacidade" && result.warning) {
+        // Confirmação: peso pedido excede capacidade do camião — mostrar
+        // detalhe e perguntar se o utilizador quer mesmo assim sobrecarregar.
+        const ok = await confirmDialog(
+          `Carga (${fmt(result.requested_kg)} kg) excede capacidade do camião (${fmt(result.capacity_kg)} kg)`,
+          {
+            title: "⚠ Sobrecarga do camião",
+            confirmLabel: "Continuar mesmo assim",
+            dangerous: true,
+            details: `Sobrecarga: <strong>${fmt(result.overload_kg)} kg</strong> ` +
+                     `(<strong>${result.overload_pct}%</strong> acima do limite). ` +
+                     `Confirma só se realmente queres carregar este peso — ` +
+                     `isto pode danificar o camião ou violar legislação rodoviária.`,
+          }
+        );
+        if (!ok) return null;
+        // Re-tenta com allow_overload
+        return await fetchJSON("/admin/api/distribution/services", {
+          method: "POST",
+          body: { ...reqBody, allow_overload: true },
+        });
+      }
+      return result;
+    }
+
     try {
-      const result = await fetchJSON("/admin/api/distribution/services", { method: "POST", body });
+      const result = await tryCreate(body);
+      if (!result) { return; /* utilizador cancelou */ }
       if (result.error) {
         let msg = result.error;
         if (result.insufficient) {

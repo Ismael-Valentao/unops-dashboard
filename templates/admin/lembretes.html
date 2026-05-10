@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Lembretes</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    /* Layout dos cards de KPI no topo */
+    .rem-counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-bottom: 1rem; }
+    .rem-count { padding: .8rem 1rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      cursor: pointer; transition: all .12s; border-left-width: 4px; }
+    .rem-count:hover { box-shadow: 0 2px 6px rgba(15,23,42,.08); transform: translateY(-1px) }
+    .rem-count.active { border-color: #0f4c75; box-shadow: 0 0 0 2px rgba(15,76,117,.15) }
+    .rem-count.due { border-left-color: #dc2626 }
+    .rem-count.upcoming { border-left-color: #d97706 }
+    .rem-count.no-date { border-left-color: #64748b }
+    .rem-count.done { border-left-color: #16a34a }
+    .rem-count .lbl { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; font-weight: 700; }
+    .rem-count .val { font-size: 1.6rem; font-weight: 800; line-height: 1.1; margin-top: .15rem; color: #0f172a; }
+    .rem-count.due .val { color: #dc2626 }
+    .rem-count.upcoming .val { color: #d97706 }
+    .rem-count.done .val { color: #16a34a }
+    .rem-count .sub { font-size: .7rem; color: #94a3b8; margin-top: .15rem }
+
+    /* Tabs/filtros */
+    .rem-filters { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
+    .rem-tab { padding: .35rem .8rem; border: 1px solid #cbd5e1; background: #fff;
+      border-radius: 5px; font-size: .8rem; cursor: pointer; color: #475569; font-family: inherit; }
+    .rem-tab:hover { border-color: #0f4c75; color: #0f4c75 }
+    .rem-tab.active { background: #0f4c75; color: #fff; border-color: #0f4c75; font-weight: 600 }
+    .rem-search { flex: 1; min-width: 180px; padding: .35rem .6rem;
+      border: 1px solid #cbd5e1; border-radius: 5px; font-size: .8rem; font-family: inherit; }
+    .btn-new { background: #16a34a; color: #fff; border: 0; padding: .45rem 1rem;
+      border-radius: 5px; font-weight: 700; font-size: .85rem; cursor: pointer; font-family: inherit; }
+    .btn-new:hover { background: #15803d }
+
+    /* Lista de lembretes */
+    .rem-list { display: flex; flex-direction: column; gap: .55rem; }
+    .rem-item { padding: .8rem 1rem; background: #fff; border: 1px solid #e2e8f0;
+      border-left-width: 4px; border-radius: 6px; display: grid;
+      grid-template-columns: auto 1fr auto; gap: .75rem; align-items: start; }
+    .rem-item.is-due { border-left-color: #dc2626; background: #fffbfb; }
+    .rem-item.is-upcoming { border-left-color: #d97706 }
+    .rem-item.is-no-date { border-left-color: #64748b }
+    .rem-item.is-done { border-left-color: #16a34a; opacity: .6; background: #f8fafc; }
+    .rem-item.is-dismissed { border-left-color: #94a3b8; opacity: .5; background: #f8fafc; }
+    .rem-item .icon { font-size: 1.25rem; padding-top: .15rem; flex-shrink: 0; }
+    .rem-item .body { min-width: 0 }
+    .rem-item .title { font-weight: 700; color: #0f172a; font-size: .9rem; line-height: 1.3 }
+    .rem-item.is-done .title { text-decoration: line-through; color: #64748b }
+    .rem-item .description { color: #475569; font-size: .82rem; margin-top: .25rem; line-height: 1.4;
+      white-space: pre-wrap; word-wrap: break-word }
+    .rem-meta { display: flex; gap: .8rem; flex-wrap: wrap; margin-top: .35rem; font-size: .72rem; color: #64748b }
+    .rem-meta .tag { padding: .1rem .4rem; border-radius: 3px; background: #f1f5f9; }
+    .rem-meta .tag-due { background: #fee2e2; color: #991b1b; font-weight: 700 }
+    .rem-meta .tag-priority-high { background: #fef3c7; color: #92400e; font-weight: 700 }
+    .rem-meta .tag-priority-low { background: #f1f5f9; color: #94a3b8 }
+    .rem-meta .tag-related a { color: #0f4c75; text-decoration: none; font-weight: 600 }
+    .rem-meta .tag-related a:hover { text-decoration: underline }
+    .rem-actions { display: flex; gap: .25rem; flex-shrink: 0; align-items: flex-start; }
+    .rem-actions button { padding: .3rem .6rem; border: 1px solid #cbd5e1; background: #fff;
+      border-radius: 4px; font-size: .72rem; cursor: pointer; color: #475569; font-family: inherit; }
+    .rem-actions button:hover { background: #f1f5f9; border-color: #0f4c75; color: #0f4c75 }
+    .rem-actions .btn-done { background: #dcfce7; color: #166534; border-color: #86efac }
+    .rem-actions .btn-done:hover { background: #bbf7d0; color: #14532d }
+    .rem-actions .btn-delete:hover { background: #fee2e2; color: #991b1b; border-color: #fca5a5 }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.6); display: none;
+      align-items: center; justify-content: center; z-index: 9999; padding: 1rem; }
+    .modal-overlay.show { display: flex }
+    .modal { background: #fff; border-radius: 10px; max-width: 540px; width: 100%; padding: 1.5rem;
+      box-shadow: 0 20px 50px rgba(0,0,0,.3) }
+    .modal h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #0f4c75 }
+    .modal label { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
+      color: #64748b; font-weight: 600; margin-top: .8rem; margin-bottom: .25rem; }
+    .modal input, .modal textarea, .modal select {
+      width: 100%; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 5px;
+      font-size: .88rem; font-family: inherit; box-sizing: border-box; }
+    .modal textarea { resize: vertical; min-height: 80px }
+    .modal-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.25rem; }
+    .modal-actions .btn-primary { background: #0f4c75; color: #fff; border: 0;
+      padding: .55rem 1.2rem; border-radius: 5px; font-weight: 700; cursor: pointer; }
+    .modal-actions .btn-cancel { background: #fff; color: #475569;
+      padding: .55rem 1rem; border: 1px solid #cbd5e1; border-radius: 5px; cursor: pointer; }
+    .modal-row { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem }
+    .modal-error { background: #fee2e2; border-left: 3px solid #dc2626; padding: .5rem .75rem;
+      border-radius: 4px; color: #991b1b; font-size: .8rem; margin-top: .5rem; display: none; }
+    .modal-error.show { display: block }
+
+    /* Empty state */
+    .empty { text-align: center; padding: 3rem 1rem; color: #94a3b8 }
+    .empty .ico { font-size: 3rem; opacity: .4; margin-bottom: .5rem }
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header" style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h1>Lembretes &amp; Informações</h1>
+        <span class="admin-sub">Anota o que precisas recordar — com data ou só como nota</span>
+      </div>
+      <button class="btn-new" id="btn-new">+ Novo Lembrete</button>
+    </header>
+
+    <section class="admin-section">
+      <!-- Counts cards -->
+      <div class="rem-counts">
+        <div class="rem-count due"      data-filter="due">
+          <div class="lbl">Vencidos</div>
+          <div class="val" id="c-due">—</div>
+          <div class="sub">precisam de atenção agora</div>
+        </div>
+        <div class="rem-count upcoming"  data-filter="upcoming">
+          <div class="lbl">Com data futura</div>
+          <div class="val" id="c-upcoming">—</div>
+          <div class="sub">vão vencer em breve</div>
+        </div>
+        <div class="rem-count no-date" data-filter="no-date">
+          <div class="lbl">Sem data</div>
+          <div class="val" id="c-nodate">—</div>
+          <div class="sub">notas / informações</div>
+        </div>
+        <div class="rem-count done"     data-filter="done">
+          <div class="lbl">Concluídos</div>
+          <div class="val" id="c-done">—</div>
+          <div class="sub">já tratados</div>
+        </div>
+      </div>
+
+      <!-- Filtros -->
+      <div class="rem-filters">
+        <button class="rem-tab active" data-filter="active">Activos</button>
+        <button class="rem-tab"        data-filter="due">Vencidos</button>
+        <button class="rem-tab"        data-filter="upcoming">Próximos</button>
+        <button class="rem-tab"        data-filter="no-date">Sem data</button>
+        <button class="rem-tab"        data-filter="done">Concluídos</button>
+        <button class="rem-tab"        data-filter="dismissed">Descartados</button>
+        <input type="text" class="rem-search" id="search" placeholder="Pesquisar...">
+      </div>
+
+      <!-- Lista -->
+      <div class="rem-list" id="list">
+        <div class="empty"><div class="ico">⏳</div>A carregar…</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal de criação/edição -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <h2 id="modal-title">Novo Lembrete</h2>
+      <label for="m-title">Título *</label>
+      <input id="m-title" type="text" placeholder="Ex: Verificar Milho do Chókwè com a Manuela" maxlength="255">
+      <label for="m-body">Descrição (opcional)</label>
+      <textarea id="m-body" placeholder="Detalhes, contexto, links…"></textarea>
+      <div class="modal-row">
+        <div>
+          <label for="m-date">Data para lembrar</label>
+          <input id="m-date" type="datetime-local">
+        </div>
+        <div>
+          <label for="m-priority">Prioridade</label>
+          <select id="m-priority">
+            <option value="normal">Normal</option>
+            <option value="high">Alta</option>
+            <option value="low">Baixa</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-error" id="m-error"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="m-cancel">Cancelar</button>
+        <button class="btn-primary" id="m-save">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, fmtDate, esc, toast } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+
+      let allRows = [];
+      let activeFilter = "active";
+      let editingId = null;
+
+      // ── Utils ─────────────────────────────────────────────
+      function fmtDateTime(iso) {
+        if (!iso) return "—";
+        const d = new Date(iso);
+        return d.toLocaleString("pt-MZ", {
+          day: "2-digit", month: "2-digit", year: "numeric",
+          hour: "2-digit", minute: "2-digit",
+        });
+      }
+      function relativeTime(iso) {
+        if (!iso) return "";
+        const d = new Date(iso);
+        const diff = (d - Date.now()) / 1000;       // seconds
+        const abs = Math.abs(diff);
+        const sign = diff < 0 ? "há " : "em ";
+        if (abs < 60)        return sign + Math.round(abs) + "s";
+        if (abs < 3600)      return sign + Math.round(abs / 60) + "min";
+        if (abs < 86400)     return sign + Math.round(abs / 3600) + "h";
+        if (abs < 86400 * 7) return sign + Math.round(abs / 86400) + " dias";
+        return fmtDateTime(iso);
+      }
+      function priorityIcon(p) {
+        return ({ high: "🔥", normal: "📌", low: "📋" })[p] || "📌";
+      }
+      function relatedLink(kind, id) {
+        if (!kind || !id) return null;
+        const map = {
+          service:     `/admin/servicos/${id}`,
+          beneficiary: `/admin/beneficiarios/${id}`,
+          truck:       `/admin/camioes?plate=${encodeURIComponent(id)}`,
+        };
+        return map[kind] ? { href: map[kind], label: `${kind} ${id}` } : null;
+      }
+
+      // ── API ───────────────────────────────────────────────
+      async function load() {
+        try {
+          const data = await fetchJSON("/admin/api/reminders?limit=500");
+          allRows = data.rows || [];
+          renderCounts(data.counts || {});
+          renderList();
+        } catch (e) {
+          $("#list").innerHTML = `<div class="empty" style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
+        }
+      }
+
+      // ── Rendering ─────────────────────────────────────────
+      function renderCounts(c) {
+        $("#c-due").textContent      = c.due       != null ? c.due      : "—";
+        $("#c-upcoming").textContent = c.upcoming  != null ? c.upcoming : "—";
+        $("#c-nodate").textContent   = c.no_date   != null ? c.no_date  : "—";
+        $("#c-done").textContent     = c.done      != null ? c.done     : "—";
+      }
+
+      function applyFilter(rows) {
+        const term = ($("#search").value || "").toLowerCase().trim();
+        return rows.filter((r) => {
+          // Filter by tab
+          if (activeFilter === "active"     && r.status !== "active") return false;
+          if (activeFilter === "done"       && r.status !== "done") return false;
+          if (activeFilter === "dismissed"  && r.status !== "dismissed") return false;
+          if (activeFilter === "due"        && (r.status !== "active" || !r.is_due)) return false;
+          if (activeFilter === "upcoming"   && (r.status !== "active" || !r.remind_at || r.is_due)) return false;
+          if (activeFilter === "no-date"    && (r.status !== "active" || r.remind_at)) return false;
+          // Search
+          if (term) {
+            const blob = ((r.title || "") + " " + (r.body || "")).toLowerCase();
+            if (!blob.includes(term)) return false;
+          }
+          return true;
+        });
+      }
+
+      function renderItem(r) {
+        const isDue = !!r.is_due;
+        const isDone = r.status === "done";
+        const isDismissed = r.status === "dismissed";
+        const isUpcoming = r.status === "active" && r.remind_at && !isDue;
+        const isNoDate = r.status === "active" && !r.remind_at;
+
+        const cls = isDone ? "is-done"
+                  : isDismissed ? "is-dismissed"
+                  : isDue ? "is-due"
+                  : isUpcoming ? "is-upcoming"
+                  : "is-no-date";
+
+        const meta = [];
+        if (r.remind_at) {
+          const cls2 = isDue ? "tag-due" : "tag";
+          meta.push(`<span class="tag ${cls2}">📅 ${esc(fmtDateTime(r.remind_at))}${isUpcoming ? " · " + esc(relativeTime(r.remind_at)) : ""}</span>`);
+        } else {
+          meta.push(`<span class="tag">📋 sem data</span>`);
+        }
+        if (r.priority && r.priority !== "normal") {
+          meta.push(`<span class="tag tag-priority-${r.priority}">${r.priority === "high" ? "Alta" : "Baixa"}</span>`);
+        }
+        const rel = relatedLink(r.related_kind, r.related_id);
+        if (rel) {
+          meta.push(`<span class="tag tag-related">→ <a href="${rel.href}">${esc(rel.label)}</a></span>`);
+        }
+        if (r.created_by_email) {
+          meta.push(`<span class="tag">por ${esc(r.created_by_email.split("@")[0])}</span>`);
+        }
+
+        // Actions diferem por status
+        let actions = "";
+        if (r.status === "active") {
+          actions = `
+            <button class="btn-done" data-act="done" data-id="${r.id}" title="Marcar como tratado">✓ Feito</button>
+            <button data-act="edit" data-id="${r.id}" title="Editar">✏️</button>
+            <button data-act="dismiss" data-id="${r.id}" title="Descartar">✕</button>
+          `;
+        } else {
+          actions = `
+            <button data-act="reactivate" data-id="${r.id}" title="Voltar a activar">↺</button>
+            <button class="btn-delete" data-act="delete" data-id="${r.id}" title="Apagar permanentemente">🗑</button>
+          `;
+        }
+
+        return `
+          <div class="rem-item ${cls}" data-id="${r.id}">
+            <div class="icon">${priorityIcon(r.priority)}</div>
+            <div class="body">
+              <div class="title">${esc(r.title)}</div>
+              ${r.body ? `<div class="description">${esc(r.body)}</div>` : ""}
+              <div class="rem-meta">${meta.join("")}</div>
+            </div>
+            <div class="rem-actions">${actions}</div>
+          </div>
+        `;
+      }
+
+      function renderList() {
+        const filtered = applyFilter(allRows);
+        const list = $("#list");
+        if (!filtered.length) {
+          list.innerHTML = `<div class="empty">
+            <div class="ico">${activeFilter === "active" ? "🎉" : "📭"}</div>
+            ${activeFilter === "active" ? "Nada pendente — bom trabalho!" : "Nada nesta categoria."}
+          </div>`;
+          return;
+        }
+        list.innerHTML = filtered.map(renderItem).join("");
+        // Bind action buttons
+        list.querySelectorAll("button[data-act]").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const id = Number(btn.dataset.id);
+            const act = btn.dataset.act;
+            handleAction(id, act);
+          });
+        });
+      }
+
+      // ── Actions ───────────────────────────────────────────
+      async function handleAction(id, act) {
+        const item = allRows.find((r) => r.id === id);
+        if (!item) return;
+        try {
+          if (act === "done") {
+            await fetchJSON(`/admin/api/reminders/${id}/done`, { method: "POST" });
+            toast("Marcado como feito", { kind: "ok" });
+          } else if (act === "dismiss") {
+            await fetchJSON(`/admin/api/reminders/${id}/dismiss`, { method: "POST" });
+            toast("Descartado", { kind: "warn" });
+          } else if (act === "reactivate") {
+            await fetchJSON(`/admin/api/reminders/${id}/reactivate`, { method: "POST" });
+            toast("Reactivado", { kind: "ok" });
+          } else if (act === "delete") {
+            if (!confirm(`Apagar permanentemente "${item.title}"?`)) return;
+            await fetchJSON(`/admin/api/reminders/${id}`, { method: "DELETE" });
+            toast("Apagado", { kind: "ok" });
+          } else if (act === "edit") {
+            openModal(item);
+            return;
+          }
+          await load();
+        } catch (e) {
+          toast("Erro: " + e.message, { kind: "err" });
+        }
+      }
+
+      // ── Modal ─────────────────────────────────────────────
+      function openModal(item) {
+        editingId = item ? item.id : null;
+        $("#modal-title").textContent = item ? "Editar Lembrete" : "Novo Lembrete";
+        $("#m-title").value = item ? item.title : "";
+        $("#m-body").value  = item ? (item.body || "") : "";
+        $("#m-date").value  = item && item.remind_at
+          ? new Date(item.remind_at).toISOString().slice(0, 16)
+          : "";
+        $("#m-priority").value = item ? (item.priority || "normal") : "normal";
+        $("#m-error").classList.remove("show");
+        $("#modal").classList.add("show");
+        setTimeout(() => $("#m-title").focus(), 50);
+      }
+      function closeModal() {
+        $("#modal").classList.remove("show");
+        editingId = null;
+      }
+
+      async function saveModal() {
+        const title = $("#m-title").value.trim();
+        const body = $("#m-body").value.trim();
+        const date = $("#m-date").value;
+        const priority = $("#m-priority").value;
+        if (!title) {
+          $("#m-error").textContent = "Título obrigatório";
+          $("#m-error").classList.add("show");
+          return;
+        }
+        const payload = {
+          title, body: body || null,
+          remind_at: date ? new Date(date).toISOString() : null,
+          priority,
+        };
+        try {
+          if (editingId) {
+            await fetchJSON(`/admin/api/reminders/${editingId}`, {
+              method: "PATCH", body: payload,
+            });
+            toast("Lembrete actualizado", { kind: "ok" });
+          } else {
+            await fetchJSON("/admin/api/reminders", {
+              method: "POST", body: payload,
+            });
+            toast("Lembrete criado", { kind: "ok" });
+          }
+          closeModal();
+          await load();
+        } catch (e) {
+          $("#m-error").textContent = e.message || "Erro ao guardar";
+          $("#m-error").classList.add("show");
+        }
+      }
+
+      // ── Wire up ───────────────────────────────────────────
+      $("#btn-new").addEventListener("click", () => openModal(null));
+      $("#m-cancel").addEventListener("click", closeModal);
+      $("#m-save").addEventListener("click", saveModal);
+      // Submit on Enter no título
+      $("#m-title").addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveModal(); }
+      });
+      // Esc fecha modal
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && $("#modal").classList.contains("show")) closeModal();
+      });
+      // Click fora do modal fecha
+      $("#modal").addEventListener("click", (e) => {
+        if (e.target.id === "modal") closeModal();
+      });
+      // Tabs
+      document.querySelectorAll(".rem-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll(".rem-tab").forEach((t) => t.classList.remove("active"));
+          tab.classList.add("active");
+          activeFilter = tab.dataset.filter;
+          // Sync os cards de cima também
+          document.querySelectorAll(".rem-count").forEach((c) =>
+            c.classList.toggle("active", c.dataset.filter === activeFilter)
+          );
+          renderList();
+        });
+      });
+      // Cards clicáveis
+      document.querySelectorAll(".rem-count").forEach((card) => {
+        card.addEventListener("click", () => {
+          const f = card.dataset.filter;
+          const tab = document.querySelector(`.rem-tab[data-filter="${f}"]`);
+          if (tab) tab.click();
+        });
+      });
+      // Pesquisa
+      let searchTimer = null;
+      $("#search").addEventListener("input", () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(renderList, 150);
+      });
+
+      // Inicializa
+      load();
+
+      // Renderiza sidebar (chave bate com NAV em static/admin.js)
+      AdminUI.renderLayout("lembretes");
+    })();
+  </script>
+</body>
+</html>

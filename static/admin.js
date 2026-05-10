@@ -19,10 +19,14 @@ window.AdminUI = (function () {
     clipboard:    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>',
     shield:       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
     users:        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    bell:         '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+    phone:        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
   };
 
   const NAV = [
     { key: "dashboard",       label: "Dashboard",         icon: ICO.dashboard,  href: "/admin" },
+    { key: "lembretes",       label: "Lembretes",         icon: ICO.bell,       href: "/admin/lembretes", badge: "reminders" },
+    { key: "sms",             label: "SMS",               icon: ICO.phone,      href: "/admin/sms" },
     { section: "Distribuição" },
     { key: "distribuicao",    label: "Saldo & Despachar", icon: ICO.target,     href: "/admin/distribuicao" },
     { key: "beneficiarios",   label: "Beneficiários",     icon: ICO.users,      href: "/admin/beneficiarios" },
@@ -31,6 +35,7 @@ window.AdminUI = (function () {
     { key: "aprovacoes",      label: "Aprovações",        icon: ICO.shield,     href: "/admin/aprovacoes", roles: ["admin", "superadmin"] },
     { key: "anexar-guias",    label: "Anexar Guias",      icon: ICO.file,       href: "/admin/anexar-guias" },
     { key: "guias-pdf",       label: "PDF → Excel",       icon: ICO.file,       href: "/admin/guias-pdf" },
+    { key: "audit-entregas",  label: "Auditoria Entregas",icon: ICO.shield,     href: "/admin/audit-entregas" },
     { key: "reconciliacao",   label: "Reconciliação",     icon: ICO.clipboard,  href: "/admin/reconciliacao" },
     { key: "relatorio-provincias", label: "Relatório por Província", icon: ICO.map, href: "/admin/relatorio-provincias" },
     { section: "Compras" },
@@ -133,8 +138,13 @@ window.AdminUI = (function () {
 
     const links = NAV.filter((n) => !n.roles || n.roles.includes(me.role)).map((n) => {
       if (n.section) return `<div class="sb-section">${esc(n.section)}</div>`;
+      // Suporta badge dinâmica (ex: lembretes pendentes/vencidos)
+      const badgeId = n.badge ? `id="sb-badge-${n.badge}"` : "";
+      const badge = n.badge
+        ? `<span class="sb-badge" ${badgeId} style="display:none"></span>`
+        : "";
       return `<a href="${n.href}" class="sb-link ${n.key === activeKey ? "active" : ""}">
-        <span class="sb-icon">${n.icon}</span>${n.label}
+        <span class="sb-icon">${n.icon}</span>${n.label}${badge}
       </a>`;
     }).join("");
 
@@ -154,6 +164,76 @@ window.AdminUI = (function () {
         </div>
       </aside>
     `;
+
+    // Carrega contagens de lembretes e (a) actualiza badge na sidebar,
+    // (b) injecta banner global de aviso se há vencidos. Falha silenciosamente
+    // se utilizador não tem permissão (eg. sem login).
+    refreshReminderBadge().catch(() => { /* ignore */ });
+    // Re-fetch periódico (a cada 60s) para manter badge actualizado
+    if (!window._remindersInterval) {
+      window._remindersInterval = setInterval(() => {
+        refreshReminderBadge().catch(() => { /* ignore */ });
+      }, 60000);
+    }
+  }
+
+  // Pede contagens de lembretes ao backend e actualiza:
+  //  • Badge na sidebar (vermelho se há vencidos, azul se só pendentes)
+  //  • Banner global no topo do main quando há vencidos (1ª vez ou sumiu)
+  async function refreshReminderBadge() {
+    let counts = null;
+    try {
+      counts = await fetchJSON("/admin/api/reminders/counts");
+    } catch (_) { return; }
+    const badge = document.getElementById("sb-badge-reminders");
+    if (badge) {
+      if (counts.due > 0) {
+        badge.textContent = counts.due;
+        badge.style.display = "";
+        badge.classList.add("sb-badge-due");
+        badge.title = counts.due + " lembrete(s) vencido(s) — atenção!";
+      } else if (counts.active > 0) {
+        badge.textContent = counts.active;
+        badge.style.display = "";
+        badge.classList.remove("sb-badge-due");
+        badge.title = counts.active + " lembrete(s) activo(s)";
+      } else {
+        badge.style.display = "none";
+      }
+    }
+    // Banner global de vencidos — só na home /admin (evita duplicação)
+    renderRemindersBanner(counts);
+  }
+
+  // Injecta/remove banner laranja no topo do <main> quando há lembretes
+  // vencidos. É idempotente — chama-se sempre que counts muda.
+  function renderRemindersBanner(counts) {
+    const existing = document.getElementById("rem-banner");
+    if (!counts || !counts.due) {
+      if (existing) existing.remove();
+      return;
+    }
+    if (existing) {
+      // Actualiza contagem se já existir
+      const numEl = existing.querySelector(".rem-banner-num");
+      if (numEl) numEl.textContent = counts.due;
+      return;
+    }
+    const main = document.querySelector("main.admin-main");
+    if (!main) return;
+    const banner = document.createElement("div");
+    banner.id = "rem-banner";
+    banner.className = "rem-banner";
+    banner.innerHTML = `
+      <span class="rem-banner-ico">⚠</span>
+      <span class="rem-banner-text">
+        <strong><span class="rem-banner-num">${counts.due}</span> lembrete(s) vencido(s)</strong> — precisam da tua atenção
+      </span>
+      <a href="/admin/lembretes" class="rem-banner-btn">Ver lembretes →</a>
+      <button class="rem-banner-close" title="Fechar">×</button>
+    `;
+    main.insertBefore(banner, main.firstChild);
+    banner.querySelector(".rem-banner-close").addEventListener("click", () => banner.remove());
   }
 
   // ── Sortable tables ─────────────────────────────────────────

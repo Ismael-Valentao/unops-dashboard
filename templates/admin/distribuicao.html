@@ -366,7 +366,9 @@
   </div>
 
   <script src="/static/admin.js"></script>
-  <script src="/static/distribuicao.js"></script>
+  <!-- Cache-bust: força browser a re-baixar o JS quando há mudanças.
+       v parameter incrementa quando o ficheiro muda (manual). -->
+  <script src="/static/distribuicao.js?v=overload-confirm-1"></script>
   <script>AdminUI.renderLayout("distribuicao");</script>
 </body>
 </html>

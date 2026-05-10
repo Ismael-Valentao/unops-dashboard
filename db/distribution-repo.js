@@ -380,7 +380,10 @@ const Services = {
         return { error: "Saldo insuficiente", insufficient };
       }
 
-      // Validar capacidade do camião — peso REAL em kg (sacos × 0.3, etc.)
+      // Validar capacidade do camião — peso REAL em kg (sacos × 0.145).
+      // Se o utilizador explicitamente confirma sobrecarga (svc.allow_overload),
+      // saltamos esta validação. Caso contrário devolvemos warning para o
+      // frontend mostrar confirm dialog.
       const balKeys2 = items.map((it) => [it.extensionist_id, it.sku]);
       const ph2 = balKeys2.map(() => "(?,?)").join(",");
       const [unitRows] = await conn.query(
@@ -392,12 +395,18 @@ const Services = {
         const u = unitMap.get(`${it.extensionist_id}|${it.sku}`) || "kg";
         return s + qtyToKg(it.qty, u);
       }, 0);
-      if (totalKg > capacity) {
+      const overloadKg = totalKg - capacity;
+      if (overloadKg > 0 && !svc.allow_overload) {
         await conn.rollback();
         return {
           error: "Excede capacidade",
+          // 'warning: true' sinaliza ao frontend que isto é
+          // confirmável — chama de novo com allow_overload:true.
+          warning: true,
           requested_kg: totalKg,
           capacity_kg: capacity,
+          overload_kg: overloadKg,
+          overload_pct: capacity > 0 ? Math.round((overloadKg / capacity) * 1000) / 10 : 0,
         };
       }
 
@@ -486,16 +495,29 @@ const Services = {
     }
   },
 
-  // Edita campos editáveis de um serviço em DRAFT.
-  // Permite corrigir matrícula, motorista, telefone, origem, capacidade,
-  // notas. Não toca em itens (para isso é cancelar + recriar).
+  // Edita campos editáveis de um serviço em qualquer estado.
+  // Diferentes estados permitem diferentes campos:
+  //   - draft       → tudo (incluindo capacidade, que afecta validação)
+  //   - in_transit  → metadados do camião/motorista/origem/notas
+  //   - delivered   → metadados do camião/motorista/origem/notas
+  //                   (corrigir typos depois da entrega — não toca em
+  //                    items/qty que reflectem o que foi entregue)
+  //   - cancelled   → idem (corrigir notas/registo histórico)
+  //
+  // Capacidade NÃO é editável fora de draft porque é usada para validação
+  // de auto-fill no momento da criação. Items (qty, sku, ext_id) também
+  // nunca são editáveis fora de draft.
   async update(serviceId, patch) {
-    // Campos sempre editáveis (mesmo em in_transit): identificação do camião,
-    // motorista e notas — operador pode precisar corrigir typos ou actualizar
-    // dados de contacto depois do despacho.
-    const ALWAYS_EDITABLE = ["truck_plate", "truck_plate_2", "driver_name", "driver_phone", "notes"];
-    // Campos só editáveis em draft (mexem em saldo/match/match com items).
-    const DRAFT_ONLY = ["origem_supplier", "truck_capacity_kg"];
+    // Sempre editável (qualquer status). Metadados puros que não afectam
+    // saldos nem cálculos — só dados de identificação/observação.
+    const ALWAYS_EDITABLE = [
+      "truck_plate", "truck_plate_2",
+      "driver_name", "driver_phone",
+      "notes",
+      "origem_supplier",
+    ];
+    // Só editável em draft (afecta validação ou cálculos):
+    const DRAFT_ONLY = ["truck_capacity_kg"];
 
     // Lê o estado actual para decidir o que se permite alterar.
     const conn = await getPool().getConnection();
@@ -503,9 +525,6 @@ const Services = {
       const [svc] = await conn.query("SELECT status FROM delivery_services WHERE id = ?", [serviceId]);
       if (!svc[0]) return { error: "Serviço não existe" };
       const status = svc[0].status;
-      if (status === "delivered" || status === "cancelled") {
-        return { error: "Serviço já está " + (status === "delivered" ? "entregue" : "cancelado") + " — não pode ser editado" };
-      }
       const allowed = status === "draft"
         ? [...ALWAYS_EDITABLE, ...DRAFT_ONLY]
         : ALWAYS_EDITABLE;
@@ -530,7 +549,7 @@ const Services = {
         params.push(v);
       }
       if (!sets.length) {
-        if (blocked.length) return { error: "Em " + status + " só pode editar camião/motorista/notas. Bloqueado: " + blocked.join(", ") };
+        if (blocked.length) return { error: "Em " + status + " só pode editar camião/motorista/origem/notas. Bloqueado: " + blocked.join(", ") };
         return { error: "Nada para actualizar" };
       }
 
@@ -577,7 +596,11 @@ const Services = {
     if (!svc.truck_capacity_kg || svc.truck_capacity_kg <= 0) {
       warnings.push("Capacidade do camião não definida");
     } else if (Number(svc.total_kg) > Number(svc.truck_capacity_kg)) {
-      errors.push(`Carga (${svc.total_kg} kg) excede capacidade (${svc.truck_capacity_kg} kg)`);
+      // Sobrecarga — não bloqueia (errors), mas obriga a confirmação
+      // explícita do utilizador (warnings → needs_confirm no setInTransit).
+      const overload = Number(svc.total_kg) - Number(svc.truck_capacity_kg);
+      const pct = Math.round((overload / Number(svc.truck_capacity_kg)) * 1000) / 10;
+      warnings.push(`Carga (${svc.total_kg} kg) excede capacidade (${svc.truck_capacity_kg} kg) em ${overload} kg (+${pct}%)`);
     }
     return { ok: errors.length === 0, errors, warnings };
   },
@@ -1572,6 +1595,168 @@ const Reports = {
         n_provinces: provinces.length,
         n_beneficiaries: Number(totRow?.n_beneficiaries || 0),
         n_services: Number(totRow?.n_services || 0),
+      },
+    };
+  },
+
+  // Lista provincias e distritos disponiveis em delivery_balances para popular filtros
+  async geographyTree() {
+    const rows = await query(
+      `SELECT DISTINCT province, district
+       FROM delivery_balances
+       WHERE province IS NOT NULL AND province <> ''
+       ORDER BY province, district`
+    );
+    const tree = {};
+    for (const r of rows) {
+      if (!tree[r.province]) tree[r.province] = new Set();
+      if (r.district) tree[r.province].add(r.district);
+    }
+    return Object.fromEntries(
+      Object.entries(tree).map(([p, set]) => [p, [...set].sort()])
+    );
+  },
+
+  // ── Por Extensionista (vista WIDE: 1 row por extensionista, colunas por SKU) ──
+  // Devolve para cada extensionista: plano, entregue, falta — agrupado por SKU.
+  // Filtros: { province, district, posto, sku, q (search) }
+  // Esta é a vista que vai para o Excel "Detalhe Extensionistas".
+  async byExtensionist(opts = {}) {
+    const where = ["b.planned_qty > 0"]; // só linhas com plano > 0
+    const params = [];
+    if (opts.province) { where.push("b.province = ?"); params.push(opts.province); }
+    if (opts.district) { where.push("b.district = ?"); params.push(opts.district); }
+    if (opts.sku)      { where.push("b.sku = ?");      params.push(opts.sku); }
+    if (opts.q) {
+      where.push("(b.beneficiary_name LIKE ? OR b.extensionist_id LIKE ? OR ben.nuit LIKE ?)");
+      const term = "%" + opts.q + "%";
+      params.push(term, term, term);
+    }
+    if (opts.posto) { where.push("ben.posto = ?"); params.push(opts.posto); }
+    const w = "WHERE " + where.join(" AND ");
+
+    // Devolve 1 linha por (extensionista, sku). O frontend pivota.
+    const rows = await query(
+      `SELECT b.extensionist_id,
+              b.beneficiary_name AS name,
+              ben.nuit,
+              ben.posto,
+              ben.contact,
+              b.province,
+              b.district,
+              b.sku,
+              b.product_name,
+              b.unit,
+              b.planned_qty,
+              b.committed_qty,
+              b.delivered_qty,
+              GREATEST(0, b.planned_qty - b.delivered_qty) AS remaining_qty,
+              CASE WHEN b.planned_qty > 0
+                   THEN ROUND(100 * b.delivered_qty / b.planned_qty, 1)
+                   ELSE 0 END AS pct_delivered
+       FROM delivery_balances b
+       LEFT JOIN beneficiaries ben ON ben.extensionist_id = b.extensionist_id
+       ${w}
+       ORDER BY b.province, b.district, b.beneficiary_name, b.sku`,
+      params
+    );
+
+    // Pivota em memória: 1 entry por extensionista, com mapa por SKU
+    const byExt = new Map();
+    const skuSet = new Map(); // sku -> { sku, product_name, unit }
+    for (const r of rows) {
+      const key = r.extensionist_id;
+      if (!byExt.has(key)) {
+        byExt.set(key, {
+          extensionist_id: r.extensionist_id,
+          name: r.name,
+          nuit: r.nuit || "",
+          posto: r.posto || "",
+          contact: r.contact || "",
+          province: r.province || "",
+          district: r.district || "",
+          items: {}, // sku -> { planned, delivered, remaining, pct, unit, product_name }
+          // totais kg (apenas SKUs com unit=kg)
+          total_planned_kg: 0,
+          total_delivered_kg: 0,
+          total_remaining_kg: 0,
+        });
+      }
+      const ext = byExt.get(key);
+      const planned   = Number(r.planned_qty)   || 0;
+      const delivered = Number(r.delivered_qty) || 0;
+      const remaining = Number(r.remaining_qty) || 0;
+      ext.items[r.sku] = {
+        sku: r.sku,
+        product_name: r.product_name,
+        unit: r.unit,
+        planned,
+        delivered,
+        remaining,
+        pct: Number(r.pct_delivered) || 0,
+      };
+      if (!skuSet.has(r.sku)) {
+        skuSet.set(r.sku, { sku: r.sku, product_name: r.product_name, unit: r.unit });
+      }
+      if (r.unit === "kg") {
+        ext.total_planned_kg   += planned;
+        ext.total_delivered_kg += delivered;
+        ext.total_remaining_kg += remaining;
+      }
+    }
+
+    const extensionists = [...byExt.values()].sort((a, b) => {
+      if (a.province !== b.province) return (a.province || "").localeCompare(b.province || "");
+      if (a.district !== b.district) return (a.district || "").localeCompare(b.district || "");
+      return (a.name || "").localeCompare(b.name || "");
+    });
+    const skus = [...skuSet.values()].sort((a, b) => a.sku.localeCompare(b.sku));
+
+    // Totais agregados
+    let totalPlannedKg = 0, totalDeliveredKg = 0, totalRemainingKg = 0;
+    let nFulfilled = 0, nPending = 0, nUntouched = 0;
+    for (const ext of extensionists) {
+      totalPlannedKg   += ext.total_planned_kg;
+      totalDeliveredKg += ext.total_delivered_kg;
+      totalRemainingKg += ext.total_remaining_kg;
+      // Conta extensionistas por estado (em kg-equivalentes)
+      if (ext.total_planned_kg > 0) {
+        if (ext.total_delivered_kg >= ext.total_planned_kg)      nFulfilled++;
+        else if (ext.total_delivered_kg <= 0.001)                nUntouched++;
+        else                                                      nPending++;
+      }
+    }
+
+    // Por-SKU agregado (linha total por SKU no Excel)
+    const totalsBySku = {};
+    for (const ext of extensionists) {
+      for (const sku of Object.keys(ext.items)) {
+        const it = ext.items[sku];
+        if (!totalsBySku[sku]) {
+          totalsBySku[sku] = { sku, product_name: it.product_name, unit: it.unit, planned: 0, delivered: 0, remaining: 0 };
+        }
+        totalsBySku[sku].planned   += it.planned;
+        totalsBySku[sku].delivered += it.delivered;
+        totalsBySku[sku].remaining += it.remaining;
+      }
+    }
+
+    return {
+      filters: opts,
+      extensionists,
+      skus,
+      totals_by_sku: totalsBySku,
+      summary: {
+        n_extensionists: extensionists.length,
+        n_fulfilled: nFulfilled,
+        n_pending: nPending,
+        n_untouched: nUntouched,
+        total_planned_kg: totalPlannedKg,
+        total_delivered_kg: totalDeliveredKg,
+        total_remaining_kg: totalRemainingKg,
+        pct_delivered_kg: totalPlannedKg > 0
+          ? Math.round((totalDeliveredKg / totalPlannedKg) * 1000) / 10
+          : 0,
       },
     };
   },

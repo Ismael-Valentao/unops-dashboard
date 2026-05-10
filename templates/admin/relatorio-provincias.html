@@ -3,69 +3,104 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AQI — Relatório por Província</title>
+  <title>AQI — Relatórios por Província / Distrito</title>
   <link rel="stylesheet" href="/static/admin.css">
   <style>
     .filters-bar {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: .75rem;
-      padding: 1rem;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
+      gap: .75rem; padding: 1rem;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
       margin-bottom: 1rem;
     }
     .filters-bar label { display:flex; flex-direction:column; gap:.25rem; font-size:.78rem; color:#475569; font-weight:600 }
     .filters-bar input, .filters-bar select { padding:.4rem .55rem; font-size:.85rem; border:1px solid #cbd5e1; border-radius:4px; background:#fff }
-    .filters-actions { grid-column: 1 / -1; display:flex; gap:.5rem; justify-content:flex-end; align-items:end; }
+    .filters-actions { grid-column: 1 / -1; display:flex; gap:.5rem; justify-content:flex-end; align-items:end; flex-wrap:wrap; }
+
     .cards-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 1rem;
-      margin-bottom: 1.25rem;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem; margin-bottom: 1.25rem;
     }
     .stat-card {
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-left: 4px solid #0f4c75;
-      border-radius: 6px;
-      padding: 1rem;
+      background: #fff; border: 1px solid #e2e8f0;
+      border-left: 4px solid #0f4c75; border-radius: 6px; padding: 1rem;
     }
     .stat-card .label { font-size:.72rem; color:#64748b; text-transform:uppercase; letter-spacing:.05em; font-weight:700 }
     .stat-card .value { font-size:1.6rem; font-weight:800; color:#0f172a; margin-top:.25rem }
     .stat-card .sub   { font-size:.72rem; color:#64748b; margin-top:.15rem }
+
+    /* Tabs internos da página */
+    .ptabs { display:flex; gap:.4rem; border-bottom:2px solid #e2e8f0; margin-bottom:1rem; }
+    .ptab {
+      padding:.55rem 1.1rem; border:0; background:transparent; cursor:pointer;
+      font-size:.88rem; color:#64748b; border-bottom:2px solid transparent;
+      margin-bottom:-2px; font-family:inherit;
+    }
+    .ptab:hover { color:#0f4c75 }
+    .ptab.active { color:#0f4c75; border-bottom-color:#0f4c75; font-weight:700 }
+    .ppanel { display:none } .ppanel.active { display:block }
+
     .pivot-tbl { font-size:.82rem; }
     .pivot-tbl td.num { text-align:right; font-variant-numeric: tabular-nums; }
     .pivot-tbl td.prov-cell { font-weight:600; color:#0f4c75; cursor:pointer; }
     .pivot-tbl td.prov-cell:hover { text-decoration: underline; }
     .progress-mini {
       display:inline-block; width:60px; height:5px;
-      background:#e2e8f0; border-radius:3px; overflow:hidden; margin-left:.4rem; vertical-align: middle;
+      background:#e2e8f0; border-radius:3px; overflow:hidden;
+      margin-left:.4rem; vertical-align: middle;
     }
     .progress-mini > div { height:100%; background:#16a34a; }
     .pct-label { font-size:.7rem; color:#64748b; }
     .total-row { background:#f1f5f9; font-weight:700; }
     .empty-cell { color:#cbd5e1; }
     .district-drill {
-      background:#f8fafc;
-      border-left: 3px solid #0f4c75;
-      padding: .75rem 1rem;
-      margin: .5rem 0 1.5rem;
-      border-radius: 4px;
+      background:#f8fafc; border-left: 3px solid #0f4c75;
+      padding: .75rem 1rem; margin: .5rem 0 1.5rem; border-radius: 4px;
     }
     .district-drill h3 { font-size:.95rem; margin: 0 0 .5rem; color:#0f4c75; }
+
+    /* Extensionistas tab */
+    .ext-tbl { font-size:.78rem; width:100%; border-collapse:collapse; }
+    .ext-tbl thead { position:sticky; top:0; background:#0f4c75; color:#fff; z-index:5; }
+    .ext-tbl thead th { padding:.45rem .5rem; text-align:left; font-weight:600; }
+    .ext-tbl tbody td { padding:.42rem .5rem; border-bottom:1px solid #f1f5f9; }
+    .ext-tbl tbody tr:nth-child(even) { background:#f8fafc; }
+    .ext-tbl tbody tr:hover { background:#e0f2fe; }
+    .ext-tbl td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    .ext-tbl td.sku-block { padding:.42rem .35rem; font-size:.74rem; }
+    .ext-tbl td.sku-block .pll { color:#0f4c75; font-weight:600; }
+    .ext-tbl td.sku-block .del { color:#15803d; font-weight:600; }
+    .ext-tbl td.sku-block .rem { color:#b45309; font-weight:600; }
+    .ext-tbl td.sku-block.done { background:#dcfce7; }
+    .ext-tbl td.sku-block.partial { background:#fef9c3; }
+    .ext-tbl td.sku-block.none { background:#fee2e2; }
+    .ext-tbl td.sku-block.empty { background:transparent; color:#cbd5e1; text-align:center; }
+    .ext-status-pill {
+      display:inline-block; padding:.1rem .45rem; border-radius:99px;
+      font-size:.66rem; font-weight:600;
+    }
+    .ext-status-pill.done { background:#dcfce7; color:#166534; }
+    .ext-status-pill.partial { background:#fef9c3; color:#854d0e; }
+    .ext-status-pill.none { background:#fee2e2; color:#991b1b; }
+    .ext-summary-bar {
+      background:#fff; border:1px solid #e2e8f0; border-radius:6px;
+      padding:.75rem 1rem; margin-bottom:.75rem;
+      display:flex; gap:1.5rem; flex-wrap:wrap; font-size:.85rem;
+    }
+    .ext-summary-bar strong { color:#0f172a; }
   </style>
 </head>
 <body class="admin-body">
   <div id="layout"></div>
   <main class="admin-main">
     <header class="admin-header">
-      <h1>Relatório por Província</h1>
-      <span class="admin-sub">Quantidades entregues consolidadas por província, comparadas com o planeado</span>
+      <h1>Relatórios por Província / Distrito</h1>
+      <span class="admin-sub">Resumo agregado · detalhe por extensionista · exportação Excel</span>
     </header>
 
     <section class="admin-section">
+
+      <!-- Filtros -->
       <form class="filters-bar" id="filters">
         <label>De
           <input type="date" name="from" id="f-from">
@@ -85,46 +120,95 @@
         <label>Província
           <select name="province" id="f-province"><option value="">Todas</option></select>
         </label>
+        <label>Distrito
+          <select name="district" id="f-district"><option value="">Todos</option></select>
+        </label>
+        <label>Pesquisa (extensionista, NUIT)
+          <input type="text" name="q" id="f-q" placeholder="Nome, ID, NUIT…">
+        </label>
         <div class="filters-actions">
           <button type="button" class="btn" id="btn-clear">Limpar</button>
-          <button type="submit" class="btn btn-primary">Aplicar</button>
-          <button type="button" class="btn btn-success" id="btn-csv">Exportar CSV</button>
+          <button type="submit" class="btn btn-primary">Aplicar filtros</button>
+          <button type="button" class="btn btn-success" id="btn-xlsx-extensionistas" title="Lista detalhada com plano, entregue e falta por extensionista">
+            ⬇ Excel — Detalhe Extensionistas
+          </button>
+          <button type="button" class="btn btn-success" id="btn-xlsx-resumo" title="Resumo agregado por província × produto">
+            ⬇ Excel — Resumo Província
+          </button>
         </div>
       </form>
 
       <div class="cards-row" id="cards"></div>
-
       <div id="filter-chips"></div>
 
-      <div class="tbl-wrap">
-        <table class="adm-table pivot-tbl" id="tbl">
-          <thead id="thead"></thead>
-          <tbody id="tbody"></tbody>
-        </table>
+      <!-- Tabs internos -->
+      <div class="ptabs">
+        <button class="ptab active" data-ptab="resumo">📊 Resumo Província</button>
+        <button class="ptab" data-ptab="ext">📋 Por Extensionista</button>
       </div>
 
-      <div id="drill-area"></div>
+      <!-- TAB Resumo Província (pivot) -->
+      <div class="ppanel active" id="ppanel-resumo">
+        <div class="tbl-wrap">
+          <table class="adm-table pivot-tbl" id="tbl">
+            <thead id="thead"></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <div id="drill-area"></div>
+        <p style="margin-top:1rem;font-size:.72rem;color:#64748b">
+          <strong>Nota:</strong> "% planeado" só aparece quando filtro de produto/província coincide com baseline em <code>delivery_balances</code>.
+          Para "Entregue + em trânsito" o período filtra por <code>created_at</code>; para "Entregue" filtra por <code>delivered_at</code>.
+        </p>
+      </div>
 
-      <p style="margin-top:1rem;font-size:.72rem;color:#64748b">
-        <strong>Nota:</strong> "% planeado" só aparece quando o filtro de produto/província
-        coincide com baseline em <code>delivery_balances</code>. Para "Entregue + em trânsito"
-        o período filtra por <code>created_at</code>; para "Entregue" filtra por <code>delivered_at</code>.
-      </p>
+      <!-- TAB Por Extensionista -->
+      <div class="ppanel" id="ppanel-ext">
+        <div class="ext-summary-bar" id="ext-summary"></div>
+        <div style="overflow:auto;max-height:680px;border:1px solid #e2e8f0;border-radius:6px">
+          <table class="ext-tbl" id="ext-tbl">
+            <thead id="ext-head"></thead>
+            <tbody id="ext-body"></tbody>
+          </table>
+        </div>
+        <p style="margin-top:.75rem;font-size:.72rem;color:#64748b">
+          <strong>Legenda:</strong>
+          <span class="ext-status-pill done">100% entregue</span>
+          <span class="ext-status-pill partial">parcial</span>
+          <span class="ext-status-pill none">sem entrega</span>
+          · Cada bloco mostra <strong>Plan</strong> / <strong>Entreg.</strong> / <strong>Falta</strong>.
+          O Excel inclui esta vista em formato wide com formatação automática.
+        </p>
+      </div>
+
     </section>
   </main>
 
   <script src="/static/admin.js"></script>
   <script>
     (function () {
-      const { fetchJSON, fmt, esc, toast, exportCSV, urlState, renderFilterChips } = window.AdminUI;
+      const { fetchJSON, fmt, esc, toast, urlState, renderFilterChips } = window.AdminUI;
       const $ = (s) => document.querySelector(s);
+      const $$ = (s) => Array.from(document.querySelectorAll(s));
       const PROVINCE_ORDER = [
         "Cabo Delgado", "Niassa", "Nampula", "Zambézia", "Tete",
         "Manica", "Sofala", "Inhambane", "Gaza",
         "Maputo Província", "Maputo Cidade",
       ];
+      const SKU_LABEL = {
+        AGRIFEMMA01L: "Milho", AGRIFEMA01: "Milho",
+        AGRIFEFTINS: "Feijão", AGRIFEFA01: "Feijão",
+        AGRIFEAR01: "Arroz",   AGRIFEAS01: "Açúcar",
+        AGRIFEOL01: "Óleo",    AGRIFESC01: "Sacos hermét.",
+        MXIXMILHOKG: "Milho",  MXIXFEIJAOKG: "Feijão",
+        MXIXARROZKG: "Arroz",  AGRIMHMCPA1L: "Mancozeb",
+        AGRIMIDACLORP1L: "Imidacloprid",
+      };
+      const labelOf = (sku, fallback) => SKU_LABEL[sku] || fallback || sku;
 
-      let lastReport = null;
+      let lastPivotReport = null;
+      let lastExtReport   = null;
+      let geographyTree   = {};
 
       function pickFilters() {
         const f = new FormData($("#filters"));
@@ -132,28 +216,13 @@
         for (const [k, v] of f.entries()) if (v) o[k] = v;
         return o;
       }
-
       function applyURLToForm() {
         const st = urlState ? urlState.read() : {};
-        for (const k of ["from", "to", "status", "sku", "province"]) {
+        for (const k of ["from", "to", "status", "sku", "province", "district", "q"]) {
           const el = document.querySelector(`[name="${k}"]`);
           if (el && st[k]) el.value = st[k];
         }
       }
-
-      // Nomes mais legíveis para SKUs comuns
-      const SKU_LABEL = {
-        AGRIFEMMA01L: "Milho",
-        AGRIFEMA01: "Milho",
-        AGRIFEFTINS: "Feijão",
-        AGRIFEFA01: "Feijão",
-        AGRIFEAR01: "Arroz",
-        AGRIFEAS01: "Açúcar",
-        AGRIFEOL01: "Óleo",
-        AGRIFESC01: "Sacos hermét.",
-      };
-      const labelOf = (sku, fallback) => SKU_LABEL[sku] || fallback || sku;
-
       function provinceSort(arr) {
         return arr.slice().sort((a, b) => {
           const ia = PROVINCE_ORDER.indexOf(a); const ib = PROVINCE_ORDER.indexOf(b);
@@ -164,12 +233,63 @@
         });
       }
 
+      // ── Cascade Província → Distrito ─────────────────────
+      async function loadGeographyTree() {
+        try {
+          const data = await fetchJSON("/admin/api/distribution/report/geography-tree");
+          geographyTree = data.tree || {};
+          // Popular Província
+          const provSel = $("#f-province");
+          provSel.innerHTML = '<option value="">Todas</option>';
+          for (const p of provinceSort(Object.keys(geographyTree))) {
+            const opt = document.createElement("option");
+            opt.value = p; opt.textContent = p;
+            provSel.appendChild(opt);
+          }
+          updateDistrictSelect();
+        } catch (e) { /* ignora */ }
+      }
+      function updateDistrictSelect() {
+        const provSel = $("#f-province");
+        const distSel = $("#f-district");
+        const prevDist = distSel.value;
+        distSel.innerHTML = '<option value="">Todos</option>';
+        const districts = provSel.value ? (geographyTree[provSel.value] || []) : [];
+        for (const d of districts) {
+          const opt = document.createElement("option");
+          opt.value = d; opt.textContent = d;
+          distSel.appendChild(opt);
+        }
+        // Restaura distrito da URL state se ainda válido
+        if (prevDist && [...distSel.options].some((o) => o.value === prevDist)) {
+          distSel.value = prevDist;
+        }
+      }
+
+      // ── Resumo Província (pivot) ─────────────────────────
+      function buildPivot(report) {
+        const matrix = {};
+        for (const p of report.provinces) matrix[p] = {};
+        for (const r of report.delivered) {
+          if (!r.province) continue;
+          if (!matrix[r.province]) matrix[r.province] = {};
+          matrix[r.province][r.sku] = { qty: Number(r.qty || 0), unit: r.unit, n_benefs: r.n_beneficiaries };
+        }
+        const planMatrix = {};
+        for (const r of report.planned) {
+          if (!r.province) continue;
+          if (!planMatrix[r.province]) planMatrix[r.province] = {};
+          planMatrix[r.province][r.sku] = Number(r.qty_planned || 0);
+        }
+        return { matrix, planMatrix };
+      }
+
       function renderCards(t) {
         $("#cards").innerHTML = `
           <div class="stat-card">
             <div class="label">Total entregue (kg)</div>
             <div class="value">${fmt(t.total_kg)}</div>
-            <div class="sub">${fmt(t.total_kg / 1000, 1)} toneladas</div>
+            <div class="sub">${fmt((t.total_kg / 1000).toFixed(1))} toneladas</div>
           </div>
           <div class="stat-card" style="border-left-color:#7c3aed">
             <div class="label">Sacos hermét. (un)</div>
@@ -189,31 +309,10 @@
         `;
       }
 
-      function buildPivot(report) {
-        // mapa province -> sku -> { qty, unit }
-        const matrix = {};
-        for (const p of report.provinces) matrix[p] = {};
-        for (const r of report.delivered) {
-          if (!r.province) continue;
-          if (!matrix[r.province]) matrix[r.province] = {};
-          matrix[r.province][r.sku] = { qty: Number(r.qty || 0), unit: r.unit, n_benefs: r.n_beneficiaries };
-        }
-        // planned matrix
-        const planMatrix = {};
-        for (const r of report.planned) {
-          if (!r.province) continue;
-          if (!planMatrix[r.province]) planMatrix[r.province] = {};
-          planMatrix[r.province][r.sku] = Number(r.qty_planned || 0);
-        }
-        return { matrix, planMatrix };
-      }
-
-      function renderTable(report) {
+      function renderPivot(report) {
         const { matrix, planMatrix } = buildPivot(report);
         const skus = report.skus;
         const provs = provinceSort(report.provinces);
-
-        // Cabeçalho: Província | <sku1> kg | <sku1> % | <sku2> ... | Total kg
         const thead = `<tr>
           <th>Província</th>
           ${skus.map((s) => `<th class="num" colspan="2" title="${esc(s.product_name)} (${esc(s.sku)})">${esc(labelOf(s.sku, s.product_name))} <span style="font-weight:400;color:#94a3b8">(${esc(s.unit)})</span></th>`).join("")}
@@ -225,10 +324,7 @@
           <th></th>
         </tr>`;
         $("#thead").innerHTML = thead;
-
-        // Linhas
-        let totalsBySku = {};
-        let grandKg = 0;
+        let totalsBySku = {}; let grandKg = 0;
         const rowsHtml = provs.map((prov) => {
           let rowKg = 0;
           const cells = skus.map((s) => {
@@ -251,21 +347,14 @@
             <td class="num"><strong>${fmt(rowKg)}</strong></td>
           </tr>`;
         }).join("");
-
-        // Linha total
         const totalCells = skus.map((s) => {
           const t = totalsBySku[s.sku] || 0;
           return `<td class="num">${fmt(t)}</td><td class="num empty-cell">—</td>`;
         }).join("");
-
         $("#tbody").innerHTML = rowsHtml + `<tr class="total-row">
-          <td>Total</td>
-          ${totalCells}
-          <td class="num"><strong>${fmt(grandKg)}</strong></td>
+          <td>Total</td>${totalCells}<td class="num"><strong>${fmt(grandKg)}</strong></td>
         </tr>`;
-
-        // Click na província → drill-down distritos
-        document.querySelectorAll("td.prov-cell").forEach((td) => {
+        $$("td.prov-cell").forEach((td) => {
           td.addEventListener("click", () => drillDown(td.dataset.province));
         });
       }
@@ -283,9 +372,7 @@
               <div class="empty">Sem entregas registadas para os filtros actuais.</div></div>`;
             return;
           }
-          // pivot por distrito × sku
-          const distMap = {};
-          const skuSet = new Set();
+          const distMap = {}; const skuSet = new Set();
           for (const r of data.rows) {
             if (!distMap[r.district]) distMap[r.district] = {};
             distMap[r.district][r.sku] = { qty: Number(r.qty), unit: r.unit };
@@ -294,7 +381,7 @@
           const skuList = [...skuSet].sort();
           const dists = Object.keys(distMap).sort();
           area.innerHTML = `<div class="district-drill">
-            <h3>Distritos em ${esc(province)} <button class="btn btn-sm" onclick="document.getElementById('drill-area').innerHTML=''" style="float:right">Fechar</button></h3>
+            <h3>Distritos em ${esc(province)} <button class="btn btn-sm" id="btn-close-drill" style="float:right">Fechar</button></h3>
             <table class="adm-table" style="font-size:.78rem">
               <thead><tr><th>Distrito</th>${skuList.map((s) => `<th class="num">${esc(SKU_LABEL[s] || s)}</th>`).join("")}</tr></thead>
               <tbody>${dists.map((d) => `<tr>
@@ -306,9 +393,105 @@
               </tr>`).join("")}</tbody>
             </table>
           </div>`;
+          $("#btn-close-drill")?.addEventListener("click", () => $("#drill-area").innerHTML = "");
         } catch (e) {
           area.innerHTML = `<div class="district-drill" style="border-left-color:#dc2626">
             <h3 style="color:#dc2626">Erro</h3><div>${esc(e.message)}</div></div>`;
+        }
+      }
+
+      // ── Por Extensionista ────────────────────────────────
+      function renderExtSummary(s) {
+        $("#ext-summary").innerHTML = `
+          <span><strong>${fmt(s.n_extensionists)}</strong> extensionistas com plano</span>
+          <span style="color:#15803d">✓ <strong>${fmt(s.n_fulfilled)}</strong> a 100%</span>
+          <span style="color:#b45309">⏳ <strong>${fmt(s.n_pending)}</strong> em curso</span>
+          <span style="color:#b91c1c">✗ <strong>${fmt(s.n_untouched)}</strong> sem entrega</span>
+          <span style="margin-left:auto">
+            <strong>${fmt(s.total_delivered_kg)} kg</strong> de ${fmt(s.total_planned_kg)} kg planeados
+            (${s.pct_delivered_kg}%) · falta <strong style="color:#b45309">${fmt(s.total_remaining_kg)} kg</strong>
+          </span>
+        `;
+      }
+
+      function statusOf(item) {
+        if (!item || item.planned <= 0) return "empty";
+        if (item.delivered >= item.planned)        return "done";
+        if (item.delivered <= 0.001)               return "none";
+        return "partial";
+      }
+
+      function renderExtTable(report) {
+        const skus = report.skus;
+        const exts = report.extensionists;
+        // Header (dois níveis de cabeçalho)
+        const head = `<tr>
+          <th rowspan="2">#</th>
+          <th rowspan="2">Extensionista</th>
+          <th rowspan="2">Província</th>
+          <th rowspan="2">Distrito</th>
+          <th rowspan="2">Posto</th>
+          ${skus.map((s) => `<th colspan="3" style="background:#1e6ba8;text-align:center" title="${esc(s.product_name)} · ${esc(s.unit)}">${esc(labelOf(s.sku, s.product_name))} <span style="opacity:.7">(${esc(s.unit)})</span></th>`).join("")}
+          <th colspan="3" style="background:#15803d;text-align:center">TOTAL kg</th>
+        </tr>
+        <tr style="font-size:.68rem">
+          ${skus.map(() => `
+            <th class="num" style="background:#bae6fd;color:#0c4a6e">Plan</th>
+            <th class="num" style="background:#bbf7d0;color:#14532d">Entreg.</th>
+            <th class="num" style="background:#fde68a;color:#78350f">Falta</th>
+          `).join("")}
+          <th class="num" style="background:#bae6fd;color:#0c4a6e">Plan</th>
+          <th class="num" style="background:#bbf7d0;color:#14532d">Entreg.</th>
+          <th class="num" style="background:#fde68a;color:#78350f">Falta</th>
+        </tr>`;
+        $("#ext-head").innerHTML = head;
+
+        if (!exts.length) {
+          $("#ext-body").innerHTML = `<tr><td colspan="20" class="empty" style="padding:2rem;text-align:center;color:#94a3b8">Nenhum extensionista encontrado para os filtros actuais.</td></tr>`;
+          return;
+        }
+
+        const body = exts.map((e, i) => {
+          const cells = skus.map((s) => {
+            const item = e.items[s.sku];
+            if (!item) return `<td class="sku-block empty">—</td><td class="sku-block empty">—</td><td class="sku-block empty">—</td>`;
+            const cls = statusOf(item);
+            return `<td class="sku-block ${cls}"><span class="pll">${fmt(item.planned)}</span></td>
+                    <td class="sku-block ${cls}"><span class="del">${fmt(item.delivered)}</span></td>
+                    <td class="sku-block ${cls}"><span class="rem">${fmt(item.remaining)}</span></td>`;
+          }).join("");
+          const totalCls = e.total_planned_kg > 0 && e.total_delivered_kg >= e.total_planned_kg
+            ? "done" : (e.total_delivered_kg <= 0.001 && e.total_planned_kg > 0 ? "none" : "partial");
+          return `<tr>
+            <td>${i + 1}</td>
+            <td><strong>${esc(e.name)}</strong><br><span style="font-size:.66rem;color:#64748b">${esc(e.extensionist_id)}${e.nuit ? " · NUIT " + esc(e.nuit) : ""}</span></td>
+            <td>${esc(e.province || "—")}</td>
+            <td>${esc(e.district || "—")}</td>
+            <td>${esc(e.posto || "—")}</td>
+            ${cells}
+            <td class="sku-block ${totalCls}"><span class="pll">${fmt(e.total_planned_kg)}</span></td>
+            <td class="sku-block ${totalCls}"><span class="del">${fmt(e.total_delivered_kg)}</span></td>
+            <td class="sku-block ${totalCls}"><span class="rem">${fmt(e.total_remaining_kg)}</span></td>
+          </tr>`;
+        }).join("");
+        $("#ext-body").innerHTML = body;
+      }
+
+      async function loadExtensionists() {
+        const opts = pickFilters();
+        // Remove campos só-de-data que não fazem sentido para a vista de extensionistas
+        delete opts.from; delete opts.to; delete opts.status;
+        const qs = new URLSearchParams(opts).toString();
+        $("#ext-summary").innerHTML = "<span class='empty'>A carregar…</span>";
+        $("#ext-body").innerHTML = `<tr><td colspan="20" class="empty" style="padding:1rem;text-align:center;color:#94a3b8">A carregar…</td></tr>`;
+        try {
+          const data = await fetchJSON(`/admin/api/distribution/report/by-extensionist?${qs}`);
+          lastExtReport = data;
+          renderExtSummary(data.summary);
+          renderExtTable(data);
+        } catch (e) {
+          $("#ext-body").innerHTML = `<tr><td colspan="20" class="empty" style="color:#dc2626">${esc(e.message)}</td></tr>`;
+          if (toast) toast("Erro: " + e.message, { kind: "err" });
         }
       }
 
@@ -318,92 +501,99 @@
         if (opts.from)     chips.push({ key: "from",     label: "De: " + opts.from });
         if (opts.to)       chips.push({ key: "to",       label: "Até: " + opts.to });
         if (opts.status === "committed") chips.push({ key: "status", label: "Inclui em trânsito" });
-        if (opts.sku)      chips.push({ key: "sku",      label: "Produto: " + (opts.sku) });
+        if (opts.sku)      chips.push({ key: "sku",      label: "Produto: " + opts.sku });
         if (opts.province) chips.push({ key: "province", label: "Província: " + opts.province });
+        if (opts.district) chips.push({ key: "district", label: "Distrito: " + opts.district });
+        if (opts.q)        chips.push({ key: "q",        label: "Pesquisa: " + opts.q });
         if (renderFilterChips) {
           renderFilterChips($("#filter-chips"), chips, (k) => {
             const el = document.querySelector(`[name="${k}"]`);
             if (el) el.value = k === "status" ? "delivered" : "";
+            if (k === "province") updateDistrictSelect();
             load();
           });
         }
       }
 
+      // ── Carrega tudo ─────────────────────────────────────
       async function load() {
         const opts = pickFilters();
-        const qs = new URLSearchParams(opts).toString();
         if (urlState) urlState.write(opts);
+        renderChips();
 
+        // Resumo (pivot província × SKU)
+        const qs = new URLSearchParams(opts).toString();
         $("#tbody").innerHTML = '<tr><td colspan="20" class="empty">A carregar…</td></tr>';
         try {
           const data = await fetchJSON(`/admin/api/distribution/report/by-province?${qs}`);
-          lastReport = data;
+          lastPivotReport = data;
           renderCards(data.totals);
-          renderTable(data);
-          renderChips();
-          // popular filtros (SKU + Província) — só primeira vez
+          renderPivot(data);
+          // Popular SKU dropdown só primeira vez
           const skuSel = $("#f-sku");
           if (skuSel.options.length === 1 && data.skus.length) {
             for (const s of data.skus) {
               const opt = document.createElement("option");
-              opt.value = s.sku; opt.textContent = `${labelOf(s.sku, s.product_name)} (${s.sku})`;
+              opt.value = s.sku;
+              opt.textContent = `${labelOf(s.sku, s.product_name)} (${s.sku})`;
               skuSel.appendChild(opt);
             }
             const saved = urlState ? urlState.read().sku : null;
             if (saved) skuSel.value = saved;
           }
-          const provSel = $("#f-province");
-          if (provSel.options.length === 1 && data.provinces.length) {
-            for (const p of provinceSort(data.provinces)) {
-              const opt = document.createElement("option");
-              opt.value = p; opt.textContent = p;
-              provSel.appendChild(opt);
-            }
-            const saved = urlState ? urlState.read().province : null;
-            if (saved) provSel.value = saved;
-          }
         } catch (e) {
           $("#tbody").innerHTML = `<tr><td colspan="20" class="empty" style="color:#dc2626">Erro: ${esc(e.message)}</td></tr>`;
           if (toast) toast("Erro: " + e.message, { kind: "err" });
         }
+
+        // Carrega extensionistas se a tab está aberta (lazy load se mudar)
+        if ($("#ppanel-ext").classList.contains("active")) {
+          loadExtensionists();
+        }
       }
 
+      // ── Wire-up ──────────────────────────────────────────
       $("#filters").addEventListener("submit", (e) => { e.preventDefault(); load(); });
-      $("#btn-clear").addEventListener("click", () => {
-        $("#filters").reset();
-        load();
+      $("#btn-clear").addEventListener("click", () => { $("#filters").reset(); updateDistrictSelect(); load(); });
+      $("#f-province").addEventListener("change", updateDistrictSelect);
+
+      // Tabs internos
+      $$(".ptab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          $$(".ptab").forEach((t) => t.classList.remove("active"));
+          $$(".ppanel").forEach((p) => p.classList.remove("active"));
+          tab.classList.add("active");
+          const id = tab.dataset.ptab;
+          $("#ppanel-" + id).classList.add("active");
+          if (id === "ext" && !lastExtReport) loadExtensionists();
+        });
       });
 
-      $("#btn-csv").addEventListener("click", () => {
-        if (!lastReport || !exportCSV) return;
-        const { matrix, planMatrix } = buildPivot(lastReport);
-        const rows = [];
-        const skuLabels = lastReport.skus.map((s) => `${labelOf(s.sku, s.product_name)} (${s.unit})`);
-        const headers = ["Província", ...skuLabels.flatMap((l) => [l + " - Qtd", l + " - % planeado"]), "Total kg"];
-
-        for (const prov of provinceSort(lastReport.provinces)) {
-          const row = [prov];
-          let rowKg = 0;
-          for (const s of lastReport.skus) {
-            const cell = matrix[prov]?.[s.sku];
-            const planned = planMatrix[prov]?.[s.sku] || 0;
-            if (cell) {
-              row.push(cell.qty);
-              if (s.unit === "kg") rowKg += cell.qty;
-              row.push(planned > 0 ? Math.round((cell.qty / planned) * 100) + "%" : "");
-            } else {
-              row.push(""); row.push("");
-            }
-          }
-          row.push(rowKg);
-          rows.push(row);
-        }
-        exportCSV("relatorio-provincias-" + new Date().toISOString().slice(0, 10) + ".csv", headers, rows);
+      // Botões Excel
+      $("#btn-xlsx-extensionistas").addEventListener("click", () => {
+        const opts = pickFilters();
+        delete opts.from; delete opts.to; delete opts.status;
+        const qs = new URLSearchParams(opts).toString();
+        const url = `/admin/api/distribution/report/extensionist-export.xlsx?${qs}`;
+        window.location.href = url;
+        if (toast) toast("A gerar Excel — Detalhe Extensionistas…", { kind: "ok" });
+      });
+      $("#btn-xlsx-resumo").addEventListener("click", () => {
+        const opts = pickFilters();
+        const qs = new URLSearchParams(opts).toString();
+        const url = `/admin/api/distribution/report/province-export.xlsx?${qs}`;
+        window.location.href = url;
+        if (toast) toast("A gerar Excel — Resumo Província…", { kind: "ok" });
       });
 
+      // Init
       AdminUI.renderLayout("relatorio-provincias");
-      applyURLToForm();
-      load();
+      (async () => {
+        await loadGeographyTree();
+        applyURLToForm();
+        updateDistrictSelect();
+        load();
+      })();
     })();
   </script>
 </body>

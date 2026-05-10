@@ -6,9 +6,14 @@
   <title>AQI — Roteiro do Motorista</title>
   <link rel="stylesheet" href="/static/admin.css">
   <style>
-    body { background:#f1f5f9; margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    body { background:#f1f5f9; margin:0; padding:0;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      color:#0f172a; }
+
+    /* Toolbar — só visível no browser */
     .toolbar { position:sticky; top:0; background:#0f4c75; color:#fff; padding:.75rem 1.25rem;
-      display:flex; justify-content:space-between; align-items:center; z-index:100; box-shadow:0 2px 6px rgba(0,0,0,.1); }
+      display:flex; justify-content:space-between; align-items:center; z-index:100;
+      box-shadow:0 2px 6px rgba(0,0,0,.1); }
     .toolbar h2 { margin:0; font-size:1rem; font-weight:600 }
     .toolbar .btns { display:flex; gap:.5rem; align-items:center }
     .toolbar button { background:#fff; color:#0f4c75; border:0; padding:.45rem .85rem; border-radius:5px;
@@ -20,121 +25,196 @@
     .toolbar a { color:#fff; text-decoration:none; font-size:.82rem; opacity:.9 }
     .toolbar a:hover { opacity:1; text-decoration:underline }
 
-    .page { max-width:920px; margin:1rem auto; background:#fff; padding:2rem 2.5rem;
-      box-shadow:0 1px 3px rgba(15,23,42,.08); }
-    .page-head { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:1rem;
-      border-bottom:3px solid #0f4c75; margin-bottom:1.5rem }
-    .doc-title { font-size:1.6rem; color:#0f4c75; font-weight:800; letter-spacing:.5px; margin:0 }
-    .doc-subtitle { color:#64748b; font-size:.78rem; text-transform:uppercase; letter-spacing:.1em;
-      margin-top:.2rem }
-    .doc-num { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.95rem; color:#0f172a;
-      margin-top:.4rem }
+    /* Página A4-like */
+    .page { max-width:920px; margin:1rem auto; background:#fff; padding:1.5rem 2rem;
+      box-shadow:0 1px 3px rgba(15,23,42,.08); box-sizing:border-box; }
 
-    .info-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem 1.5rem; font-size:.85rem;
-      margin-bottom:1.5rem }
-    .info-grid .lbl { color:#64748b; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em;
-      font-weight:700; margin-bottom:.1rem }
-    .info-grid .val { color:#0f172a; font-weight:600 }
+    /* ── Cabeçalho do documento ── */
+    .doc-head { display:grid; grid-template-columns:1fr auto; gap:1rem; align-items:start;
+      padding-bottom:.85rem; border-bottom:3px solid #0f4c75; margin-bottom:1rem }
+    .doc-title { font-size:1.45rem; color:#0f4c75; font-weight:800; letter-spacing:.3px;
+      margin:0; line-height:1.1 }
+    .doc-subtitle { color:#64748b; font-size:.74rem; text-transform:uppercase; letter-spacing:.08em;
+      margin-top:.2rem; font-weight:600 }
+    .doc-num { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.92rem;
+      color:#0f4c75; margin-top:.5rem; font-weight:700;
+      background:#eff6ff; display:inline-block; padding:.15rem .55rem; border-radius:4px;
+      border:1px solid #bfdbfe }
+    .doc-meta { text-align:right; font-size:.7rem; color:#64748b; line-height:1.5 }
+    .doc-meta-print { color:#94a3b8; font-size:.65rem; margin-top:.3rem }
+    /* Status badge — colorido por estado, não corta */
+    .status-badge { display:inline-block; padding:.25rem .65rem; border-radius:99px;
+      font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+      white-space:nowrap; }
+    .status-draft      { background:#f1f5f9; color:#475569; border:1px solid #cbd5e1 }
+    .status-in_transit { background:#fef3c7; color:#92400e; border:1px solid #fcd34d }
+    .status-delivered  { background:#dcfce7; color:#166534; border:1px solid #86efac }
+    .status-cancelled  { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5 }
 
-    .truck-banner { background:#fef3c7; border-left:5px solid #d97706; padding:.85rem 1rem;
-      margin-bottom:1.5rem; display:grid; grid-template-columns:repeat(3,1fr); gap:.75rem; font-size:.85rem }
-    .truck-banner .lbl { color:#78350f; font-size:.65rem; text-transform:uppercase; letter-spacing:.06em;
-      font-weight:700 }
-    .truck-banner .val { color:#0f172a; font-weight:700; font-size:.95rem; font-family:ui-monospace,monospace }
+    /* ── Cards de info: Camião (azul) + Motorista (laranja) lado a lado ── */
+    .info-cards { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; margin-bottom:1rem }
+    .info-card { padding:.7rem .85rem; border-radius:6px; }
+    .info-card-truck { background:#eff6ff; border-left:4px solid #0f4c75 }
+    .info-card-driver { background:#fef3c7; border-left:4px solid #d97706 }
+    .info-card h4 { margin:0 0 .55rem; font-size:.65rem; text-transform:uppercase;
+      letter-spacing:.06em; font-weight:800; color:#0f4c75; }
+    .info-card-driver h4 { color:#92400e }
+    .info-card .row { display:flex; justify-content:space-between; align-items:baseline;
+      gap:.5rem; padding:.15rem 0; font-size:.78rem; line-height:1.3 }
+    .info-card .row:not(:last-child) { border-bottom:1px dashed #e2e8f0 }
+    .info-card .lbl { color:#64748b; font-size:.66rem; text-transform:uppercase;
+      letter-spacing:.04em; font-weight:600; flex-shrink:0 }
+    .info-card .val { color:#0f172a; font-weight:700; text-align:right;
+      font-family:ui-monospace,monospace; font-size:.82rem }
+    .info-card .val.txt { font-family:inherit; font-size:.78rem }
 
-    h3.section-title { font-size:.85rem; color:#0f4c75; text-transform:uppercase; letter-spacing:.07em;
-      margin:1.5rem 0 .6rem; border-bottom:1px solid #e2e8f0; padding-bottom:.3rem }
+    /* ── Aviso de multi-distrito ── */
+    .multi-warn { background:#fffbeb; border:1px solid #fde68a; border-left:5px solid #f59e0b;
+      border-radius:6px; padding:.65rem .85rem; margin-bottom:1rem }
+    .multi-warn .title { font-size:.7rem; color:#92400e; text-transform:uppercase;
+      letter-spacing:.06em; font-weight:800; margin-bottom:.4rem }
+    .multi-warn .pills { display:flex; flex-wrap:wrap; gap:.3rem; margin-bottom:.4rem }
+    .multi-warn .pill { background:#fef3c7; color:#92400e; padding:.18rem .55rem;
+      border-radius:4px; font-size:.72rem; font-weight:700;
+      border:1px solid #fcd34d }
+    .multi-warn .note { font-size:.72rem; color:#78350f; line-height:1.4 }
 
-    table.benef-list { width:100%; border-collapse:collapse; font-size:.78rem; margin-bottom:1rem }
-    table.benef-list thead th { background:#0f4c75; color:#fff; padding:.55rem .65rem; text-align:left;
-      font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; font-weight:700 }
-    table.benef-list td { padding:.6rem .65rem; border-bottom:1px solid #e2e8f0; vertical-align:top }
-    table.benef-list tbody tr:nth-child(even) { background:#f8fafc }
-    .benef-name { font-weight:700; color:#0f172a; font-size:.85rem }
-    .benef-id { font-family:ui-monospace,monospace; color:#64748b; font-size:.7rem; display:block; margin-top:.1rem }
-    .benef-loc { color:#64748b; font-size:.72rem; margin-top:.1rem }
-    .benef-contact { color:#0f4c75; font-family:ui-monospace,monospace; font-size:.78rem }
-    .benef-supervisor { color:#7c3aed; font-size:.7rem; margin-top:.15rem }
-    .item-line { display:block; padding:.1rem 0; font-size:.75rem }
+    /* ── Stats strip ── */
+    .stats-strip { background:#0f4c75; color:#fff; border-radius:6px; padding:.65rem .85rem;
+      display:grid; grid-template-columns:repeat(4,1fr); gap:.75rem; margin-bottom:1rem; }
+    .stats-strip .t-lbl { font-size:.62rem; text-transform:uppercase; letter-spacing:.06em;
+      opacity:.8; font-weight:600 }
+    .stats-strip .t-val { font-weight:800; font-size:1.05rem; margin-top:.1rem;
+      font-family:ui-monospace,monospace }
+    .stats-strip .t-val.warn { color:#fcd34d }
+
+    /* ── Section title ── */
+    h3.section-title { font-size:.78rem; color:#0f4c75; text-transform:uppercase;
+      letter-spacing:.07em; margin:1.2rem 0 .5rem; border-bottom:2px solid #0f4c75;
+      padding-bottom:.3rem; font-weight:800 }
+
+    /* ── Tabela de paragens ── */
+    table.benef-list { width:100%; border-collapse:collapse; font-size:.76rem; margin-bottom:1rem;
+      table-layout:fixed }
+    table.benef-list col.col-num { width:32px }
+    table.benef-list col.col-benef { width:auto }
+    table.benef-list col.col-contact { width:140px }
+    table.benef-list col.col-items { width:200px }
+    table.benef-list col.col-sig { width:135px }
+    table.benef-list thead th { background:#0f4c75; color:#fff;
+      padding:.55rem .6rem; text-align:left;
+      font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; font-weight:700;
+      border-right:1px solid rgba(255,255,255,.15) }
+    table.benef-list thead th:last-child { border-right:0 }
+    table.benef-list td { padding:.55rem .6rem; border-bottom:1px solid #e2e8f0;
+      vertical-align:top; word-wrap:break-word; overflow-wrap:break-word; }
+    table.benef-list tbody tr:nth-child(even) td { background:#f8fafc }
+
+    /* Numero da paragem — círculo azul */
+    .num-circle { display:inline-flex; align-items:center; justify-content:center;
+      width:24px; height:24px; background:#0f4c75; color:#fff; border-radius:50%;
+      font-weight:800; font-size:.78rem; font-family:ui-monospace,monospace }
+
+    .benef-name { font-weight:700; color:#0f172a; font-size:.84rem; line-height:1.25 }
+    .benef-id { font-family:ui-monospace,monospace; color:#64748b; font-size:.66rem;
+      display:block; margin-top:.15rem }
+    .benef-loc { color:#475569; font-size:.7rem; margin-top:.2rem; line-height:1.3 }
+    .benef-loc strong { color:#0f4c75 }
+    .benef-contact-main { color:#0f172a; font-family:ui-monospace,monospace; font-size:.82rem;
+      font-weight:700; letter-spacing:.5px }
+    .benef-contact-main::before { content:"☎ "; opacity:.7; font-size:.85rem }
+    .benef-supervisor { color:#7c3aed; font-size:.66rem; margin-top:.3rem; line-height:1.3 }
+    .benef-supervisor strong { color:#5b21b6 }
+
+    .item-line { display:block; padding:.05rem 0; font-size:.74rem; line-height:1.4 }
+    .item-line .product { color:#475569 }
     .item-qty { font-weight:700; color:#0f172a; font-family:ui-monospace,monospace }
-    .item-total { font-weight:800; color:#0f4c75; font-size:.85rem; padding-top:.25rem; border-top:1px dashed #cbd5e1; margin-top:.3rem }
+    .item-total { font-weight:800; color:#0f4c75; font-size:.82rem;
+      padding-top:.3rem; border-top:1.5px dashed #cbd5e1; margin-top:.35rem;
+      text-align:right }
 
-    .sig-cell { width:130px; text-align:center }
-    .sig-line { border-bottom:1px solid #475569; height:38px; margin:0 auto 0; width:90% }
-    .sig-label { font-size:.62rem; color:#64748b; margin-top:.2rem }
-    .check-circle { display:inline-block; width:18px; height:18px; border:1.5px solid #475569; border-radius:50%;
-      vertical-align:middle; margin-right:.3rem }
+    /* Coluna de assinatura — checkboxes quadradas mais visíveis + linha grossa */
+    .sig-cell { text-align:center }
+    .check-row { display:flex; align-items:center; justify-content:space-around;
+      gap:.4rem; margin-bottom:.5rem; font-size:.62rem; color:#475569 }
+    .check-row > span { display:flex; align-items:center; gap:.2rem }
+    .check-box { display:inline-block; width:14px; height:14px; border:1.5px solid #475569;
+      border-radius:2px; vertical-align:middle; flex-shrink:0 }
+    .sig-line { border-bottom:1.5px solid #475569; height:34px; width:95%; margin:0 auto }
+    .sig-label { font-size:.6rem; color:#64748b; margin-top:.2rem;
+      text-transform:uppercase; letter-spacing:.04em; font-weight:600 }
 
-    .totals-summary { background:#f1f5f9; border-radius:6px; padding:.75rem 1rem; display:grid;
-      grid-template-columns:repeat(4,1fr); gap:.5rem; margin-top:1rem; font-size:.78rem }
-    .totals-summary .t-lbl { color:#64748b; font-size:.65rem; text-transform:uppercase; letter-spacing:.05em }
-    .totals-summary .t-val { color:#0f172a; font-weight:800; font-size:1.05rem; margin-top:.1rem }
-
-    .driver-sig-block { display:grid; grid-template-columns:repeat(3,1fr); gap:1.5rem; margin-top:2.5rem;
-      padding-top:1rem; border-top:2px dashed #cbd5e1 }
-    .sig-block-cell { text-align:center }
-    .sig-block-line { border-bottom:1px solid #475569; height:50px; margin-bottom:.3rem }
-    .sig-block-label { font-size:.78rem; color:#475569; font-weight:600 }
-    .sig-block-sub { font-size:.66rem; color:#94a3b8 }
-
-    .footer-note { font-size:.7rem; color:#94a3b8; text-align:center; margin-top:2rem; padding-top:.75rem;
-      border-top:1px solid #e2e8f0 }
-
-    /* District section rows (multi-distrito grouping) */
+    /* District section header (paragens agrupadas) */
     table.benef-list tr.district-section td { background:#0f4c75 !important; color:#fff !important;
-      padding:.55rem .85rem; font-weight:800 }
-    table.benef-list tr.district-section + tr td { border-top:0 }
+      padding:.5rem .85rem; font-weight:800; font-size:.78rem; letter-spacing:.04em;
+      text-transform:uppercase;
+      -webkit-print-color-adjust:exact; print-color-adjust:exact }
+    .district-section .meta { float:right; font-weight:600; opacity:.85; font-size:.74rem;
+      text-transform:none; letter-spacing:0 }
 
-    /* ── Page-break rules (aplicam-se em SCREEN também, para o html2pdf
-       respeitar — html2pdf.js não usa @media print, lê CSS regular) ── */
+    /* ── Bloco de assinaturas finais ── */
+    .driver-sig-block { display:grid; grid-template-columns:repeat(3,1fr); gap:1.25rem;
+      margin-top:2rem; padding-top:1rem; border-top:2px dashed #cbd5e1 }
+    .sig-block-cell { text-align:center }
+    .sig-block-line { border-bottom:1.5px solid #475569; height:48px; margin-bottom:.3rem }
+    .sig-block-label { font-size:.78rem; color:#0f172a; font-weight:700;
+      text-transform:uppercase; letter-spacing:.04em }
+    .sig-block-sub { font-size:.7rem; color:#64748b; margin-top:.15rem }
+
+    /* Footer */
+    .footer-note { font-size:.66rem; color:#94a3b8; text-align:center; margin-top:1.5rem;
+      padding-top:.6rem; border-top:1px solid #e2e8f0; line-height:1.4 }
+
+    /* ── Page-break rules ──
+       Aplicam-se também em screen para o html2pdf-fallback respeitar. */
     table.benef-list { page-break-inside:auto }
-    table.benef-list thead { display:table-header-group }
+    table.benef-list thead { display:table-header-group }   /* repete header em cada página */
     table.benef-list tbody tr { page-break-inside:avoid !important; page-break-after:auto;
       break-inside:avoid !important }
     table.benef-list tr.district-section { page-break-before:auto; page-break-after:avoid;
       break-after:avoid }
     h3.section-title { page-break-after:avoid; break-after:avoid }
     .driver-sig-block { page-break-inside:avoid !important; break-inside:avoid !important }
-    .truck-banner, .totals-summary, .info-grid { page-break-inside:avoid; break-inside:avoid }
+    .info-cards, .stats-strip, .multi-warn { page-break-inside:avoid; break-inside:avoid }
     .footer-note { page-break-inside:avoid }
 
-    /* ── Modo PDF: aplicado via classe .pdf-rendering antes de html2pdf
-       capturar. A largura do .page é 790px (≈A4 quase total). A "margem
-       A4" vem do jsPDF (margin: 8mm) — fica com margem visível pequena
-       mas o layout das colunas continua a ter espaço para respirar.
-       CRUCIAL: box-sizing:border-box para o padding não ser somado. ── */
+    /* ── Modo PDF fallback (html2pdf.js) — aplicado quando o Puppeteer
+       server-side não está disponível. Apenas esconde toolbar e
+       remove sombra; o resto já vem do CSS principal optimizado. ── */
     body.pdf-rendering .page {
       box-sizing:border-box !important;
       box-shadow:none !important;
-      padding:12px 16px !important;
-      max-width:790px !important;
-      width:790px !important;
+      max-width:780px !important;
+      width:780px !important;
       margin:0 auto !important;
+      padding:0 !important;
     }
     body.pdf-rendering * { box-sizing:border-box !important }
     body.pdf-rendering .toolbar { display:none !important }
-    body.pdf-rendering table.benef-list { font-size:.74rem !important;
-      width:100% !important; table-layout:fixed !important }
+    body.pdf-rendering .info-cards { gap:.5rem !important }
     body.pdf-rendering table.benef-list td,
     body.pdf-rendering table.benef-list th {
-      padding:.45rem .5rem !important;
       word-wrap:break-word !important;
       overflow-wrap:break-word !important;
     }
-    body.pdf-rendering .item-line { font-size:.72rem !important }
-    body.pdf-rendering .benef-name { font-size:.8rem !important;
-      word-wrap:break-word !important }
-    /* Banner com 3 colunas em modo PDF — evita conteúdo a empurrar a largura */
-    body.pdf-rendering .truck-banner { gap:.5rem !important }
-    body.pdf-rendering .info-grid { gap:.4rem 1rem !important }
 
+    /* ── @media print ── usado tanto pelo Puppeteer (pdf server-side)
+       quanto pelo "Imprimir" do browser */
     @media print {
       body { background:#fff }
       .toolbar, .no-print { display:none !important }
-      .page { box-shadow:none; padding:1rem 1.25rem; max-width:100%; margin:0 }
-      table.benef-list tr.district-section td { background:#0f4c75 !important;
-        -webkit-print-color-adjust:exact; print-color-adjust:exact }
-      @page { size:A4; margin:1.5cm 1cm }
+      .page { box-shadow:none; padding:0; max-width:100%; margin:0 }
+      /* Cores preservadas em todos os elementos com fundo (header tabela,
+         district-section, status badge, stats strip) */
+      .stats-strip, .doc-num, .status-badge,
+      table.benef-list thead th,
+      table.benef-list tr.district-section td,
+      .info-card-truck, .info-card-driver, .multi-warn {
+        -webkit-print-color-adjust:exact; print-color-adjust:exact;
+      }
+      /* Margens A4 para o "Imprimir" do browser. Puppeteer usa
+         preferCSSPageSize:false e ignora estas (define 25.4mm na API). */
+      @page { size:A4; margin:20mm; }
     }
   </style>
 </head>
@@ -171,6 +251,22 @@
         return "https://wa.me/" + intl;
       }
 
+      // Formata número MZ "846505871" → "84 650 5871"
+      function fmtPhone(raw) {
+        if (!raw) return "—";
+        const d = String(raw).replace(/\D/g, "");
+        if (d.length === 9) return d.slice(0, 2) + " " + d.slice(2, 5) + " " + d.slice(5);
+        return raw;
+      }
+
+      // Label legível do status (em vez de "in_transit" cru)
+      function statusLabel(s) {
+        return ({
+          draft: "Rascunho", in_transit: "Em Trânsito",
+          delivered: "Entregue", cancelled: "Cancelado",
+        })[s] || s;
+      }
+
       async function load() {
         try {
           const svc = await fetchJSON("/admin/api/distribution/services/" + id + "/roteiro");
@@ -193,130 +289,126 @@
           const districts = [...new Set(benefs.map((b) => b.district).filter(Boolean))];
           const provinces = [...new Set(benefs.map((b) => b.province).filter(Boolean))];
 
-          // Cabeçalho de localização varia conforme single/multi
-          let locationHeader;
+          // ── Aviso de multi-distrito (só se aplicável) ──
+          let multiWarn = "";
           if (isMulti) {
-            // Lista todas combinações província/distrito como pills + contagem
             const pills = groupList
               .sort((a, b) => b.benefs.length - a.benefs.length)
-              .map((g) =>
-                `<span style="display:inline-block;background:#fef3c7;color:#92400e;padding:.18rem .5rem;border-radius:4px;font-size:.74rem;font-weight:700;margin-right:.35rem;margin-bottom:.25rem">
-                  ${esc(g.province)} › ${esc(g.district)} <span style="opacity:.7;font-weight:600">(${g.benefs.length})</span>
-                </span>`).join("");
-            locationHeader = `
-              <div style="background:#fffbeb;border:1px solid #fde68a;border-left:5px solid #f59e0b;border-radius:6px;padding:.75rem 1rem;margin-bottom:1.5rem">
-                <div style="font-size:.7rem;color:#92400e;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:.4rem">⚠️ Rota multi-distrito · ${districts.length} distritos${provinces.length > 1 ? " · " + provinces.length + " províncias" : ""}</div>
-                ${pills}
-                <div style="margin-top:.5rem;font-size:.75rem;color:#78350f">
-                  <strong>Atenção motorista:</strong> esta carga cobre múltiplas localizações.
-                  Ver tabela abaixo — paragens estão agrupadas por distrito (em ordem de visita sugerida).
-                </div>
-              </div>
-              <div class="info-grid">
-                <div><div class="lbl">Origem (Fornecedor)</div><div class="val">${esc(svc.origem_supplier || "—")}</div></div>
-                <div><div class="lbl">Capacidade do Camião</div><div class="val">${fmt(svc.truck_capacity_kg)} kg</div></div>
-              </div>`;
-          } else {
-            locationHeader = `
-              <div class="info-grid">
-                <div><div class="lbl">Província</div><div class="val">${esc(svc.province || "—")}</div></div>
-                <div><div class="lbl">Distrito</div><div class="val">${esc(svc.district || "—")}</div></div>
-                <div><div class="lbl">Origem (Fornecedor)</div><div class="val">${esc(svc.origem_supplier || "—")}</div></div>
-                <div><div class="lbl">Capacidade do Camião</div><div class="val">${fmt(svc.truck_capacity_kg)} kg</div></div>
+              .map((g) => `<span class="pill">${esc(g.province)} › ${esc(g.district)} (${g.benefs.length})</span>`)
+              .join("");
+            multiWarn = `
+              <div class="multi-warn">
+                <div class="title">⚠ Rota multi-distrito · ${districts.length} distritos${provinces.length > 1 ? " · " + provinces.length + " províncias" : ""}</div>
+                <div class="pills">${pills}</div>
+                <div class="note"><strong>Atenção motorista:</strong> esta carga cobre múltiplas localizações. Paragens estão agrupadas por distrito (em ordem de visita sugerida).</div>
               </div>`;
           }
 
+          // ── Cabeçalho do documento ──
+          const printedAt = new Date().toLocaleString("pt-MZ", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+          const dispatchedTxt = svc.dispatched_at
+            ? fmtDate(svc.dispatched_at)
+            : (svc.created_at ? fmtDate(svc.created_at) + " (criado)" : "—");
+
+          // ── Cards de info: Camião + Motorista lado a lado ──
+          const truckCard = `
+            <div class="info-card info-card-truck">
+              <h4>🚛 Camião</h4>
+              <div class="row"><span class="lbl">Matrícula</span><span class="val">${esc(svc.truck_plate || "—")}</span></div>
+              <div class="row"><span class="lbl">Reboque</span><span class="val">${esc(svc.truck_plate_2 || "—")}</span></div>
+              <div class="row"><span class="lbl">Capacidade</span><span class="val">${fmt(svc.truck_capacity_kg)} kg</span></div>
+              <div class="row"><span class="lbl">Origem</span><span class="val txt">${esc(svc.origem_supplier || "—")}</span></div>
+              ${!isMulti ? `<div class="row"><span class="lbl">Destino</span><span class="val txt">${esc(svc.province || "—")} › ${esc(svc.district || "—")}</span></div>` : ""}
+            </div>`;
+          const driverCard = `
+            <div class="info-card info-card-driver">
+              <h4>👤 Motorista</h4>
+              <div class="row"><span class="lbl">Nome</span><span class="val txt">${esc(svc.driver_name || "—")}</span></div>
+              <div class="row"><span class="lbl">Telefone</span><span class="val">${esc(fmtPhone(svc.driver_phone))}</span></div>
+              <div class="row"><span class="lbl">Despacho</span><span class="val txt">${esc(dispatchedTxt)}</span></div>
+              ${svc.notes ? `<div class="row"><span class="lbl">Notas</span><span class="val txt" style="font-size:.72rem">${esc(svc.notes)}</span></div>` : ""}
+            </div>`;
+
           // Cabeçalho
           let html = `
-            <div class="page-head">
+            <div class="doc-head">
               <div>
                 <h1 class="doc-title">Roteiro de Entrega</h1>
-                <div class="doc-subtitle">Distribuição AQI · Documento operacional para o motorista</div>
+                <div class="doc-subtitle">Distribuição AQI · Documento Operacional</div>
                 <div class="doc-num">${esc(svc.service_number)}</div>
               </div>
-              <div style="text-align:right">
-                <div style="font-size:.7rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Status</div>
-                <div style="font-weight:700;color:#0f4c75;font-size:.95rem">${esc(svc.status)}</div>
-                <div style="font-size:.7rem;color:#64748b;margin-top:.4rem">Impresso em<br>${esc(new Date().toLocaleString("pt-MZ"))}</div>
+              <div class="doc-meta">
+                <span class="status-badge status-${esc(svc.status)}">${esc(statusLabel(svc.status))}</span>
+                <div class="doc-meta-print">Impresso em<br>${esc(printedAt)}</div>
               </div>
             </div>
 
-            ${locationHeader}
+            ${multiWarn}
 
-            <div class="truck-banner">
-              <div>
-                <div class="lbl">Matrícula Principal</div>
-                <div class="val">${esc(svc.truck_plate || "—")}</div>
-              </div>
-              <div>
-                <div class="lbl">Matrícula Reboque</div>
-                <div class="val">${esc(svc.truck_plate_2 || "—")}</div>
-              </div>
-              <div>
-                <div class="lbl">Notas / Observações</div>
-                <div class="val" style="font-family:inherit;font-size:.78rem;color:#475569">${esc(svc.notes || "—")}</div>
-              </div>
-              <div>
-                <div class="lbl">Motorista</div>
-                <div class="val">${esc(svc.driver_name || "—")}</div>
-              </div>
-              <div>
-                <div class="lbl">Telefone</div>
-                <div class="val">${esc(svc.driver_phone || "—")}</div>
-              </div>
-              <div>
-                <div class="lbl">Data de despacho</div>
-                <div class="val" style="font-family:inherit;font-size:.85rem">${svc.dispatched_at ? fmtDate(svc.dispatched_at) : (svc.created_at ? fmtDate(svc.created_at) + " (criado)" : "—")}</div>
-              </div>
+            <div class="info-cards">
+              ${truckCard}
+              ${driverCard}
             </div>
 
-            <div class="totals-summary">
+            <div class="stats-strip">
               <div><div class="t-lbl">Beneficiários</div><div class="t-val">${benefs.length}</div></div>
-              <div><div class="t-lbl">Linhas (item)</div><div class="t-val">${totalItems}</div></div>
-              <div><div class="t-lbl">Distritos</div><div class="t-val" style="${districts.length > 1 ? "color:#d97706" : ""}">${districts.length || "—"}</div></div>
+              <div><div class="t-lbl">Itens</div><div class="t-val">${totalItems}</div></div>
+              <div><div class="t-lbl">Distritos</div><div class="t-val ${districts.length > 1 ? "warn" : ""}">${districts.length || "—"}</div></div>
               <div><div class="t-lbl">Total Carga</div><div class="t-val">${fmt(svc.total_kg || totalKg)} kg</div></div>
             </div>
 
             <h3 class="section-title">
-              Lista de Paragens (${benefs.length} beneficiários · agrupado por ${isMulti ? "distrito → " : ""}posto)
+              Lista de Paragens · ${benefs.length} beneficiário${benefs.length === 1 ? "" : "s"}${isMulti ? " · agrupado por distrito" : ""}
             </h3>
             <table class="benef-list">
+              <colgroup>
+                <col class="col-num">
+                <col class="col-benef">
+                <col class="col-contact">
+                <col class="col-items">
+                <col class="col-sig">
+              </colgroup>
               <thead><tr>
-                <th style="width:30px">#</th>
-                <th>Beneficiário & Localização</th>
+                <th>#</th>
+                <th>Beneficiário</th>
                 <th>Contactos</th>
-                <th style="width:230px">Items a entregar</th>
+                <th>Itens a entregar</th>
                 <th class="sig-cell">Recebido / Assinatura</th>
               </tr></thead>
               <tbody>
                 ${(() => {
-                  // Render: secção por (provincia/distrito) quando multi.
-                  // Numeração contínua através dos grupos.
                   let counter = 0;
                   const renderBenef = (b) => {
                     counter++;
-                    const wa = whatsappLink(b.contact);
-                    const items = b.items.map((it) => `<span class="item-line">• ${esc(it.product_name || it.sku)}: <span class="item-qty">${fmtItemQty(it.qty, it.unit)}</span></span>`).join("");
+                    const items = b.items.map((it) =>
+                      `<span class="item-line"><span class="product">${esc(it.product_name || it.sku)}:</span> <span class="item-qty">${fmtItemQty(it.qty, it.unit)}</span></span>`
+                    ).join("");
+                    const supBlock = b.supervisor_name
+                      ? `<div class="benef-supervisor"><strong>Sup:</strong> ${esc(b.supervisor_name)}${b.supervisor_phone ? "<br>" + esc(fmtPhone(b.supervisor_phone)) : ""}</div>`
+                      : "";
+                    const locBlock = b.posto
+                      ? `<div class="benef-loc"><strong>Posto:</strong> ${esc(b.posto)}${b.localidade ? "<br>" + esc(b.localidade) : ""}</div>`
+                      : "";
                     return `<tr>
-                      <td style="font-weight:700;color:#0f4c75;text-align:center">${counter}</td>
+                      <td style="text-align:center;vertical-align:middle"><span class="num-circle">${counter}</span></td>
                       <td>
                         <div class="benef-name">${esc(b.beneficiary_name)}</div>
-                        <span class="benef-id">${esc(b.extensionist_id)} · NUIT ${esc(b.nuit || "—")}</span>
-                        ${b.posto ? `<div class="benef-loc"><strong>Posto:</strong> ${esc(b.posto)}${b.localidade ? " · " + esc(b.localidade) : ""}</div>` : ""}
+                        <span class="benef-id">${esc(b.extensionist_id)}${b.nuit ? " · NUIT " + esc(b.nuit) : ""}</span>
+                        ${locBlock}
                       </td>
                       <td>
-                        ${b.contact ? `<div class="benef-contact">${esc(b.contact)}${wa ? ` <span class="no-print">(<a href="${wa}" target="_blank" style="color:#16a34a;text-decoration:none">WhatsApp</a>)</span>` : ""}</div>` : '<div style="color:#cbd5e1">—</div>'}
-                        ${b.supervisor_name ? `<div class="benef-supervisor"><strong>Sup:</strong> ${esc(b.supervisor_name)}${b.supervisor_phone ? ` · ${esc(b.supervisor_phone)}` : ""}</div>` : ""}
+                        ${b.contact ? `<div class="benef-contact-main">${esc(fmtPhone(b.contact))}</div>` : '<div style="color:#cbd5e1">—</div>'}
+                        ${supBlock}
                       </td>
                       <td>
                         ${items}
                         <div class="item-total">Total: ${fmt(Math.round(b.total_kg))} kg eq.</div>
                       </td>
                       <td class="sig-cell">
-                        <div style="display:flex;align-items:center;justify-content:center;gap:.6rem;margin-bottom:.5rem;font-size:.66rem;color:#64748b">
-                          <span><span class="check-circle"></span>OK</span>
-                          <span><span class="check-circle"></span>Parcial</span>
-                          <span><span class="check-circle"></span>Recusou</span>
+                        <div class="check-row">
+                          <span><span class="check-box"></span>OK</span>
+                          <span><span class="check-box"></span>Parcial</span>
+                          <span><span class="check-box"></span>Recusou</span>
                         </div>
                         <div class="sig-line"></div>
                         <div class="sig-label">Assinatura</div>
@@ -333,9 +425,9 @@
                     const kgEq = Math.round(groupKgEq(g));
                     return `
                       <tr class="district-section">
-                        <td colspan="5" style="background:#0f4c75;color:#fff;padding:.55rem .85rem;font-weight:800;letter-spacing:.04em;font-size:.82rem;text-transform:uppercase">
+                        <td colspan="5">
                           PARAGEM ${gi + 1} · ${esc(g.province)} › ${esc(g.district)}
-                          <span style="float:right;font-weight:600;opacity:.85">${g.benefs.length} benef${g.benefs.length === 1 ? "" : "s"} · ${fmt(kgEq)} kg eq.</span>
+                          <span class="meta">${g.benefs.length} benef${g.benefs.length === 1 ? "" : "s"} · ${fmt(kgEq)} kg eq.</span>
                         </td>
                       </tr>
                       ${g.benefs.map(renderBenef).join("")}
@@ -349,22 +441,24 @@
               <div class="sig-block-cell">
                 <div class="sig-block-line"></div>
                 <div class="sig-block-label">Motorista</div>
-                <div class="sig-block-sub">${esc(svc.driver_name || "")}</div>
+                <div class="sig-block-sub">${esc(svc.driver_name || "—")}</div>
               </div>
               <div class="sig-block-cell">
                 <div class="sig-block-line"></div>
-                <div class="sig-block-label">Coordenador</div>
-                <div class="sig-block-sub">Distribuição AQI</div>
+                <div class="sig-block-label">Coordenador AQI</div>
+                <div class="sig-block-sub">Distribuição</div>
               </div>
               <div class="sig-block-cell">
                 <div class="sig-block-line"></div>
                 <div class="sig-block-label">Data de retorno</div>
-                <div class="sig-block-sub">_____ / _____ / 2026</div>
+                <div class="sig-block-sub">___ / ___ / 2026</div>
               </div>
             </div>
 
             <div class="footer-note">
-              Documento gerado automaticamente pelo sistema de distribuição AQI · ${esc(svc.service_number)} · ${esc(new Date().toISOString().slice(0,10))}
+              Documento gerado pelo sistema de distribuição AQI · ${esc(svc.service_number)} · ${esc(new Date().toISOString().slice(0,10))}
+              <br>
+              <span style="opacity:.7">Em caso de dúvida no terreno, contactar o coordenador da distribuição.</span>
             </div>
           `;
           document.getElementById("page").innerHTML = html;
@@ -393,12 +487,55 @@
         });
       }
 
-      async function downloadPdf() {
+      // Estratégia preferida: PDF gerado SERVER-SIDE com Puppeteer
+      // (headless Chrome). Mais fiável que html2pdf.js — sem cortes à
+      // direita, sem páginas em branco, page-breaks limpos.
+      async function downloadPdfServer() {
+        const btn = document.getElementById("btn-download");
+        const id = location.pathname.split("/")[3];
+        if (!id) return;
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "A gerar PDF…";
+        try {
+          const r = await fetch(`/admin/api/distribution/services/${id}/roteiro/pdf`, {
+            credentials: "same-origin",
+          });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({ error: "Erro " + r.status }));
+            throw new Error(err.error || "Falhou (" + r.status + ")");
+          }
+          const cd = r.headers.get("Content-Disposition") || "";
+          const m = cd.match(/filename="?([^"]+)"?/);
+          const filename = m ? m[1] : "Roteiro.pdf";
+          const blob = await r.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          a.click();
+          URL.revokeObjectURL(url);
+          if (window.AdminUI?.toast) toast("PDF gerado", { kind: "ok" });
+        } catch (e) {
+          console.warn("PDF server falhou, fallback para client-side:", e);
+          // Fallback automático: tenta gerar localmente com html2pdf
+          if (window.AdminUI?.toast) toast("Server falhou — gerando localmente", { kind: "warn" });
+          await downloadPdfClient();
+          return;
+        } finally {
+          btn.disabled = false;
+          btn.textContent = original;
+        }
+      }
+
+      // Fallback: geração client-side com html2pdf.js (caso o server
+      // não tenha Puppeteer disponível ou outro erro fatal).
+      async function downloadPdfClient() {
         const btn = document.getElementById("btn-download");
         const serviceNumber = btn?.dataset?.serviceNumber || "roteiro";
         const original = btn.textContent;
         btn.disabled = true;
-        btn.textContent = "A gerar…";
+        btn.textContent = "A gerar (local)…";
         // Adiciona classe que reduz a largura do .page para A4 (790px @96dpi)
         // e desabilita estilos caros (sombras). Sem isto o conteúdo é
         // renderizado a 920px, depois reduzido pelo jsPDF, e os
@@ -458,7 +595,8 @@
 
       // Inicialmente desabilitado até o conteúdo carregar
       document.getElementById("btn-download").disabled = true;
-      document.getElementById("btn-download").addEventListener("click", downloadPdf);
+      // Click → tenta gerar server-side; se falhar cai automaticamente para client
+      document.getElementById("btn-download").addEventListener("click", downloadPdfServer);
 
       load();
     })();

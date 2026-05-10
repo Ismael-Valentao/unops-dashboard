@@ -130,8 +130,9 @@
     <div class="edit-box">
       <h2>Editar Serviço</h2>
       <p style="font-size:.78rem;color:#64748b;margin:.3rem 0 0" id="e-mode-note">Alterações limitadas conforme estado.</p>
+      <!-- Capacidade: só editável em DRAFT (afecta validação de auto-fill) -->
       <div class="edit-row" id="e-row-draft-only">
-        <div>
+        <div style="grid-column: span 2">
           <label>Capacidade do camião (kg)</label>
           <select id="e-capacity">
             <option value="1000">1T</option>
@@ -142,9 +143,12 @@
             <option value="30000">30T</option>
           </select>
         </div>
-        <div>
+      </div>
+      <!-- Origem: sempre editável (metadado puro) -->
+      <div class="edit-row">
+        <div style="grid-column: span 2">
           <label>Origem (fornecedor)</label>
-          <input id="e-origem" type="text">
+          <input id="e-origem" type="text" placeholder="Ex: SeedCo, BAYER, MOZSEED">
         </div>
       </div>
       <div class="edit-row">
@@ -180,6 +184,38 @@
   </div>
 
   <!-- Attach Guia modal -->
+  <!-- ── Modal SMS ── -->
+  <div class="attach-modal" id="sms-modal">
+    <div class="attach-box" style="max-width:640px">
+      <h2 style="display:flex;align-items:center;gap:.5rem">📱 Enviar SMS aos Extensionistas</h2>
+      <p style="font-size:.82rem;color:#475569;margin:0 0 .85rem">
+        Envia um SMS automático aos beneficiários deste serviço com base nos templates definidos.
+        Os textos podem ser editados em <a href="/admin/sms" target="_blank" style="color:#0f4c75">/admin/sms</a>.
+      </p>
+      <label style="display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:600;margin-bottom:.25rem">Tipo de notificação</label>
+      <select id="sm-kind" style="width:100%;padding:.55rem .7rem;border:1px solid #cbd5e1;border-radius:5px;font-family:inherit">
+        <option value="plan">📋 Plano criado — informa extensionistas que vão receber</option>
+        <option value="arriving">🚛 Camião a chegar — extensionistas confirmam presença</option>
+        <option value="delivered">✓ Pós-entrega — agradecimento aos extensionistas</option>
+        <option value="supervisor">👔 Avisar supervisor(es) — 1 SMS por supervisor com totais</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:.4rem;margin-top:.7rem;font-size:.85rem;color:#475569;cursor:pointer">
+        <input type="checkbox" id="sm-skip-dup" checked style="width:auto;margin:0">
+        Saltar quem já recebeu este tipo de SMS para este serviço
+      </label>
+      <div style="display:flex;gap:.5rem;margin-top:.85rem">
+        <button class="btn" id="sm-preview" style="background:#0f4c75;color:#fff;border:0">Pré-visualizar</button>
+        <button class="btn" id="sm-send" disabled style="background:#16a34a;color:#fff;border:0">Enviar SMS</button>
+        <button class="btn" id="sm-cancel" style="margin-left:auto">Fechar</button>
+      </div>
+      <div id="sm-preview-area" style="display:none;margin-top:1rem">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:600;margin-bottom:.25rem">Pré-visualização</div>
+        <div id="sm-preview-body"></div>
+      </div>
+      <div id="sm-result" style="margin-top:1rem"></div>
+    </div>
+  </div>
+
   <div class="attach-modal" id="attach-modal">
     <div class="attach-box">
       <h2>Anexar Guia de Transporte ADICIONAL (PDF)</h2>
@@ -250,7 +286,8 @@
               <button class="btn btn-print" onclick="window.print()">Imprimir Guia</button>
               <a class="btn" href="/admin/servicos/${svc.id}/roteiro" target="_blank" style="background:#0f4c75;color:#fff;border:0">Roteiro Motorista</a>
               <a class="btn" href="/admin/api/distribution/services/${svc.id}/guias-excel" style="background:#16a34a;color:#fff;border:0" title="Exporta os items do serviço para o formato Excel das guias AQI (ADSN/GTU ficam vazios — preenches depois)">Excel Guias</a>
-              ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-edit" id="btn-edit">Editar</button>` : ""}
+              ${svc.status !== "cancelled" ? `<button class="btn btn-sms" id="btn-sms" style="background:#7c3aed;color:#fff;border:0" title="Enviar SMS aos extensionistas">📱 SMS</button>` : ""}
+              <button class="btn btn-edit" id="btn-edit" title="${svc.status === 'draft' ? 'Editar todos os campos' : 'Corrigir matrícula / motorista / origem / notas (items são imutáveis)'}">Editar</button>
               ${svc.status === "draft" ? `<button class="btn btn-transit" id="btn-transit">Pôr em Trânsito</button>` : ""}
               ${(svc.status === "in_transit" || svc.status === "delivered") ? `<button class="btn btn-attach" id="btn-attach">Anexar Guia ADICIONAL</button>` : ""}
               ${(svc.status === "draft" || svc.status === "in_transit") ? `<button class="btn btn-deliver" id="btn-deliver">Marcar Entregue</button>` : ""}
@@ -403,16 +440,21 @@
         if (btnEdit) btnEdit.addEventListener("click", () => {
           const mod = document.getElementById("edit-modal");
           const isDraft = svc.status === "draft";
-          // Esconde campos só-draft quando em trânsito
+          // Esconde "Capacidade" fora de draft (afecta validação)
           const draftOnlyRow = document.getElementById("e-row-draft-only");
           if (draftOnlyRow) draftOnlyRow.style.display = isDraft ? "" : "none";
-          // Nota informativa adapta ao estado
+          // Nota informativa adapta ao estado actual
           const note = document.getElementById("e-mode-note");
           if (note) {
-            note.textContent = isDraft
-              ? "Em rascunho podes editar todos os campos."
-              : "Em trânsito só podes corrigir camião/motorista/notas. Capacidade e origem ficam fixas.";
-            note.style.color = isDraft ? "#64748b" : "#7c3aed";
+            const NOTE_BY_STATUS = {
+              draft:      { txt: "Em rascunho podes editar todos os campos.",                                          color: "#64748b" },
+              in_transit: { txt: "Em trânsito podes corrigir camião / motorista / origem / notas. Capacidade fica fixa.", color: "#7c3aed" },
+              delivered:  { txt: "Serviço entregue — podes ainda corrigir camião / motorista / origem / notas (registo histórico). Items e quantidades não mudam.", color: "#16a34a" },
+              cancelled:  { txt: "Serviço cancelado — podes corrigir camião / motorista / origem / notas para fins de registo. Items ficam intactos.", color: "#dc2626" },
+            };
+            const info = NOTE_BY_STATUS[svc.status] || NOTE_BY_STATUS.draft;
+            note.textContent = info.txt;
+            note.style.color = info.color;
           }
           document.getElementById("e-capacity").value = svc.truck_capacity_kg || "30000";
           document.getElementById("e-origem").value = svc.origem_supplier || "";
@@ -521,6 +563,124 @@
           document.getElementById("guia-result").innerHTML = "";
           document.getElementById("guia-file").value = "";
         });
+
+        // ── SMS ─────────────────────────────────────────────
+        const btnSms = document.getElementById("btn-sms");
+        if (btnSms) {
+          btnSms.addEventListener("click", () => openSmsModal(svc));
+          // Os botões dentro do modal também (só ligamos uma vez, com closure de svc)
+          const smCancel  = document.getElementById("sm-cancel");
+          const smPreview = document.getElementById("sm-preview");
+          const smSend    = document.getElementById("sm-send");
+          if (smCancel)  smCancel.addEventListener("click", () => document.getElementById("sms-modal").classList.remove("show"));
+          if (smPreview) smPreview.addEventListener("click", () => previewSms(svc));
+          if (smSend)    smSend.addEventListener("click", () => sendSmsBulk(svc));
+          document.getElementById("sms-modal").addEventListener("click", (e) => {
+            if (e.target.id === "sms-modal") e.target.classList.remove("show");
+          });
+        }
+      }
+
+      // Modal de envio de SMS (reutilizado para os 3 tipos)
+      async function openSmsModal(svc) {
+        const mod = document.getElementById("sms-modal");
+        if (!mod) return;
+        // Pre-selecciona kind baseado no estado:
+        //   draft        → plan (informar do planeamento)
+        //   in_transit   → arriving (camião a chegar)
+        //   delivered    → delivered (agradecimento)
+        let suggestedKind = "plan";
+        if (svc.status === "in_transit") suggestedKind = "arriving";
+        else if (svc.status === "delivered") suggestedKind = "delivered";
+        document.getElementById("sm-kind").value = suggestedKind;
+        document.getElementById("sm-result").innerHTML = "";
+        document.getElementById("sm-preview-area").style.display = "none";
+        mod.classList.add("show");
+      }
+      async function previewSms(svc) {
+        const id = svc.id;
+        const kind = document.getElementById("sm-kind").value;
+        const previewArea = document.getElementById("sm-preview-area");
+        const previewBody = document.getElementById("sm-preview-body");
+        const btnSend = document.getElementById("sm-send");
+        previewBody.innerHTML = "<em>A preparar prévia…</em>";
+        previewArea.style.display = "block";
+        btnSend.disabled = true;
+        try {
+          const r = await fetchJSON(`/admin/api/distribution/services/${id}/sms`, {
+            method: "POST",
+            body: { kind, preview_only: true, skip_duplicates: false },
+          });
+          const s = r.summary;
+          // Conta por tipo de status (preview só dá "preview" ou skipped_*)
+          const previews = s.results.filter((x) => x.status === "preview");
+          const noPhone = s.results.filter((x) => x.status === "skipped_no_phone");
+
+          let html = `<div style="margin-bottom:.5rem;font-size:.85rem"><strong>${previews.length}</strong> SMS serão enviados`;
+          if (noPhone.length) html += ` · <span style="color:#dc2626">${noPhone.length} sem telefone</span>`;
+          html += ` · template: <code>${esc(r.template.name)}</code>`;
+          html += `</div>`;
+          if (previews.length) {
+            html += `<div style="max-height:240px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:5px;padding:.5rem;background:#f8fafc">`;
+            for (const p of previews.slice(0, 5)) {
+              // Para supervisor, o nome vem em supervisor_name; para benef
+              // vem em beneficiary_name. Ajusta consoante.
+              const name = p.beneficiary_name || p.supervisor_name || "—";
+              const extra = p.n_benefs ? ` <span style="font-weight:500;color:#94a3b8">(${p.n_benefs} extensionistas)</span>` : "";
+              html += `<div style="padding:.4rem;border-bottom:1px dashed #e2e8f0">
+                <div style="font-weight:700;font-size:.82rem">${esc(name)}${extra} <span style="color:#0f4c75;font-family:monospace">${esc(p.phone)}</span></div>
+                <div style="font-size:.78rem;color:#475569;margin-top:.2rem;white-space:pre-wrap">${esc(p.text)}</div>
+              </div>`;
+            }
+            if (previews.length > 5) html += `<div style="padding:.4rem;color:#94a3b8;font-size:.75rem">… e mais ${previews.length - 5} mensagens</div>`;
+            html += `</div>`;
+          }
+          if (noPhone.length) {
+            html += `<div style="margin-top:.5rem;padding:.4rem .65rem;background:#fee2e2;color:#991b1b;border-radius:5px;font-size:.78rem">
+              <strong>Sem telefone (saltados):</strong> ${noPhone.map((x) => esc(x.beneficiary_name)).join(", ")}
+            </div>`;
+          }
+          previewBody.innerHTML = html;
+          btnSend.disabled = previews.length === 0;
+        } catch (e) {
+          previewBody.innerHTML = `<div style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
+        }
+      }
+      async function sendSmsBulk(svc) {
+        const id = svc.id;
+        const kind = document.getElementById("sm-kind").value;
+        const skipDup = document.getElementById("sm-skip-dup").checked;
+        const result = document.getElementById("sm-result");
+        const btnSend = document.getElementById("sm-send");
+        if (!confirm(`Enviar SMS aos beneficiários deste serviço (${kind})?`)) return;
+        btnSend.disabled = true;
+        result.innerHTML = "<em>A enviar…</em>";
+        try {
+          const r = await fetchJSON(`/admin/api/distribution/services/${id}/sms`, {
+            method: "POST",
+            body: { kind, skip_duplicates: skipDup },
+          });
+          const s = r.summary;
+          let cls = "ok"; let ico = "✓";
+          if (s.failed > 0) { cls = "warn"; ico = "⚠"; }
+          if (s.ok === 0 && s.failed > 0) { cls = "err"; ico = "✗"; }
+          let html = `<div style="padding:.65rem .85rem;border-radius:5px;font-size:.85rem;background:${cls === "ok" ? "#dcfce7" : cls === "warn" ? "#fef3c7" : "#fee2e2"};color:${cls === "ok" ? "#166534" : cls === "warn" ? "#92400e" : "#991b1b"}">
+            ${ico} <strong>${s.ok} enviado(s)</strong>${s.failed ? ` · <strong>${s.failed} falhado(s)</strong>` : ""}${s.skipped_no_phone ? ` · ${s.skipped_no_phone} sem telefone` : ""}${s.skipped_already_sent ? ` · ${s.skipped_already_sent} já enviado anteriormente` : ""}
+          </div>`;
+          if (s.failed > 0) {
+            const fails = s.results.filter((x) => x.status === "failed");
+            html += `<div style="margin-top:.5rem;font-size:.78rem">
+              <strong>Falhas:</strong>
+              <ul style="margin:.3rem 0 0 1rem;padding:0">${fails.map((f) => `<li>${esc(f.beneficiary_name || f.supervisor_name || "—")}: ${esc(f.error || "")}</li>`).join("")}</ul>
+            </div>`;
+          }
+          result.innerHTML = html;
+          if (typeof toast === "function") toast(`SMS: ${s.ok} OK · ${s.failed} falhou`, { kind: cls });
+        } catch (e) {
+          result.innerHTML = `<div style="color:#dc2626;font-size:.85rem">Erro: ${esc(e.message)}</div>`;
+        } finally {
+          btnSend.disabled = false;
+        }
       }
 
       // Modal handlers (always bound)

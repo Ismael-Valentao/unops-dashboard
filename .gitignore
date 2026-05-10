@@ -7,8 +7,15 @@ data/maap-conflitos-*.xlsx
 data/servicos.bak.*.xlsx
 data/sample-*.pdf
 data/sample-*.xlsx
+data/sms-report.xlsx
+data/extensionistas_*.xlsx
+data/resumo-provincias_*.xlsx
+data/ranking-batedores_*.xlsx
+data/audit_*.xlsx
 *.output
 test_*.xlsx
+smoke-*.js
+smoke-*.xlsx
 verify.js
 app.py
 requirements.txt

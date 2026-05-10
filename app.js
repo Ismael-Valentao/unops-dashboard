@@ -189,6 +189,19 @@ async function refreshCache() {
     enrichWithADSN(cache.data);
     cache.lastUpdated = new Date().toISOString();
     console.log(`[OK] Loaded ${cache.data.length} rows at ${cache.lastUpdated}`);
+
+    // SIDE-EFFECT: persiste rows novas/alteradas em delivery_audit para
+    // termos histórico imutável mesmo se o sheet perder dados depois.
+    // Falhas aqui não bloqueiam o pipeline — só logam warning.
+    try {
+      const { captureRows } = require("./lib/audit-capture");
+      const stats = await captureRows(cache.data);
+      if (stats.inserted > 0 || stats.updated_status > 0) {
+        console.log(`[AUDIT] +${stats.inserted} novas, ${stats.updated_status} status mudou, ${stats.seen} já vistas (${stats.total} total)${stats.errors.length ? ", " + stats.errors.length + " erros" : ""}`);
+      }
+    } catch (e) {
+      console.warn("[AUDIT] capture failed (non-fatal):", e.message);
+    }
   } catch (err) {
     console.error("[WARN] Failed to refresh data:", err.message);
   }
@@ -225,6 +238,273 @@ app.get("/realocacao", (_req, res) => {
 
 app.get("/dashboard", (_req, res) => {
   res.sendFile(path.join(__dirname, "templates", "ceo-dashboard.html"));
+});
+
+// Ranking público de batedores (transparência: pagamento por entregas submetidas)
+app.get("/batedores", (_req, res) => {
+  res.sendFile(path.join(__dirname, "templates", "batedores.html"));
+});
+
+// API pública (sem auth) — fonte de dados do ranking de batedores
+// Calcula pagamento estimado: ~100 MZN por tonelada submetida
+const { Audit: PublicAudit } = require("./db/audit-repo");
+const PAYMENT_MZN_PER_TON = 100;
+
+// Helper partilhado: parse from/to/days e devolve { data, periodLabel } pronto para exports
+function parseBatedoresQuery(q) {
+  const arg = (q.from && q.to) ? { from: q.from, to: q.to } : { days: Number(q.days) || 1 };
+  return arg;
+}
+async function buildBatedoresPayload(arg) {
+  const data = await PublicAudit.byDayPerSubmitter(arg);
+  const submitters = (data.submitters || []).map((s, i) => ({
+    rank: i + 1,
+    email: s.email,
+    total_kg: Math.round(s.total_kg || 0),
+    total_tons: +((s.total_kg || 0) / 1000).toFixed(2),
+    total_submissions: s.total || 0,
+    kg_verified: Math.round(s.kg_verified || 0),
+    kg_pending:  Math.round(s.kg_pending  || 0),
+    kg_rejected: Math.round(s.kg_rejected || 0),
+    payment_mzn: Math.round(((s.total_kg || 0) / 1000) * PAYMENT_MZN_PER_TON),
+    by_day: s.by_day || {},
+  }));
+  const totalKg       = submitters.reduce((acc, s) => acc + s.total_kg, 0);
+  const totalVerified = submitters.reduce((acc, s) => acc + s.kg_verified, 0);
+  const totalPending  = submitters.reduce((acc, s) => acc + s.kg_pending, 0);
+  const totalRejected = submitters.reduce((acc, s) => acc + s.kg_rejected, 0);
+  const totalSubs     = submitters.reduce((acc, s) => acc + s.total_submissions, 0);
+  const totalTons = +(totalKg / 1000).toFixed(2);
+  return {
+    days: data.days,
+    day_totals: data.day_totals,
+    submitters,
+    summary: {
+      total_batedores: submitters.length,
+      total_submissions: totalSubs,
+      total_kg: totalKg,
+      total_tons: totalTons,
+      total_kg_verified: totalVerified,
+      total_kg_pending:  totalPending,
+      total_kg_rejected: totalRejected,
+      total_payment_mzn: Math.round(totalTons * PAYMENT_MZN_PER_TON),
+      period_days: data.days.length,
+      from: data.days[0],
+      to:   data.days[data.days.length - 1],
+      rate_mzn_per_ton: PAYMENT_MZN_PER_TON,
+    },
+  };
+}
+
+app.get("/api/public/batedores", async (req, res) => {
+  try {
+    const arg = parseBatedoresQuery(req.query);
+    res.json(await buildBatedoresPayload(arg));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Excel export público — 3 sheets: Resumo / Ranking / Por Dia
+app.get("/api/public/batedores/export.xlsx", async (req, res) => {
+  try {
+    const ExcelJS = require("exceljs");
+    const arg = parseBatedoresQuery(req.query);
+    const payload = await buildBatedoresPayload(arg);
+    const s = payload.summary;
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "AQI Distribution";
+    wb.created = new Date();
+
+    const C_HEADER  = "FF0F4C75";
+    const C_SUB     = "FF1E6BA8";
+    const C_GREEN   = "FF15803D";
+    const C_AMBER   = "FFB45309";
+    const C_RED     = "FFB91C1C";
+    const C_TOTAL   = "FFE2E8F0";
+    const C_WHITE   = "FFFFFFFF";
+
+    const fmtNum = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+    // ── Sheet 1: Resumo ───────────────────────────────────
+    const sumWs = wb.addWorksheet("Resumo");
+    sumWs.columns = [{ width: 32 }, { width: 22 }];
+    sumWs.getCell("A1").value = "RANKING DE BATEDORES";
+    sumWs.getCell("A1").font = { bold: true, size: 14, color: { argb: C_HEADER } };
+    sumWs.mergeCells("A1:B1");
+
+    let r = 3;
+    sumWs.getCell(`A${r}`).value = "Período do relatório";
+    sumWs.getCell(`A${r}`).font = { bold: true, size: 11 };
+    sumWs.mergeCells(`A${r}:B${r}`); r++;
+    sumWs.getCell(`A${r}`).value = "De";  sumWs.getCell(`B${r}`).value = s.from; r++;
+    sumWs.getCell(`A${r}`).value = "Até"; sumWs.getCell(`B${r}`).value = s.to; r++;
+    sumWs.getCell(`A${r}`).value = "Dias do período"; sumWs.getCell(`B${r}`).value = s.period_days; r++;
+    sumWs.getCell(`A${r}`).value = "Gerado em"; sumWs.getCell(`B${r}`).value = new Date().toLocaleString("pt-MZ"); r++;
+    r++;
+
+    sumWs.getCell(`A${r}`).value = "Resultados agregados";
+    sumWs.getCell(`A${r}`).font = { bold: true, size: 11 };
+    sumWs.mergeCells(`A${r}:B${r}`); r++;
+    const rows = [
+      ["Batedores activos", s.total_batedores],
+      ["Total submissões", s.total_submissions],
+      ["Total entregue (kg)", fmtNum(s.total_kg)],
+      ["Total entregue (toneladas)", fmtNum(s.total_tons)],
+      ["Verificado (kg)", fmtNum(s.total_kg_verified)],
+      ["Pendente (kg)",   fmtNum(s.total_kg_pending)],
+      ["Rejeitado (kg)",  fmtNum(s.total_kg_rejected)],
+      ["Pagamento estimado (MZN)", s.total_payment_mzn],
+      ["Taxa (MZN por tonelada)", s.rate_mzn_per_ton],
+    ];
+    for (const [k, v] of rows) {
+      sumWs.getCell(`A${r}`).value = k;
+      sumWs.getCell(`B${r}`).value = v;
+      sumWs.getCell(`B${r}`).numFmt = typeof v === "number" ? "#,##0.00" : "@";
+      r++;
+    }
+
+    // ── Sheet 2: Ranking ──────────────────────────────────
+    const rkWs = wb.addWorksheet("Ranking", { views: [{ state: "frozen", ySplit: 1 }] });
+    const rkHead = ["#", "Batedor (email)", "Submissões", "Total kg", "Toneladas", "Pagamento MZN", "Verificado kg", "Pendente kg", "Rejeitado kg"];
+    rkHead.forEach((h, i) => {
+      const c = rkWs.getCell(1, i + 1);
+      c.value = h;
+      c.font = { bold: true, color: { argb: C_WHITE } };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_HEADER } };
+      c.alignment = { vertical: "middle", horizontal: "center" };
+    });
+    rkWs.getColumn(1).width = 5;
+    rkWs.getColumn(2).width = 36;
+    for (let i = 3; i <= 9; i++) rkWs.getColumn(i).width = 14;
+
+    payload.submitters.forEach((sub, i) => {
+      const row = i + 2;
+      rkWs.getCell(row, 1).value = sub.rank;
+      rkWs.getCell(row, 2).value = sub.email;
+      rkWs.getCell(row, 3).value = sub.total_submissions;
+      rkWs.getCell(row, 4).value = sub.total_kg;
+      rkWs.getCell(row, 5).value = sub.total_tons;
+      rkWs.getCell(row, 6).value = sub.payment_mzn;
+      rkWs.getCell(row, 7).value = sub.kg_verified;
+      rkWs.getCell(row, 8).value = sub.kg_pending;
+      rkWs.getCell(row, 9).value = sub.kg_rejected;
+      // formatos numéricos
+      rkWs.getCell(row, 4).numFmt = "#,##0";
+      rkWs.getCell(row, 5).numFmt = "#,##0.00";
+      rkWs.getCell(row, 6).numFmt = "#,##0";
+      rkWs.getCell(row, 7).numFmt = "#,##0";
+      rkWs.getCell(row, 8).numFmt = "#,##0";
+      rkWs.getCell(row, 9).numFmt = "#,##0";
+      rkWs.getCell(row, 7).font = { color: { argb: C_GREEN } };
+      rkWs.getCell(row, 8).font = { color: { argb: C_AMBER } };
+      rkWs.getCell(row, 9).font = { color: { argb: C_RED } };
+      // medalhas no rank
+      if (sub.rank === 1) rkWs.getCell(row, 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE08B" } };
+      if (sub.rank === 2) rkWs.getCell(row, 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+      if (sub.rank === 3) rkWs.getCell(row, 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFCD7BE" } };
+      if (i % 2 === 0) {
+        for (let c = 1; c <= 9; c++) {
+          const cell = rkWs.getCell(row, c);
+          if (!cell.fill || !cell.fill.fgColor) {
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+          }
+        }
+      }
+    });
+    // Totais
+    if (payload.submitters.length) {
+      const totRow = payload.submitters.length + 2;
+      rkWs.getCell(totRow, 1).value = "";
+      rkWs.getCell(totRow, 2).value = "TOTAL";
+      rkWs.getCell(totRow, 3).value = s.total_submissions;
+      rkWs.getCell(totRow, 4).value = s.total_kg;
+      rkWs.getCell(totRow, 5).value = s.total_tons;
+      rkWs.getCell(totRow, 6).value = s.total_payment_mzn;
+      rkWs.getCell(totRow, 7).value = s.total_kg_verified;
+      rkWs.getCell(totRow, 8).value = s.total_kg_pending;
+      rkWs.getCell(totRow, 9).value = s.total_kg_rejected;
+      for (let c = 1; c <= 9; c++) {
+        rkWs.getCell(totRow, c).font = { bold: true };
+        rkWs.getCell(totRow, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_TOTAL } };
+      }
+      rkWs.getCell(totRow, 4).numFmt = "#,##0";
+      rkWs.getCell(totRow, 5).numFmt = "#,##0.00";
+      rkWs.getCell(totRow, 6).numFmt = "#,##0";
+      rkWs.getCell(totRow, 7).numFmt = "#,##0";
+      rkWs.getCell(totRow, 8).numFmt = "#,##0";
+      rkWs.getCell(totRow, 9).numFmt = "#,##0";
+    }
+    rkWs.autoFilter = { from: { row: 1, column: 1 }, to: { row: payload.submitters.length + 1, column: 9 } };
+
+    // ── Sheet 3: Por Dia (matriz batedor × dia) ───────────
+    const ddWs = wb.addWorksheet("Por Dia", { views: [{ state: "frozen", ySplit: 1, xSplit: 2 }] });
+    const days = payload.days;
+    const ddHead = ["#", "Batedor", ...days, "Total kg"];
+    ddHead.forEach((h, i) => {
+      const c = ddWs.getCell(1, i + 1);
+      c.value = h;
+      c.font = { bold: true, color: { argb: C_WHITE } };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_HEADER } };
+      c.alignment = { vertical: "middle", horizontal: "center" };
+    });
+    ddWs.getColumn(1).width = 5;
+    ddWs.getColumn(2).width = 36;
+    for (let i = 3; i <= days.length + 2; i++) ddWs.getColumn(i).width = 11;
+    ddWs.getColumn(days.length + 3).width = 13;
+
+    payload.submitters.forEach((sub, i) => {
+      const row = i + 2;
+      ddWs.getCell(row, 1).value = sub.rank;
+      ddWs.getCell(row, 2).value = sub.email;
+      // calcula max para heatmap por linha
+      const vals = days.map((d) => Math.round((sub.by_day[d]?.kg) || 0));
+      const max = Math.max(...vals, 1);
+      vals.forEach((v, j) => {
+        const cell = ddWs.getCell(row, j + 3);
+        cell.value = v || (v === 0 ? "" : "");
+        cell.numFmt = "#,##0";
+        if (v > 0) {
+          const intensity = Math.min(1, v / max);
+          const rr = Math.round(255 - intensity * 100);
+          const gg = Math.round(255 - intensity * 40);
+          const bb = Math.round(255 - intensity * 20);
+          cell.fill = {
+            type: "pattern", pattern: "solid",
+            fgColor: { argb: "FF" + [rr, gg, bb].map((x) => x.toString(16).padStart(2, "0")).join("") },
+          };
+        }
+      });
+      const totalCell = ddWs.getCell(row, days.length + 3);
+      totalCell.value = sub.total_kg;
+      totalCell.numFmt = "#,##0";
+      totalCell.font = { bold: true };
+    });
+    // Totais por dia
+    const dayTotalsRow = payload.submitters.length + 2;
+    ddWs.getCell(dayTotalsRow, 1).value = "";
+    ddWs.getCell(dayTotalsRow, 2).value = "TOTAL DIÁRIO";
+    days.forEach((d, j) => {
+      const t = payload.day_totals[d];
+      ddWs.getCell(dayTotalsRow, j + 3).value = Math.round(t?.kg || 0);
+      ddWs.getCell(dayTotalsRow, j + 3).numFmt = "#,##0";
+    });
+    ddWs.getCell(dayTotalsRow, days.length + 3).value = s.total_kg;
+    ddWs.getCell(dayTotalsRow, days.length + 3).numFmt = "#,##0";
+    for (let c = 1; c <= days.length + 3; c++) {
+      ddWs.getCell(dayTotalsRow, c).font = { bold: true };
+      ddWs.getCell(dayTotalsRow, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_TOTAL } };
+    }
+
+    const fname = `ranking-batedores_${s.from}_${s.to}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get("/api/data", (_req, res) => {

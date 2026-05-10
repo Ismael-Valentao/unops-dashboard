@@ -106,8 +106,10 @@ body.view-updated::before{
 }
 @media(max-width:1400px){body.view-updated::before{padding:.35rem .75rem;font-size:.68rem}}
 
-/* Compact header on mid-size screens to prevent wrapping */
-@media(max-width:1400px){
+/* Compact header on mid-size screens to prevent wrapping.
+   Bumped 1400→1500 porque o header tem 3 nav-links + dropdown + 3 botões,
+   e a 1422-1500px o lado direito wrappava para uma 2ª linha desalinhada. */
+@media(max-width:1500px){
   .header{padding:.6rem 1rem;gap:.4rem}
   .header-left{gap:.4rem}
   .header-right{gap:.5rem}
@@ -117,7 +119,10 @@ body.view-updated::before{
   .refresh-info{font-size:.72rem}
   .btn-primary,.btn-save{padding:.35rem .75rem;font-size:.78rem}
 }
-.header-right{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+/* Quando .header-right wrappa para nova linha (viewport apertado), mantém-no
+   alinhado à direita (fora isso o flex perde o space-between e as 2 linhas
+   ficam ambas alinhadas à esquerda — aspecto "desfigurado"). */
+.header-right{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-left:auto}
 .refresh-info{display:flex;flex-direction:column;align-items:flex-end;font-size:.78rem;opacity:.9}
 .countdown{font-weight:600;font-variant-numeric:tabular-nums}
 

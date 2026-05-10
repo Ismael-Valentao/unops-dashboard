@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5">
+  <meta name="theme-color" content="#0f4c75">
+  <title>Ranking de Batedores · AQI</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; text-decoration: none; }
+
+    /* ── HEADER ─────────────────────────────────────────────── */
+    .hdr {
+      background: linear-gradient(135deg, #0f4c75 0%, #1e6ba8 100%);
+      color: #fff;
+      padding: 1.25rem 1rem 1.75rem;
+      box-shadow: 0 2px 8px rgba(15, 76, 117, .25);
+    }
+    .hdr-inner { max-width: 1200px; margin: 0 auto; }
+    .hdr-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+    .hdr h1 { margin: 0; font-size: 1.4rem; font-weight: 700; letter-spacing: -.01em; }
+    .hdr-sub { display: block; font-size: .82rem; opacity: .85; margin-top: .15rem; }
+    .hdr-link {
+      display: inline-block; padding: .35rem .7rem;
+      background: rgba(255,255,255,.15); border-radius: 999px;
+      font-size: .78rem; font-weight: 500;
+    }
+    .hdr-link:hover { background: rgba(255,255,255,.28); }
+    .hdr-link svg { width: 14px; height: 14px; vertical-align: -2px; margin-right: 3px; }
+
+    /* ── HERO METRICS ────────────────────────────────────────── */
+    .hero { max-width: 1200px; margin: -1rem auto 1.5rem; padding: 0 .75rem; }
+    .hero-cards {
+      display: grid; gap: .65rem;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+    .hero-card {
+      background: #fff; border-radius: 12px; padding: .9rem .8rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,.06);
+      border: 1px solid #e2e8f0;
+    }
+    .hero-card-lbl { font-size: .68rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+    .hero-card-val { font-size: 1.55rem; font-weight: 700; color: #0f172a; line-height: 1.1; margin-top: .25rem; }
+    .hero-card-sub { font-size: .72rem; color: #64748b; margin-top: .15rem; }
+    .hero-card.green .hero-card-val { color: #15803d; }
+    .hero-card.amber .hero-card-val { color: #b45309; }
+    .hero-card.blue  .hero-card-val { color: #1e6ba8; }
+
+    /* ── EXPLAINER STRIP ─────────────────────────────────────── */
+    .explainer { max-width: 1200px; margin: 0 auto 1rem; padding: 0 .75rem; }
+    .explainer-bar {
+      background: #fff8e6; border: 1px solid #f5d593;
+      padding: .65rem .85rem; border-radius: 10px;
+      font-size: .82rem; line-height: 1.4; color: #78431a;
+      display: flex; gap: .5rem; align-items: flex-start;
+    }
+    .explainer-bar strong { color: #92410d; }
+
+    /* ── DATE FILTER ─────────────────────────────────────────── */
+    .ctrl { max-width: 1200px; margin: 0 auto 1rem; padding: 0 .75rem; }
+    .ctrl-row {
+      display: flex; gap: .65rem; flex-wrap: wrap; align-items: center;
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+      padding: .7rem .85rem;
+    }
+    .ctrl-presets { display: inline-flex; flex-wrap: wrap; gap: .3rem; }
+    .preset-btn {
+      border: 1px solid #cbd5e1; background: #fff; cursor: pointer;
+      padding: .35rem .8rem; border-radius: 999px; font-size: .76rem;
+      color: #475569; font-weight: 500; transition: all .15s ease;
+      font-family: inherit;
+    }
+    .preset-btn:hover { background: #f1f5f9; color: #0f172a; }
+    .preset-btn.active { background: #0f4c75; color: #fff; border-color: #0f4c75; box-shadow: 0 1px 3px rgba(15,76,117,.3); }
+    .date-group { display: flex; align-items: center; gap: .35rem; }
+    .date-group label { font-size: .76rem; color: #475569; font-weight: 600; }
+    .date-input {
+      padding: .35rem .5rem; font-size: .82rem;
+      border: 1px solid #cbd5e1; border-radius: 6px;
+      font-family: inherit; background: #fff;
+    }
+    .date-input:focus { outline: 2px solid #0f4c75; outline-offset: 1px; border-color: #0f4c75; }
+    .ctrl-divider {
+      width: 1px; height: 26px; background: #e2e8f0; margin: 0 .15rem;
+      align-self: center;
+    }
+    .btn-apply, .btn-export {
+      border: 0; cursor: pointer; padding: .45rem .85rem; border-radius: 6px;
+      font-size: .8rem; font-weight: 600; font-family: inherit;
+      display: inline-flex; align-items: center; gap: .35rem;
+    }
+    .btn-apply { background: #0f4c75; color: #fff; }
+    .btn-apply:hover { background: #1e6ba8; }
+    .btn-export { background: #15803d; color: #fff; }
+    .btn-export:hover { background: #166534; }
+    .btn-export svg { width: 14px; height: 14px; }
+    .ctrl-info { font-size: .78rem; color: #64748b; margin-left: auto; }
+    .ctrl-info strong { color: #0f172a; }
+
+    /* ── CHARTS ──────────────────────────────────────────────── */
+    .charts {
+      max-width: 1200px; margin: 0 auto 1.5rem; padding: 0 .75rem;
+      display: grid; gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
+    .chart-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+      padding: 1rem; box-shadow: 0 2px 6px rgba(0,0,0,.04);
+    }
+    .chart-card.wide { grid-column: 1 / -1; }
+    @media (min-width: 980px) {
+      .chart-card.wide-md-2 { grid-column: span 2; }
+    }
+    .chart-head {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: .65rem;
+    }
+    .chart-title { font-size: .92rem; font-weight: 700; color: #0f172a; margin: 0; }
+    .chart-sub { font-size: .72rem; color: #64748b; }
+    .chart-canvas-wrap { position: relative; height: 280px; }
+    .chart-canvas-wrap.tall { height: 360px; }
+    .chart-empty {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: #94a3b8; font-size: .9rem; font-style: italic;
+    }
+
+    /* ── LEADERBOARD ─────────────────────────────────────────── */
+    .board { max-width: 1200px; margin: 0 auto 2rem; padding: 0 .75rem; }
+    .board-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .65rem; }
+    .board-head h2 { margin: 0; font-size: 1rem; font-weight: 700; color: #0f172a; }
+    .board-head .board-sub { font-size: .76rem; color: #64748b; }
+
+    .row-list {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+      overflow: hidden;
+    }
+    .row {
+      display: grid; grid-template-columns: 38px 1fr auto;
+      gap: .6rem; padding: .75rem .85rem;
+      border-bottom: 1px solid #f1f5f9;
+      cursor: pointer; transition: background .12s ease;
+      align-items: center;
+    }
+    .row:last-child { border-bottom: none; }
+    .row:hover { background: #f8fafc; }
+    .row.expanded { background: #f0f9ff; }
+    .rank { font-size: 1rem; font-weight: 700; color: #64748b; text-align: center; }
+    .rank.gold   { color: #c5872c; font-size: 1.25rem; }
+    .rank.silver { color: #71808d; font-size: 1.2rem; }
+    .rank.bronze { color: #a96a3a; font-size: 1.15rem; }
+    .person { min-width: 0; }
+    .person-top { display: flex; gap: .5rem; align-items: center; }
+    .avatar {
+      width: 30px; height: 30px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 700; font-size: .72rem; flex-shrink: 0;
+    }
+    .person-name {
+      font-size: .85rem; font-weight: 600; color: #0f172a;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .person-meta { font-size: .7rem; color: #64748b; margin-top: .1rem; }
+    .totals { text-align: right; }
+    .totals-tons {
+      font-size: 1.05rem; font-weight: 700; color: #0f4c75;
+      font-feature-settings: "tnum";
+    }
+    .totals-tons .unit { font-size: .68rem; font-weight: 500; color: #64748b; margin-left: 2px; }
+    .totals-mzn {
+      font-size: .78rem; color: #15803d; font-weight: 600;
+      font-feature-settings: "tnum";
+    }
+    .totals-subs { font-size: .68rem; color: #94a3b8; }
+
+    .row-detail { grid-column: 1 / -1; padding: .75rem .25rem .25rem; animation: slideDown .2s ease; }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .day-bars {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+      gap: .35rem;
+    }
+    .day-bar {
+      background: #fff; border-radius: 8px; padding: .45rem .25rem;
+      text-align: center; border: 1px solid #e2e8f0;
+      position: relative; min-height: 64px;
+      display: flex; flex-direction: column; justify-content: flex-end;
+    }
+    .day-bar.today { border-color: #0f4c75; box-shadow: 0 0 0 2px rgba(15,76,117,.18); }
+    .day-bar-fill {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(0deg, #cbe5f7 0%, #80b8e0 100%);
+      border-radius: 0 0 7px 7px; transition: height .25s ease;
+    }
+    .day-bar-fill.has-data { background: linear-gradient(0deg, #80b8e0 0%, #1e6ba8 100%); }
+    .day-bar-content { position: relative; z-index: 1; }
+    .day-bar-day { font-size: .62rem; font-weight: 600; color: #475569; }
+    .day-bar-val { font-size: .75rem; font-weight: 700; color: #0f172a; line-height: 1.1; }
+    .day-bar-val.zero { color: #cbd5e1; }
+    .day-bar-mzn { font-size: .6rem; color: #15803d; font-weight: 500; margin-top: 1px; }
+
+    .row-detail-stats {
+      margin-top: .7rem; padding-top: .55rem;
+      border-top: 1px dashed #e2e8f0;
+      display: flex; gap: 1.2rem; flex-wrap: wrap;
+      font-size: .76rem; color: #64748b;
+    }
+    .row-detail-stats strong { color: #0f172a; font-weight: 700; }
+    .badge-v { color: #15803d; }
+    .badge-p { color: #b45309; }
+    .badge-r { color: #b91c1c; }
+
+    .empty {
+      padding: 2rem 1rem; text-align: center; color: #94a3b8;
+      font-size: .9rem;
+    }
+    .skel {
+      display: inline-block; height: 1em; min-width: 60px;
+      background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+      background-size: 200% 100%; animation: skel 1.2s ease-in-out infinite;
+      border-radius: 4px;
+    }
+    @keyframes skel { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    .ftr {
+      max-width: 1200px; margin: 0 auto; padding: 1.5rem .75rem 2rem;
+      text-align: center; font-size: .72rem; color: #94a3b8; line-height: 1.6;
+    }
+    .ftr a { color: #1e6ba8; text-decoration: underline; }
+
+    @media print {
+      .hdr-link, .ctrl, .row-detail, .btn-export { display: none !important; }
+      .hdr { background: #0f4c75 !important; -webkit-print-color-adjust: exact; }
+      .hero { margin-top: 1rem; }
+      .chart-card { break-inside: avoid; }
+    }
+    @media (max-width: 640px) {
+      .hdr h1 { font-size: 1.15rem; }
+      .ctrl-row { padding: .55rem .65rem; }
+      .ctrl-info { display: none; }
+      .chart-canvas-wrap { height: 230px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="hdr">
+    <div class="hdr-inner hdr-top">
+      <div>
+        <h1>Ranking de Batedores</h1>
+        <span class="hdr-sub">Toneladas submetidas na app · base do pagamento</span>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <a href="/" class="hdr-link">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 14.707a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 1.414L7.414 9H15a1 1 0 110 2H7.414l2.293 2.293a1 1 0 010 1.414z" clip-rule="evenodd"/></svg>
+          Dashboard
+        </a>
+        <button type="button" id="btn-refresh" class="hdr-link" title="Actualizar agora (auto-refresh: 5 min)" style="border:0;cursor:pointer;font:inherit">
+          <svg id="refresh-icon" viewBox="0 0 20 20" fill="currentColor" style="vertical-align:-2px;margin-right:3px"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+          <span id="refresh-label">Actualizar</span>
+          <span id="refresh-countdown" style="font-size:.7rem;opacity:.75;margin-left:.4rem"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- HERO METRICS -->
+  <section class="hero">
+    <div class="hero-cards" id="hero-cards">
+      <div class="hero-card blue">
+        <div class="hero-card-lbl">Total entregue</div>
+        <div class="hero-card-val" id="kpi-tons"><span class="skel" style="width:80px"></span></div>
+        <div class="hero-card-sub" id="kpi-tons-sub">no período seleccionado</div>
+      </div>
+      <div class="hero-card green">
+        <div class="hero-card-lbl">Pagamento estimado</div>
+        <div class="hero-card-val" id="kpi-mzn"><span class="skel" style="width:80px"></span></div>
+        <div class="hero-card-sub">a 100 MZN/ton</div>
+      </div>
+      <div class="hero-card amber">
+        <div class="hero-card-lbl">Batedores activos</div>
+        <div class="hero-card-val" id="kpi-batedores"><span class="skel" style="width:40px"></span></div>
+        <div class="hero-card-sub" id="kpi-batedores-sub">no período</div>
+      </div>
+      <div class="hero-card">
+        <div class="hero-card-lbl">Última actualização</div>
+        <div class="hero-card-val" style="font-size:1rem" id="kpi-updated">—</div>
+        <div class="hero-card-sub">dados em tempo real</div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- DATE FILTER -->
+  <section class="ctrl">
+    <div class="ctrl-row">
+      <div class="ctrl-presets" id="presets">
+        <button class="preset-btn active" data-preset="today">Hoje</button>
+        <button class="preset-btn" data-preset="yesterday">Ontem</button>
+        <button class="preset-btn" data-preset="7d">Últimos 7 dias</button>
+        <button class="preset-btn" data-preset="30d">Últimos 30 dias</button>
+        <button class="preset-btn" data-preset="month">Mês actual</button>
+        <button class="preset-btn" data-preset="lastmonth">Mês passado</button>
+      </div>
+      <div class="ctrl-divider"></div>
+      <div class="date-group">
+        <label for="d-from">De</label>
+        <input type="date" id="d-from" class="date-input">
+      </div>
+      <div class="date-group">
+        <label for="d-to">Até</label>
+        <input type="date" id="d-to" class="date-input">
+      </div>
+      <button class="btn-apply" id="btn-apply">Aplicar</button>
+      <div class="ctrl-divider"></div>
+      <button class="btn-export" id="btn-xlsx" title="Descarregar relatório em Excel">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M5 2a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7l-5-5H5zm6 1.5V7h3.5L11 3.5z"/></svg>
+        Excel
+      </button>
+      <div class="ctrl-info" id="ctrl-info"></div>
+    </div>
+  </section>
+
+  <!-- CHARTS -->
+  <section class="charts">
+    <div class="chart-card wide-md-2">
+      <div class="chart-head">
+        <h3 class="chart-title">Volume diário (kg) por status</h3>
+        <span class="chart-sub" id="chart-daily-sub">verified · pending · rejected</span>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="chart-daily"></canvas>
+        <div id="chart-daily-empty" class="chart-empty" style="display:none">Sem dados no período seleccionado.</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-head">
+        <h3 class="chart-title">Estado do volume</h3>
+        <span class="chart-sub">Verified vs Pending vs Rejected</span>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="chart-status"></canvas>
+        <div id="chart-status-empty" class="chart-empty" style="display:none">Sem dados.</div>
+      </div>
+    </div>
+
+    <div class="chart-card wide">
+      <div class="chart-head">
+        <h3 class="chart-title">Top 10 batedores (toneladas)</h3>
+        <span class="chart-sub" id="chart-top-sub">com pagamento estimado em MZN</span>
+      </div>
+      <div class="chart-canvas-wrap tall">
+        <canvas id="chart-top"></canvas>
+        <div id="chart-top-empty" class="chart-empty" style="display:none">Sem batedores no período.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LEADERBOARD -->
+  <section class="board">
+    <div class="board-head">
+      <h2>Classificação completa</h2>
+      <div class="board-sub" id="board-sub"></div>
+    </div>
+    <div class="row-list" id="board-list">
+      <div class="empty"><span class="skel" style="width:200px"></span></div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="ftr">
+    Dados públicos · transparência operacional · ADICIONAL Logística<br>
+    <a href="/">← Voltar ao dashboard principal</a>
+  </footer>
+
+  <script>
+    const $  = (sel) => document.querySelector(sel);
+    const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+    const RATE_MZN_PER_TON = 100;
+
+    // Charts (referências para destruir antes de re-render)
+    const charts = { daily: null, status: null, top: null };
+
+    let state = {
+      from: null,
+      to:   null,
+      data: null,
+      expanded: new Set(),
+    };
+
+    // ── Helpers ───────────────────────────────────────────
+    const fmt = (n) => Number(n || 0).toLocaleString("pt-MZ", { maximumFractionDigits: 0 });
+    const fmtTons = (kg) => {
+      const t = (Number(kg) || 0) / 1000;
+      if (t >= 100)  return t.toFixed(0);
+      if (t >= 10)   return t.toFixed(1);
+      return t.toFixed(2);
+    };
+    const fmtMzn = (mzn) => fmt(Math.round(mzn || 0));
+    const esc = (s) => String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    function localYmd(dt) {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, "0");
+      const d = String(dt.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+    function avatarColor(seed) {
+      const colors = ["#0f4c75", "#1e6ba8", "#15803d", "#b45309", "#7c3aed",
+                      "#be185d", "#0891b2", "#65a30d", "#9333ea", "#dc2626"];
+      let h = 0;
+      for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+      return colors[Math.abs(h) % colors.length];
+    }
+    function avatarInitials(email) {
+      const name = String(email || "?").split("@")[0];
+      return name.slice(0, 2).toUpperCase();
+    }
+    function rankClass(r) {
+      if (r === 1) return "gold";
+      if (r === 2) return "silver";
+      if (r === 3) return "bronze";
+      return "";
+    }
+    function rankIcon(r) {
+      if (r === 1) return "🥇";
+      if (r === 2) return "🥈";
+      if (r === 3) return "🥉";
+      return "#" + r;
+    }
+    function shortEmail(email) {
+      const local = String(email || "").split("@")[0] || "";
+      if (local.length <= 18) return local;
+      return local.slice(0, 16) + "…";
+    }
+
+    // ── Date presets ──────────────────────────────────────
+    function presetRange(name) {
+      const today = new Date(); today.setHours(0,0,0,0);
+      const t = localYmd(today);
+      switch (name) {
+        case "today":     return [t, t];
+        case "yesterday": {
+          const y = new Date(today); y.setDate(y.getDate() - 1);
+          const ys = localYmd(y);
+          return [ys, ys];
+        }
+        case "7d": {
+          const a = new Date(today); a.setDate(a.getDate() - 6);
+          return [localYmd(a), t];
+        }
+        case "30d": {
+          const a = new Date(today); a.setDate(a.getDate() - 29);
+          return [localYmd(a), t];
+        }
+        case "month": {
+          const a = new Date(today.getFullYear(), today.getMonth(), 1);
+          return [localYmd(a), t];
+        }
+        case "lastmonth": {
+          const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+          const end   = new Date(today.getFullYear(), today.getMonth(), 0);
+          return [localYmd(start), localYmd(end)];
+        }
+        default: return [t, t];
+      }
+    }
+    function detectMatchingPreset(from, to) {
+      for (const name of ["today", "yesterday", "7d", "30d", "month", "lastmonth"]) {
+        const [a, b] = presetRange(name);
+        if (a === from && b === to) return name;
+      }
+      return null;
+    }
+
+    // ── Render KPIs ───────────────────────────────────────
+    function renderHero(data) {
+      const s = data.summary;
+      $("#kpi-tons").innerHTML = `${fmtTons(s.total_kg)} <span style="font-size:.75rem;color:#64748b;font-weight:500">ton</span>`;
+      $("#kpi-tons-sub").textContent = `${fmt(s.total_kg)} kg em ${s.period_days} dia(s)`;
+      $("#kpi-mzn").innerHTML = `${fmtMzn(s.total_payment_mzn)} <span style="font-size:.75rem;color:#64748b;font-weight:500">MZN</span>`;
+      $("#kpi-batedores").textContent = fmt(s.total_batedores);
+      $("#kpi-batedores-sub").textContent = `submeteram entre ${s.from} e ${s.to}`;
+      $("#kpi-updated").textContent = new Date().toLocaleTimeString("pt-MZ", { hour: "2-digit", minute: "2-digit" });
+      $("#ctrl-info").innerHTML = `<strong>${s.from}</strong> → <strong>${s.to}</strong> · ${s.period_days} dia(s)`;
+      $("#board-sub").innerHTML = `${fmt(s.total_batedores)} batedores · ordenado por toneladas`;
+    }
+
+    // ── Charts ────────────────────────────────────────────
+    function destroyChart(key) {
+      if (charts[key]) { charts[key].destroy(); charts[key] = null; }
+    }
+
+    function renderDailyChart(data) {
+      destroyChart("daily");
+      const ctx = $("#chart-daily").getContext("2d");
+      const days = data.days || [];
+      const totals = data.day_totals || {};
+      const verified = days.map((d) => Math.round(totals[d]?.kg_verified || 0));
+      const pending  = days.map((d) => Math.round(totals[d]?.kg_pending  || 0));
+      const rejected = days.map((d) => Math.round(totals[d]?.kg_rejected || 0));
+      const totalAll = verified.reduce((a, b) => a + b, 0)
+                     + pending.reduce((a, b) => a + b, 0)
+                     + rejected.reduce((a, b) => a + b, 0);
+      $("#chart-daily").style.display = totalAll > 0 ? "" : "none";
+      $("#chart-daily-empty").style.display = totalAll > 0 ? "none" : "flex";
+      if (totalAll === 0) return;
+
+      const labels = days.map((d) => {
+        const dt = new Date(d + "T00:00:00");
+        return dt.toLocaleDateString("pt-MZ", { day: "2-digit", month: "2-digit" });
+      });
+      charts.daily = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            { label: "Verificado", data: verified, backgroundColor: "#15803d", stack: "kg", borderRadius: 4 },
+            { label: "Pendente",   data: pending,  backgroundColor: "#f59e0b", stack: "kg", borderRadius: 4 },
+            { label: "Rejeitado",  data: rejected, backgroundColor: "#dc2626", stack: "kg", borderRadius: 4 },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { position: "bottom", labels: { boxWidth: 14, font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y)} kg`,
+                footer: (items) => {
+                  const sum = items.reduce((a, it) => a + it.parsed.y, 0);
+                  return `Total: ${fmt(sum)} kg (${fmtTons(sum)}t)`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 } } },
+            y: {
+              stacked: true, beginAtZero: true,
+              ticks: {
+                font: { size: 11 },
+                callback: (v) => v >= 1000 ? (v / 1000).toFixed(1) + "k" : v,
+              },
+              grid: { color: "rgba(15,23,42,.06)" },
+              title: { display: true, text: "kg", font: { size: 11 }, color: "#64748b" },
+            },
+          },
+        },
+      });
+    }
+
+    function renderStatusChart(data) {
+      destroyChart("status");
+      const ctx = $("#chart-status").getContext("2d");
+      const s = data.summary;
+      const v = Math.round(s.total_kg_verified || 0);
+      const p = Math.round(s.total_kg_pending  || 0);
+      const r = Math.round(s.total_kg_rejected || 0);
+      const total = v + p + r;
+      $("#chart-status").style.display = total > 0 ? "" : "none";
+      $("#chart-status-empty").style.display = total > 0 ? "none" : "flex";
+      if (total === 0) return;
+
+      charts.status = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+          labels: ["Verificado", "Pendente", "Rejeitado"],
+          datasets: [{
+            data: [v, p, r],
+            backgroundColor: ["#15803d", "#f59e0b", "#dc2626"],
+            borderWidth: 2, borderColor: "#fff", hoverOffset: 8,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          cutout: "65%",
+          plugins: {
+            legend: { position: "bottom", labels: { boxWidth: 14, font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: (c) => {
+                  const pct = total > 0 ? Math.round((c.parsed / total) * 1000) / 10 : 0;
+                  return `${c.label}: ${fmt(c.parsed)} kg (${pct}%)`;
+                },
+              },
+            },
+          },
+        },
+        plugins: [{
+          id: "center-label",
+          afterDraw: (chart) => {
+            const { ctx: c, chartArea } = chart;
+            const cx = (chartArea.left + chartArea.right) / 2;
+            const cy = (chartArea.top + chartArea.bottom) / 2;
+            c.save();
+            c.textAlign = "center"; c.textBaseline = "middle";
+            c.fillStyle = "#0f172a"; c.font = "bold 18px system-ui, sans-serif";
+            c.fillText(fmtTons(total), cx, cy - 6);
+            c.fillStyle = "#64748b"; c.font = "500 11px system-ui, sans-serif";
+            c.fillText("toneladas", cx, cy + 14);
+            c.restore();
+          },
+        }],
+      });
+    }
+
+    function renderTopChart(data) {
+      destroyChart("top");
+      const ctx = $("#chart-top").getContext("2d");
+      const top = (data.submitters || []).slice(0, 10);
+      $("#chart-top").style.display = top.length > 0 ? "" : "none";
+      $("#chart-top-empty").style.display = top.length > 0 ? "none" : "flex";
+      if (!top.length) return;
+
+      const labels = top.map((s) => `${rankIcon(s.rank)}  ${shortEmail(s.email)}`);
+      const tons   = top.map((s) => +(s.total_kg / 1000).toFixed(2));
+      const mzn    = top.map((s) => s.payment_mzn);
+      const colors = top.map((s, i) => {
+        if (s.rank === 1) return "#c5872c";
+        if (s.rank === 2) return "#71808d";
+        if (s.rank === 3) return "#a96a3a";
+        return "#1e6ba8";
+      });
+
+      charts.top = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Toneladas",
+            data: tons,
+            backgroundColor: colors,
+            borderRadius: 6,
+          }],
+        },
+        options: {
+          indexAxis: "y", responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (c) => {
+                  const i = c.dataIndex;
+                  return [
+                    `Toneladas: ${tons[i]} t`,
+                    `kg: ${fmt(top[i].total_kg)} kg`,
+                    `Pagamento: ${fmtMzn(mzn[i])} MZN`,
+                    `Submissões: ${top[i].total_submissions}`,
+                  ];
+                },
+              },
+            },
+          },
+          scales: {
+            y: { grid: { display: false }, ticks: { font: { size: 11 } } },
+            x: {
+              beginAtZero: true,
+              grid: { color: "rgba(15,23,42,.06)" },
+              ticks: { font: { size: 11 }, callback: (v) => v + " t" },
+              title: { display: true, text: "toneladas", font: { size: 11 }, color: "#64748b" },
+            },
+          },
+        },
+      });
+    }
+
+    // ── Leaderboard ───────────────────────────────────────
+    function renderDayBars(submitter, allDays, todayIso) {
+      const max = Math.max(0, ...allDays.map((d) => (submitter.by_day[d]?.kg || 0)));
+      return allDays.map((d) => {
+        const cell = submitter.by_day[d];
+        const kg = cell ? cell.kg : 0;
+        const pct = max > 0 ? (kg / max) * 100 : 0;
+        const isToday = d === todayIso;
+        const dt = new Date(d + "T00:00:00");
+        const dm = dt.toLocaleDateString("pt-MZ", { day: "2-digit", month: "2-digit" });
+        const wd = dt.toLocaleDateString("pt-MZ", { weekday: "short" }).slice(0, 3);
+        const tonsTxt = kg > 0 ? fmtTons(kg) + "t" : "—";
+        const mznTxt  = kg > 0 ? fmtMzn((kg / 1000) * RATE_MZN_PER_TON) + " MZN" : "";
+        return `
+          <div class="day-bar ${isToday ? "today" : ""}" title="${esc(d)}: ${fmt(Math.round(kg))} kg">
+            <div class="day-bar-fill ${kg > 0 ? "has-data" : ""}" style="height:${pct}%"></div>
+            <div class="day-bar-content">
+              <div class="day-bar-day">${esc(wd)} ${esc(dm)}</div>
+              <div class="day-bar-val ${kg > 0 ? "" : "zero"}">${esc(tonsTxt)}</div>
+              <div class="day-bar-mzn">${esc(mznTxt)}</div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderBoard(data) {
+      const subs = data.submitters || [];
+      const todayIso = localYmd(new Date());
+      if (!subs.length) {
+        $("#board-list").innerHTML = `<div class="empty">Nenhum batedor submeteu entregas neste período.</div>`;
+        return;
+      }
+      const html = subs.map((s) => {
+        const isExpanded = state.expanded.has(s.email);
+        return `
+          <div class="row ${isExpanded ? "expanded" : ""}" data-email="${esc(s.email)}">
+            <div class="rank ${rankClass(s.rank)}">${rankIcon(s.rank)}</div>
+            <div class="person">
+              <div class="person-top">
+                <div class="avatar" style="background:${avatarColor(s.email)}">${avatarInitials(s.email)}</div>
+                <div style="min-width:0">
+                  <div class="person-name">${esc(s.email)}</div>
+                  <div class="person-meta">${fmt(s.total_submissions)} submissões · ✓ ${fmt(s.kg_verified)} kg verified</div>
+                </div>
+              </div>
+            </div>
+            <div class="totals">
+              <div class="totals-tons">${fmtTons(s.total_kg)}<span class="unit">ton</span></div>
+              <div class="totals-mzn">${fmtMzn(s.payment_mzn)} MZN</div>
+              <div class="totals-subs">${fmt(s.total_kg)} kg</div>
+            </div>
+            ${isExpanded ? `
+              <div class="row-detail">
+                <div class="day-bars">${renderDayBars(s, data.days, todayIso)}</div>
+                <div class="row-detail-stats">
+                  <span><strong>${fmt(s.total_kg)}</strong> kg total</span>
+                  <span class="badge-v">✓ <strong>${fmt(s.kg_verified)}</strong> kg verified</span>
+                  <span class="badge-p">⏳ <strong>${fmt(s.kg_pending)}</strong> kg pending</span>
+                  <span class="badge-r">✗ <strong>${fmt(s.kg_rejected)}</strong> kg rejected</span>
+                  <span style="margin-left:auto"><strong>${fmtMzn(s.payment_mzn)}</strong> MZN estimados</span>
+                </div>
+              </div>
+            ` : ""}
+          </div>
+        `;
+      }).join("");
+      $("#board-list").innerHTML = html;
+      $$("#board-list .row").forEach((row) => {
+        row.addEventListener("click", (e) => {
+          if (e.target.closest(".row-detail")) return;
+          const email = row.dataset.email;
+          if (state.expanded.has(email)) state.expanded.delete(email);
+          else state.expanded.add(email);
+          renderBoard(state.data);
+        });
+      });
+    }
+
+    // ── Load + render ────────────────────────────────────
+    async function load() {
+      const from = state.from, to = state.to;
+      $("#board-list").innerHTML = `<div class="empty"><span class="skel" style="width:200px"></span></div>`;
+      try {
+        const params = new URLSearchParams({ from, to });
+        const res = await fetch(`/api/public/batedores?${params}`, { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        state.data = data;
+        renderHero(data);
+        renderDailyChart(data);
+        renderStatusChart(data);
+        renderTopChart(data);
+        renderBoard(data);
+      } catch (e) {
+        $("#board-list").innerHTML = `<div class="empty" style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
+      } finally {
+        // Cada load reinicia o countdown de auto-refresh para os 5 min seguintes
+        if (typeof scheduleAutoRefresh === "function") scheduleAutoRefresh();
+      }
+    }
+
+    // ── Wire-up ──────────────────────────────────────────
+    function setRange(from, to, { skipReload = false } = {}) {
+      state.from = from;
+      state.to   = to;
+      $("#d-from").value = from;
+      $("#d-to").value   = to;
+      // Update preset highlight
+      const matchingPreset = detectMatchingPreset(from, to);
+      $$(".preset-btn").forEach((b) => b.classList.toggle("active", b.dataset.preset === matchingPreset));
+      // Sync URL state (sem recarregar a página)
+      const qs = new URLSearchParams({ from, to }).toString();
+      history.replaceState(null, "", "?" + qs);
+      if (!skipReload) load();
+    }
+
+    $$(".preset-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const [from, to] = presetRange(btn.dataset.preset);
+        setRange(from, to);
+      });
+    });
+    $("#btn-apply").addEventListener("click", () => {
+      const from = $("#d-from").value;
+      const to   = $("#d-to").value;
+      if (!from || !to) return;
+      setRange(from, to);
+    });
+    // Enter no input dispara apply
+    $$(".date-input").forEach((inp) => {
+      inp.addEventListener("change", () => {
+        const from = $("#d-from").value, to = $("#d-to").value;
+        if (from && to) setRange(from, to);
+      });
+    });
+    $("#btn-xlsx").addEventListener("click", () => {
+      const params = new URLSearchParams({ from: state.from, to: state.to }).toString();
+      window.location.href = `/api/public/batedores/export.xlsx?${params}`;
+    });
+
+    // ── Refresh manual + auto-refresh com countdown visível ──
+    const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
+    let nextRefreshAt = Date.now() + REFRESH_INTERVAL_MS;
+
+    function fmtCountdown(ms) {
+      if (ms <= 0) return "0:00";
+      const total = Math.ceil(ms / 1000);
+      const m = Math.floor(total / 60);
+      const s = total % 60;
+      return `${m}:${String(s).padStart(2, "0")}`;
+    }
+    function tickCountdown() {
+      const remaining = nextRefreshAt - Date.now();
+      const cd = $("#refresh-countdown");
+      if (cd) cd.textContent = remaining > 0 ? `(${fmtCountdown(remaining)})` : "(…)";
+    }
+    function scheduleAutoRefresh() {
+      nextRefreshAt = Date.now() + REFRESH_INTERVAL_MS;
+      tickCountdown();
+    }
+
+    // Tick visual do countdown a cada segundo
+    setInterval(tickCountdown, 1000);
+
+    // Auto-refresh: quando o countdown chega a 0, carrega de novo
+    setInterval(() => {
+      if (Date.now() >= nextRefreshAt) {
+        load();
+        scheduleAutoRefresh();
+      }
+    }, 1000);
+
+    // Botão manual de refresh — anima o ícone e reinicia o countdown
+    $("#btn-refresh").addEventListener("click", async () => {
+      const icon = $("#refresh-icon");
+      if (icon) icon.style.transition = "transform .6s ease";
+      if (icon) icon.style.transform = "rotate(360deg)";
+      await load();
+      scheduleAutoRefresh();
+      setTimeout(() => { if (icon) { icon.style.transition = "none"; icon.style.transform = "rotate(0)"; } }, 700);
+    });
+
+    // ── Initial load ─────────────────────────────────────
+    (function init() {
+      // Lê da URL se vier ?from=...&to=...
+      const url = new URL(location.href);
+      const urlFrom = url.searchParams.get("from");
+      const urlTo   = url.searchParams.get("to");
+      if (urlFrom && urlTo) {
+        setRange(urlFrom, urlTo);
+      } else {
+        // Default = hoje
+        const [from, to] = presetRange("today");
+        setRange(from, to);
+      }
+    })();
+  </script>
+</body>
+</html>

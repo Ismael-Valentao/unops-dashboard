@@ -1422,7 +1422,13 @@ router.post("/api/distribution/services", express.json(), auth.requireRole("oper
   if (!Array.isArray(items) || !items.length) return jsonError(res, 400, "Pelo menos um item é obrigatório");
   try {
     const result = await DistServices.create(svc, items, req.user?.id);
-    if (result.error) return res.status(400).json(result);
+    if (result.error) {
+      // Casos confirmáveis (warning:true) devolvem HTTP 200 — não são
+      // erros fatais, são prompts de confirmação ao utilizador.
+      // Frontend chama de novo com allow_overload:true se utilizador confirmar.
+      if (result.warning) return res.status(200).json(result);
+      return res.status(400).json(result);
+    }
     await auth.logAction(req, "create", "delivery_service", result.service_id, JSON.stringify({
       service_number: result.service_number, items: items.length, total_kg: result.total_kg,
     }));
@@ -1548,6 +1554,45 @@ router.get("/api/distribution/services/:id/roteiro", ah(async (req, res) => {
   res.json(svc);
 }));
 
+// PDF do Roteiro — gerado server-side com Puppeteer (headless Chrome).
+// Mais fiável que o html2pdf.js client-side: Puppeteer usa o motor de
+// print real do Chrome, respeitando @media print, page-break-* e calculando
+// larguras correctamente. Sem cortes à direita / páginas em branco.
+//
+// O endpoint reabre internamente a página /admin/servicos/:id/roteiro
+// (mesma URL que o user vê no browser) com a sessão dele para passar o
+// auth, espera o conteúdo carregar, e gera PDF nativo A4.
+router.get("/api/distribution/services/:id/roteiro/pdf", ah(async (req, res) => {
+  const svc = await DistServices.byIdForRoteiro(req.params.id);
+  if (!svc) return jsonError(res, 404, "Serviço não encontrado");
+
+  const { generateRoteiroPdf } = require("../lib/roteiro-pdf");
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  // Passa cookies da sessão para o Puppeteer autenticar como o user.
+  // (auth.js usa cookie com nome "session" tipicamente; passamos todos
+  // para cobrir múltiplas configurações.)
+  const cookies = { ...(req.cookies || {}) };
+
+  try {
+    const pdfBuffer = await generateRoteiroPdf({
+      serviceId: svc.id,
+      baseUrl,
+      cookies,
+    });
+    const safeNum = String(svc.service_number || ("svc-" + svc.id)).replace(/[^a-zA-Z0-9_-]/g, "_");
+    const today = new Date().toISOString().slice(0, 10);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="Roteiro_${safeNum}_${today}.pdf"`);
+    res.setHeader("Content-Length", pdfBuffer.length);
+    res.end(pdfBuffer);
+    await auth.logAction(req, "roteiro_pdf", "delivery_service", svc.id,
+      JSON.stringify({ service_number: svc.service_number, bytes: pdfBuffer.length }));
+  } catch (e) {
+    console.error("[roteiro-pdf]", e);
+    return jsonError(res, 500, "Erro a gerar PDF: " + e.message);
+  }
+}));
+
 router.patch("/api/distribution/services/:id", express.json(), auth.requireRole("operator", "admin", "superadmin"), ah(async (req, res) => {
   const result = await DistServices.update(req.params.id, req.body || {});
   if (result.error) return res.status(400).json(result);
@@ -1656,6 +1701,455 @@ router.get("/api/distribution/report/by-district", ah(async (req, res) => {
     sku: req.query.sku || null,
   };
   res.json({ rows: await DistReports.byDistrict(req.query.province, opts) });
+}));
+
+// Árvore província → distritos (popular cascade nos filtros)
+router.get("/api/distribution/report/geography-tree", ah(async (_req, res) => {
+  res.json({ tree: await DistReports.geographyTree() });
+}));
+
+// Lista wide de extensionistas com plano/entregue/falta por SKU
+router.get("/api/distribution/report/by-extensionist", ah(async (req, res) => {
+  const opts = {
+    province: req.query.province || null,
+    district: req.query.district || null,
+    posto:    req.query.posto    || null,
+    sku:      req.query.sku      || null,
+    q:        req.query.q        || null,
+  };
+  res.json(await DistReports.byExtensionist(opts));
+}));
+
+// Excel: detalhe por extensionista (1 linha por extensionista, cols por SKU)
+router.get("/api/distribution/report/extensionist-export.xlsx", ah(async (req, res) => {
+  const ExcelJS = require("exceljs");
+  const opts = {
+    province: req.query.province || null,
+    district: req.query.district || null,
+    posto:    req.query.posto    || null,
+    sku:      req.query.sku      || null,
+    q:        req.query.q        || null,
+  };
+  const data = await DistReports.byExtensionist(opts);
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "AQI Distribution";
+  wb.created = new Date();
+
+  // Colour palette
+  const C_HEADER     = "FF0F4C75"; // azul escuro
+  const C_SUBHEADER  = "FF1E6BA8";
+  const C_GROUP_PLAN = "FFE0F2FE";
+  const C_GROUP_DEL  = "FFDCFCE7";
+  const C_GROUP_REM  = "FFFEF3C7";
+  const C_TOTAL      = "FFE2E8F0";
+  const C_DONE       = "FFBBF7D0";
+  const C_PARTIAL    = "FFFEE2A8";
+  const C_NONE       = "FFFECACA";
+  const C_TXT_WHITE  = "FFFFFFFF";
+
+  const fmtNum = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+  // ── Sheet 1: Resumo ─────────────────────────────────────
+  const sumWs = wb.addWorksheet("Resumo");
+  sumWs.columns = [{ width: 32 }, { width: 22 }];
+  let r = 1;
+
+  sumWs.getCell(`A${r}`).value = "RELATÓRIO DE EXTENSIONISTAS";
+  sumWs.getCell(`A${r}`).font = { bold: true, size: 14, color: { argb: C_HEADER } };
+  sumWs.mergeCells(`A${r}:B${r}`);
+  r += 2;
+
+  sumWs.getCell(`A${r}`).value = "Filtros aplicados";
+  sumWs.getCell(`A${r}`).font = { bold: true, size: 11 };
+  sumWs.mergeCells(`A${r}:B${r}`);
+  r++;
+  const filterRows = [
+    ["Província", opts.province || "(Todas)"],
+    ["Distrito",  opts.district || "(Todos)"],
+    ["Posto",     opts.posto    || "(Todos)"],
+    ["Produto",   opts.sku      || "(Todos)"],
+    ["Pesquisa",  opts.q        || "(—)"],
+    ["Gerado em", new Date().toLocaleString("pt-MZ")],
+  ];
+  for (const [k, v] of filterRows) {
+    sumWs.getCell(`A${r}`).value = k;
+    sumWs.getCell(`B${r}`).value = v;
+    sumWs.getCell(`A${r}`).font = { color: { argb: "FF64748B" } };
+    r++;
+  }
+  r++;
+
+  sumWs.getCell(`A${r}`).value = "Resumo geral";
+  sumWs.getCell(`A${r}`).font = { bold: true, size: 11 };
+  sumWs.mergeCells(`A${r}:B${r}`);
+  r++;
+  const s = data.summary;
+  const sumRows = [
+    ["Extensionistas (com plano > 0)", s.n_extensionists],
+    ["Plano cumprido a 100%",          s.n_fulfilled],
+    ["Plano em curso (parcial)",       s.n_pending],
+    ["Sem entrega ainda",              s.n_untouched],
+    ["Total planeado (kg)",            fmtNum(s.total_planned_kg)],
+    ["Total entregue (kg)",            fmtNum(s.total_delivered_kg)],
+    ["Total por entregar (kg)",        fmtNum(s.total_remaining_kg)],
+    ["% cumprido (kg)",                s.pct_delivered_kg + "%"],
+  ];
+  for (const [k, v] of sumRows) {
+    sumWs.getCell(`A${r}`).value = k;
+    sumWs.getCell(`B${r}`).value = v;
+    sumWs.getCell(`B${r}`).numFmt = typeof v === "number" ? "#,##0.00" : "@";
+    r++;
+  }
+  r++;
+
+  // Por SKU
+  sumWs.getCell(`A${r}`).value = "Por produto";
+  sumWs.getCell(`A${r}`).font = { bold: true, size: 11 };
+  r++;
+  const skuHeader = ["Produto", "Unidade", "Planeado", "Entregue", "Falta", "% Cumprido"];
+  for (let i = 0; i < skuHeader.length; i++) {
+    const cell = sumWs.getCell(r, i + 1);
+    cell.value = skuHeader[i];
+    cell.font = { bold: true, color: { argb: C_TXT_WHITE } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_HEADER } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+  }
+  sumWs.getColumn(3).width = 14; sumWs.getColumn(4).width = 14;
+  sumWs.getColumn(5).width = 14; sumWs.getColumn(6).width = 12;
+  r++;
+  for (const sku of data.skus) {
+    const t = data.totals_by_sku[sku.sku] || { planned: 0, delivered: 0, remaining: 0 };
+    const pct = t.planned > 0 ? Math.round((t.delivered / t.planned) * 1000) / 10 : 0;
+    sumWs.getCell(r, 1).value = sku.product_name + " (" + sku.sku + ")";
+    sumWs.getCell(r, 2).value = sku.unit;
+    sumWs.getCell(r, 3).value = fmtNum(t.planned);
+    sumWs.getCell(r, 4).value = fmtNum(t.delivered);
+    sumWs.getCell(r, 5).value = fmtNum(t.remaining);
+    sumWs.getCell(r, 6).value = pct / 100;
+    sumWs.getCell(r, 6).numFmt = "0.0%";
+    sumWs.getCell(r, 3).numFmt = "#,##0.00";
+    sumWs.getCell(r, 4).numFmt = "#,##0.00";
+    sumWs.getCell(r, 5).numFmt = "#,##0.00";
+    r++;
+  }
+
+  // ── Sheet 2: Detalhe Extensionistas (vista wide) ───────
+  const ws = wb.addWorksheet("Extensionistas", { views: [{ state: "frozen", ySplit: 2, xSplit: 7 }] });
+
+  // Header de duas linhas:
+  //   Row 1: cabeçalhos fixos | grupo de 3 cols por SKU (Planeado/Entregue/Falta)
+  //   Row 2: subcabeçalhos
+  const FIXED_COLS = ["#", "Extensionist ID", "NUIT", "Nome", "Província", "Distrito", "Posto"];
+  const skuList = data.skus;
+  const totalCols = FIXED_COLS.length + skuList.length * 3 + 3; // +3 totais kg
+
+  // Row 1
+  for (let i = 0; i < FIXED_COLS.length; i++) {
+    const cell = ws.getCell(1, i + 1);
+    cell.value = FIXED_COLS[i];
+    ws.mergeCells(1, i + 1, 2, i + 1);
+    cell.font = { bold: true, color: { argb: C_TXT_WHITE } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_HEADER } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  }
+  for (let s = 0; s < skuList.length; s++) {
+    const baseCol = FIXED_COLS.length + s * 3 + 1;
+    const sku = skuList[s];
+    ws.mergeCells(1, baseCol, 1, baseCol + 2);
+    const headerCell = ws.getCell(1, baseCol);
+    headerCell.value = sku.product_name + " (" + sku.unit + ")";
+    headerCell.font = { bold: true, color: { argb: C_TXT_WHITE } };
+    headerCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_SUBHEADER } };
+    headerCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  }
+  // Totais kg (3 colunas no fim)
+  const totalsBaseCol = FIXED_COLS.length + skuList.length * 3 + 1;
+  ws.mergeCells(1, totalsBaseCol, 1, totalsBaseCol + 2);
+  const totHeader = ws.getCell(1, totalsBaseCol);
+  totHeader.value = "TOTAL (kg)";
+  totHeader.font = { bold: true, color: { argb: C_TXT_WHITE } };
+  totHeader.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF15803D" } };
+  totHeader.alignment = { vertical: "middle", horizontal: "center" };
+
+  // Row 2: sub-cabeçalhos (Plan / Entr. / Falta) por cada bloco
+  const subHeaders = ["Plan.", "Entreg.", "Falta"];
+  for (let s = 0; s < skuList.length; s++) {
+    const baseCol = FIXED_COLS.length + s * 3 + 1;
+    for (let j = 0; j < 3; j++) {
+      const cell = ws.getCell(2, baseCol + j);
+      cell.value = subHeaders[j];
+      cell.font = { bold: true, size: 9 };
+      const fillColor = [C_GROUP_PLAN, C_GROUP_DEL, C_GROUP_REM][j];
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    }
+  }
+  for (let j = 0; j < 3; j++) {
+    const cell = ws.getCell(2, totalsBaseCol + j);
+    cell.value = subHeaders[j];
+    cell.font = { bold: true, size: 9 };
+    const fillColor = [C_GROUP_PLAN, C_GROUP_DEL, C_GROUP_REM][j];
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+  }
+
+  // Larguras das colunas
+  ws.getColumn(1).width = 5;
+  ws.getColumn(2).width = 12; // ext_id
+  ws.getColumn(3).width = 11; // nuit
+  ws.getColumn(4).width = 30; // nome
+  ws.getColumn(5).width = 14; // provincia
+  ws.getColumn(6).width = 16; // distrito
+  ws.getColumn(7).width = 14; // posto
+  for (let i = FIXED_COLS.length + 1; i <= totalCols; i++) ws.getColumn(i).width = 10;
+
+  // Body
+  let bodyRow = 3;
+  for (let i = 0; i < data.extensionists.length; i++) {
+    const ext = data.extensionists[i];
+    ws.getCell(bodyRow, 1).value = i + 1;
+    ws.getCell(bodyRow, 2).value = ext.extensionist_id;
+    ws.getCell(bodyRow, 3).value = ext.nuit;
+    ws.getCell(bodyRow, 4).value = ext.name;
+    ws.getCell(bodyRow, 5).value = ext.province;
+    ws.getCell(bodyRow, 6).value = ext.district;
+    ws.getCell(bodyRow, 7).value = ext.posto;
+
+    // Para cada SKU
+    for (let sIdx = 0; sIdx < skuList.length; sIdx++) {
+      const sku = skuList[sIdx].sku;
+      const cell = ext.items[sku];
+      const baseCol = FIXED_COLS.length + sIdx * 3 + 1;
+      if (cell) {
+        ws.getCell(bodyRow, baseCol).value     = fmtNum(cell.planned);
+        ws.getCell(bodyRow, baseCol + 1).value = fmtNum(cell.delivered);
+        ws.getCell(bodyRow, baseCol + 2).value = fmtNum(cell.remaining);
+        ws.getCell(bodyRow, baseCol).numFmt     = "#,##0.00";
+        ws.getCell(bodyRow, baseCol + 1).numFmt = "#,##0.00";
+        ws.getCell(bodyRow, baseCol + 2).numFmt = "#,##0.00";
+        // Cor da célula "Entregue" conforme estado
+        if (cell.planned > 0) {
+          let fillColor = null;
+          if (cell.delivered <= 0.001)              fillColor = C_NONE;
+          else if (cell.delivered >= cell.planned)  fillColor = C_DONE;
+          else                                       fillColor = C_PARTIAL;
+          ws.getCell(bodyRow, baseCol + 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+        }
+      } else {
+        // Sem registo deste SKU para o extensionista — deixa branco
+        ws.getCell(bodyRow, baseCol).value = "—";
+        ws.getCell(bodyRow, baseCol + 1).value = "—";
+        ws.getCell(bodyRow, baseCol + 2).value = "—";
+        for (let j = 0; j < 3; j++) {
+          ws.getCell(bodyRow, baseCol + j).font = { color: { argb: "FFCBD5E1" } };
+          ws.getCell(bodyRow, baseCol + j).alignment = { horizontal: "center" };
+        }
+      }
+    }
+
+    // Totais kg
+    ws.getCell(bodyRow, totalsBaseCol).value     = fmtNum(ext.total_planned_kg);
+    ws.getCell(bodyRow, totalsBaseCol + 1).value = fmtNum(ext.total_delivered_kg);
+    ws.getCell(bodyRow, totalsBaseCol + 2).value = fmtNum(ext.total_remaining_kg);
+    ws.getCell(bodyRow, totalsBaseCol).numFmt     = "#,##0.00";
+    ws.getCell(bodyRow, totalsBaseCol + 1).numFmt = "#,##0.00";
+    ws.getCell(bodyRow, totalsBaseCol + 2).numFmt = "#,##0.00";
+    ws.getCell(bodyRow, totalsBaseCol).font     = { bold: true };
+    ws.getCell(bodyRow, totalsBaseCol + 1).font = { bold: true };
+    ws.getCell(bodyRow, totalsBaseCol + 2).font = { bold: true };
+    // Linhas alternadas
+    if (i % 2 === 0) {
+      for (let c = 1; c <= totalCols; c++) {
+        const cell = ws.getCell(bodyRow, c);
+        if (!cell.fill || !cell.fill.fgColor) {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+        }
+      }
+    }
+    bodyRow++;
+  }
+
+  // Linha total no fim
+  ws.getCell(bodyRow, 1).value = "";
+  ws.getCell(bodyRow, 4).value = "TOTAL";
+  for (let c = 1; c <= 7; c++) {
+    ws.getCell(bodyRow, c).font = { bold: true };
+    ws.getCell(bodyRow, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_TOTAL } };
+  }
+  for (let sIdx = 0; sIdx < skuList.length; sIdx++) {
+    const sku = skuList[sIdx].sku;
+    const t = data.totals_by_sku[sku] || { planned: 0, delivered: 0, remaining: 0 };
+    const baseCol = FIXED_COLS.length + sIdx * 3 + 1;
+    ws.getCell(bodyRow, baseCol).value     = fmtNum(t.planned);
+    ws.getCell(bodyRow, baseCol + 1).value = fmtNum(t.delivered);
+    ws.getCell(bodyRow, baseCol + 2).value = fmtNum(t.remaining);
+    for (let j = 0; j < 3; j++) {
+      ws.getCell(bodyRow, baseCol + j).numFmt = "#,##0.00";
+      ws.getCell(bodyRow, baseCol + j).font = { bold: true };
+      ws.getCell(bodyRow, baseCol + j).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_TOTAL } };
+    }
+  }
+  ws.getCell(bodyRow, totalsBaseCol).value     = fmtNum(s.total_planned_kg);
+  ws.getCell(bodyRow, totalsBaseCol + 1).value = fmtNum(s.total_delivered_kg);
+  ws.getCell(bodyRow, totalsBaseCol + 2).value = fmtNum(s.total_remaining_kg);
+  for (let j = 0; j < 3; j++) {
+    ws.getCell(bodyRow, totalsBaseCol + j).numFmt = "#,##0.00";
+    ws.getCell(bodyRow, totalsBaseCol + j).font = { bold: true, color: { argb: C_TXT_WHITE } };
+    ws.getCell(bodyRow, totalsBaseCol + j).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF15803D" } };
+  }
+
+  // Auto-filter na zona dos dados
+  ws.autoFilter = { from: { row: 2, column: 1 }, to: { row: bodyRow - 1, column: totalCols } };
+
+  // Filename
+  const parts = ["extensionistas"];
+  if (opts.province) parts.push(opts.province.replace(/\s+/g, "-"));
+  if (opts.district) parts.push(opts.district.replace(/\s+/g, "-"));
+  parts.push(new Date().toISOString().slice(0, 10));
+  const filename = parts.join("_") + ".xlsx";
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  await wb.xlsx.write(res);
+  res.end();
+}));
+
+// Excel: resumo Província × Produto (versão xlsx do CSV antigo, com formatação)
+router.get("/api/distribution/report/province-export.xlsx", ah(async (req, res) => {
+  const ExcelJS = require("exceljs");
+  const opts = {
+    from:     req.query.from     || null,
+    to:       req.query.to       || null,
+    status:   req.query.status   || "delivered",
+    sku:      req.query.sku      || null,
+    province: req.query.province || null,
+    district: req.query.district || null,
+  };
+  const data = await DistReports.byProvince(opts);
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "AQI Distribution";
+  wb.created = new Date();
+  const ws = wb.addWorksheet("Por Província", { views: [{ state: "frozen", ySplit: 2, xSplit: 1 }] });
+
+  const C_HEADER = "FF0F4C75";
+  const C_SUB    = "FF1E6BA8";
+  const C_TOTAL  = "FFE2E8F0";
+  const C_WHITE  = "FFFFFFFF";
+
+  // Build pivot
+  const matrix = {};
+  const planMatrix = {};
+  for (const r of data.delivered) {
+    if (!r.province) continue;
+    if (!matrix[r.province]) matrix[r.province] = {};
+    matrix[r.province][r.sku] = { qty: Number(r.qty || 0), unit: r.unit };
+  }
+  for (const r of data.planned) {
+    if (!r.province) continue;
+    if (!planMatrix[r.province]) planMatrix[r.province] = {};
+    planMatrix[r.province][r.sku] = Number(r.qty_planned || 0);
+  }
+
+  // Headers (2 rows)
+  ws.getCell(1, 1).value = "Província";
+  ws.mergeCells(1, 1, 2, 1);
+  ws.getCell(1, 1).font = { bold: true, color: { argb: C_WHITE } };
+  ws.getCell(1, 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_HEADER } };
+  ws.getCell(1, 1).alignment = { vertical: "middle", horizontal: "center" };
+  ws.getColumn(1).width = 22;
+
+  for (let i = 0; i < data.skus.length; i++) {
+    const baseCol = 2 + i * 2;
+    ws.mergeCells(1, baseCol, 1, baseCol + 1);
+    const sku = data.skus[i];
+    const c = ws.getCell(1, baseCol);
+    c.value = sku.product_name + " (" + sku.unit + ")";
+    c.font = { bold: true, color: { argb: C_WHITE } };
+    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_SUB } };
+    c.alignment = { vertical: "middle", horizontal: "center" };
+    ws.getCell(2, baseCol).value     = "Entregue";
+    ws.getCell(2, baseCol + 1).value = "% Plano";
+    for (let j = 0; j < 2; j++) {
+      ws.getCell(2, baseCol + j).font = { bold: true, size: 9 };
+      ws.getCell(2, baseCol + j).alignment = { horizontal: "center" };
+      ws.getColumn(baseCol + j).width = 11;
+    }
+  }
+  // Total kg
+  const totalCol = 2 + data.skus.length * 2;
+  ws.mergeCells(1, totalCol, 2, totalCol);
+  ws.getCell(1, totalCol).value = "Total kg";
+  ws.getCell(1, totalCol).font = { bold: true, color: { argb: C_WHITE } };
+  ws.getCell(1, totalCol).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF15803D" } };
+  ws.getCell(1, totalCol).alignment = { vertical: "middle", horizontal: "center" };
+  ws.getColumn(totalCol).width = 14;
+
+  // Body
+  const provs = data.provinces;
+  let row = 3;
+  let totalsBySku = {};
+  let grandKg = 0;
+  for (const prov of provs) {
+    let rowKg = 0;
+    ws.getCell(row, 1).value = prov;
+    ws.getCell(row, 1).font = { bold: true };
+    for (let i = 0; i < data.skus.length; i++) {
+      const sku = data.skus[i];
+      const baseCol = 2 + i * 2;
+      const cell = matrix[prov]?.[sku.sku];
+      const planned = planMatrix[prov]?.[sku.sku] || 0;
+      if (cell) {
+        ws.getCell(row, baseCol).value = Math.round(cell.qty * 100) / 100;
+        ws.getCell(row, baseCol).numFmt = "#,##0.00";
+        if (sku.unit === "kg") rowKg += cell.qty;
+        totalsBySku[sku.sku] = (totalsBySku[sku.sku] || 0) + cell.qty;
+        if (planned > 0) {
+          ws.getCell(row, baseCol + 1).value = cell.qty / planned;
+          ws.getCell(row, baseCol + 1).numFmt = "0.0%";
+        }
+      } else {
+        ws.getCell(row, baseCol).value = "—";
+        ws.getCell(row, baseCol + 1).value = "—";
+        ws.getCell(row, baseCol).font = { color: { argb: "FFCBD5E1" } };
+        ws.getCell(row, baseCol + 1).font = { color: { argb: "FFCBD5E1" } };
+        ws.getCell(row, baseCol).alignment = { horizontal: "center" };
+        ws.getCell(row, baseCol + 1).alignment = { horizontal: "center" };
+      }
+    }
+    grandKg += rowKg;
+    ws.getCell(row, totalCol).value = Math.round(rowKg * 100) / 100;
+    ws.getCell(row, totalCol).numFmt = "#,##0.00";
+    ws.getCell(row, totalCol).font = { bold: true };
+    row++;
+  }
+  // Linha total
+  ws.getCell(row, 1).value = "TOTAL";
+  for (let c = 1; c <= totalCol; c++) {
+    ws.getCell(row, c).font = { bold: true };
+    ws.getCell(row, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_TOTAL } };
+  }
+  for (let i = 0; i < data.skus.length; i++) {
+    const sku = data.skus[i];
+    const baseCol = 2 + i * 2;
+    const t = totalsBySku[sku.sku] || 0;
+    ws.getCell(row, baseCol).value = Math.round(t * 100) / 100;
+    ws.getCell(row, baseCol).numFmt = "#,##0.00";
+  }
+  ws.getCell(row, totalCol).value = Math.round(grandKg * 100) / 100;
+  ws.getCell(row, totalCol).numFmt = "#,##0.00";
+
+  const parts = ["resumo-provincias"];
+  if (opts.province) parts.push(opts.province.replace(/\s+/g, "-"));
+  if (opts.district) parts.push(opts.district.replace(/\s+/g, "-"));
+  parts.push(new Date().toISOString().slice(0, 10));
+  const filename = parts.join("_") + ".xlsx";
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  await wb.xlsx.write(res);
+  res.end();
 }));
 
 // Lista de categorias de cancelamento (para popular dropdown na UI)
@@ -2046,5 +2540,645 @@ router.post("/api/distribution/services/:id/attach-guia",
     }
   })
 );
+
+// ════════════════════════════════════════════════════════════
+// AUDIT DE ENTREGAS — captura imutável do Google Sheet
+// ════════════════════════════════════════════════════════════
+const { Audit: DeliveryAudit } = require("../db/audit-repo");
+
+// Página HTML
+router.get("/audit-entregas", (_req, res) => send(res, "audit-entregas.html"));
+
+// KPIs
+router.get("/api/audit/counts", ah(async (_req, res) => {
+  res.json(await DeliveryAudit.counts());
+}));
+
+// Ranking de submetedores
+router.get("/api/audit/submitters", ah(async (req, res) => {
+  const rows = await DeliveryAudit.rankSubmitters(req.query.limit);
+  res.json({ rows });
+}));
+
+// Timeline (gráfico)
+router.get("/api/audit/timeline", ah(async (req, res) => {
+  const rows = await DeliveryAudit.timeline(req.query.days || 30);
+  res.json({ rows });
+}));
+
+// Lista detalhada com filtros + pagination
+router.get("/api/audit/list", ah(async (req, res) => {
+  const result = await DeliveryAudit.list({
+    submitter: req.query.submitter,
+    status:    req.query.status,
+    district:  req.query.district,
+    product:   req.query.product,
+    from:      req.query.from,
+    to:        req.query.to,
+    q:         req.query.q,
+    page:      req.query.page,
+    pageSize:  req.query.pageSize,
+  });
+  res.json(result);
+}));
+
+// Linhas perdidas — desapareceram do sheet
+router.get("/api/audit/lost", ah(async (req, res) => {
+  const rows = await DeliveryAudit.lostRows({
+    daysGap: req.query.days_gap,
+    limit:   req.query.limit,
+  });
+  res.json({ rows });
+}));
+
+// Linhas sem delivery_date
+router.get("/api/audit/missing-date", ah(async (req, res) => {
+  const rows = await DeliveryAudit.missingDate({ limit: req.query.limit });
+  res.json({ rows });
+}));
+
+// % de missing-date por submetedor
+router.get("/api/audit/missing-date/by-submitter", ah(async (_req, res) => {
+  const rows = await DeliveryAudit.missingDateBySubmitter();
+  res.json({ rows });
+}));
+
+// Top distritos / produtos
+router.get("/api/audit/top-districts", ah(async (req, res) => {
+  const rows = await DeliveryAudit.topDistricts(req.query.limit);
+  res.json({ rows });
+}));
+router.get("/api/audit/top-products", ah(async (req, res) => {
+  const rows = await DeliveryAudit.topProducts(req.query.limit);
+  res.json({ rows });
+}));
+
+// Anomalias detectadas
+router.get("/api/audit/anomalies", ah(async (_req, res) => {
+  const rows = await DeliveryAudit.anomalies();
+  res.json({ rows });
+}));
+
+// District heatmap (para mapa)
+router.get("/api/audit/district-heat", ah(async (_req, res) => {
+  const rows = await DeliveryAudit.districtHeat();
+  res.json({ rows });
+}));
+
+// Matriz batedor × dia
+router.get("/api/audit/by-day", ah(async (req, res) => {
+  const data = await DeliveryAudit.byDayPerSubmitter(req.query.days || 14);
+  res.json(data);
+}));
+
+// Export do relatório por batedor/dia (CSV) — em kg
+router.get("/api/audit/by-day/export.csv", ah(async (req, res) => {
+  const data = await DeliveryAudit.byDayPerSubmitter(req.query.days || 14);
+  const rows = data.submitters || [];
+  const days = data.days || [];
+  const escape = (v) => {
+    if (v == null) return "";
+    const s = String(v).replace(/"/g, '""');
+    return /[",\n;]/.test(s) ? `"${s}"` : s;
+  };
+  const round = (n) => Math.round(Number(n) || 0);
+  // Header: Batedor, dias... (kg), Total kg, Submissões
+  const header = ["Batedor", ...days, "Total kg", "Submissões"].join(",");
+  const lines = [header];
+  for (const r of rows) {
+    const vals = days.map((d) => (r.by_day[d] ? round(r.by_day[d].kg) : 0));
+    lines.push([escape(r.email), ...vals, round(r.total_kg), r.total].join(","));
+  }
+  // Linha de totais
+  const totalsRow = ["TOTAL",
+    ...days.map((d) => (data.day_totals[d] ? round(data.day_totals[d].kg) : 0)),
+    rows.reduce((s, r) => s + round(r.total_kg), 0),
+    rows.reduce((s, r) => s + r.total, 0),
+  ];
+  lines.push(totalsRow.join(","));
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition",
+    `attachment; filename="audit_por_batedor_dia_${new Date().toISOString().slice(0,10)}.csv"`);
+  res.send("﻿" + lines.join("\n"));
+}));
+
+// Export Excel da mesma vista — em kg
+router.get("/api/audit/by-day/export.xlsx", ah(async (req, res) => {
+  const ExcelJS = require("exceljs");
+  const data = await DeliveryAudit.byDayPerSubmitter(req.query.days || 14);
+  const rows = data.submitters || [];
+  const days = data.days || [];
+  const round = (n) => Math.round(Number(n) || 0);
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "AQI Audit Dashboard";
+  const ws = wb.addWorksheet("Por Batedor x Dia (kg)");
+  // Header
+  const headerRow = ws.addRow(["Batedor", ...days.map((d) => {
+    const dt = new Date(d);
+    return dt.toLocaleDateString("pt-MZ", { day: "2-digit", month: "2-digit" });
+  }), "Total kg", "Submissões"]);
+  headerRow.eachCell((c) => {
+    c.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F4C75" } };
+    c.alignment = { vertical: "middle", horizontal: "center" };
+  });
+  ws.getColumn(1).width = 38;
+  for (let i = 2; i <= days.length + 1; i++) ws.getColumn(i).width = 11;
+  ws.getColumn(days.length + 2).width = 12; // Total kg
+  ws.getColumn(days.length + 3).width = 12; // Submissões
+  // Rows — heatmap calculado em kg
+  for (const r of rows) {
+    const vals = days.map((d) => (r.by_day[d] ? round(r.by_day[d].kg) : 0));
+    const row = ws.addRow([r.email, ...vals, round(r.total_kg), r.total]);
+    // Cor de fundo crescente para células com valor (heatmap por kg)
+    const max = Math.max(...vals, 1);
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i];
+      if (v > 0) {
+        const intensity = Math.min(1, v / max);
+        const rr = Math.round(255 - intensity * 100);
+        const gg = Math.round(255 - intensity * 40);
+        const bb = Math.round(255 - intensity * 20);
+        row.getCell(i + 2).fill = {
+          type: "pattern", pattern: "solid",
+          fgColor: { argb: "FF" + [rr, gg, bb].map((x) => x.toString(16).padStart(2, "0")).join("") },
+        };
+      }
+    }
+    row.getCell(days.length + 2).font = { bold: true }; // Total kg
+  }
+  // Linha total
+  const totalsRow = ws.addRow(["TOTAL",
+    ...days.map((d) => (data.day_totals[d] ? round(data.day_totals[d].kg) : 0)),
+    rows.reduce((s, r) => s + round(r.total_kg), 0),
+    rows.reduce((s, r) => s + r.total, 0),
+  ]);
+  totalsRow.eachCell((c) => {
+    c.font = { bold: true };
+    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+  });
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition",
+    `attachment; filename="audit_por_batedor_dia_${new Date().toISOString().slice(0,10)}.xlsx"`);
+  await wb.xlsx.write(res);
+  res.end();
+}));
+
+// Plano vs Real
+router.get("/api/audit/plan-vs-actual", ah(async (_req, res) => {
+  const rows = await DeliveryAudit.planVsActual();
+  res.json({ rows });
+}));
+
+// Histórico de status de uma row específica
+router.get("/api/audit/:id/history", ah(async (req, res) => {
+  const rows = await DeliveryAudit.statusHistory(req.params.id);
+  res.json({ rows });
+}));
+
+// Export CSV — qualquer query (lista filtrada, lost, missing-date, etc.)
+// Body interno serializado em URL: ?kind=list|lost|missing-date|ranking
+router.get("/api/audit/export.csv", ah(async (req, res) => {
+  const kind = String(req.query.kind || "list");
+  let rows = [];
+  let filename = "audit_export";
+  if (kind === "lost") {
+    rows = await DeliveryAudit.lostRows({ daysGap: req.query.days_gap, limit: 5000 });
+    filename = "audit_lost";
+  } else if (kind === "missing-date") {
+    rows = await DeliveryAudit.missingDate({ limit: 5000 });
+    filename = "audit_missing_date";
+  } else if (kind === "ranking") {
+    rows = await DeliveryAudit.rankSubmitters({ limit: 500 });
+    filename = "audit_ranking";
+  } else {
+    const r = await DeliveryAudit.list({
+      submitter: req.query.submitter, status: req.query.status,
+      district: req.query.district, product: req.query.product,
+      from: req.query.from, to: req.query.to, q: req.query.q,
+      pageSize: 5000, page: 1,
+    });
+    rows = r.rows;
+    filename = "audit_list";
+  }
+  // Gera CSV
+  const cols = rows.length ? Object.keys(rows[0]).filter((c) => c !== "raw_data") : [];
+  const escape = (v) => {
+    if (v == null) return "";
+    const s = String(v).replace(/"/g, '""');
+    return /[",\n;]/.test(s) ? `"${s}"` : s;
+  };
+  const csv = [
+    cols.join(","),
+    ...rows.map((r) => cols.map((c) => escape(r[c])).join(",")),
+  ].join("\n");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition",
+    `attachment; filename="${filename}_${new Date().toISOString().slice(0,10)}.csv"`);
+  res.send("﻿" + csv); // BOM para Excel pegar UTF-8 correctamente
+}));
+
+// Export Excel (.xlsx) — formato compatível com Excel/LibreOffice
+router.get("/api/audit/export.xlsx", ah(async (req, res) => {
+  const ExcelJS = require("exceljs");
+  const kind = String(req.query.kind || "list");
+  let rows = [];
+  let sheetName = "Lista";
+  if (kind === "lost") {
+    rows = await DeliveryAudit.lostRows({ daysGap: req.query.days_gap, limit: 5000 });
+    sheetName = "Perdidas";
+  } else if (kind === "missing-date") {
+    rows = await DeliveryAudit.missingDate({ limit: 5000 });
+    sheetName = "Sem Data";
+  } else if (kind === "ranking") {
+    rows = await DeliveryAudit.rankSubmitters({ limit: 500 });
+    sheetName = "Ranking";
+  } else {
+    const r = await DeliveryAudit.list({
+      submitter: req.query.submitter, status: req.query.status,
+      district: req.query.district, product: req.query.product,
+      from: req.query.from, to: req.query.to, q: req.query.q,
+      pageSize: 5000, page: 1,
+    });
+    rows = r.rows;
+    sheetName = "Lista";
+  }
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "AQI Audit Dashboard";
+  wb.created = new Date();
+  const ws = wb.addWorksheet(sheetName);
+  if (rows.length) {
+    const cols = Object.keys(rows[0]).filter((c) => c !== "raw_data" && c !== "sparkline");
+    ws.columns = cols.map((c) => ({ header: c, key: c, width: Math.min(40, Math.max(10, c.length + 4)) }));
+    for (const r of rows) ws.addRow(r);
+    ws.getRow(1).eachCell((c) => {
+      c.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F4C75" } };
+      c.alignment = { vertical: "middle", horizontal: "center" };
+    });
+  }
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition",
+    `attachment; filename="audit_${kind}_${new Date().toISOString().slice(0,10)}.xlsx"`);
+  await wb.xlsx.write(res);
+  res.end();
+}));
+
+// ════════════════════════════════════════════════════════════
+// SMS — easysendsms.app
+// ════════════════════════════════════════════════════════════
+const SmsRepo = require("../db/sms-repo");
+const SmsApi  = require("../lib/easysendsms");
+
+// Página de gestão de SMS (templates + log)
+router.get("/sms", (_req, res) => send(res, "sms.html"));
+
+// ── Templates ────────────────────────────────────────────────
+router.get("/api/sms/templates", ah(async (_req, res) => {
+  const rows = await SmsRepo.Templates.list();
+  res.json({ rows });
+}));
+
+router.patch("/api/sms/templates/:id", express.json(), auth.requireRole("admin", "superadmin"), ah(async (req, res) => {
+  try {
+    const r = await SmsRepo.Templates.update(req.params.id, req.body || {}, req.user?.id);
+    if (!r) return jsonError(res, 404, "Template não encontrado");
+    await auth.logAction(req, "update", "sms_template", r.id, JSON.stringify({ name: r.name, enabled: r.enabled }));
+    res.json(r);
+  } catch (e) { return jsonError(res, 400, e.message); }
+}));
+
+router.post("/api/sms/templates", express.json(), auth.requireRole("admin", "superadmin"), ah(async (req, res) => {
+  try {
+    const r = await SmsRepo.Templates.create(req.body || {}, req.user?.id);
+    await auth.logAction(req, "create", "sms_template", r.id, JSON.stringify({ kind: r.kind, name: r.name }));
+    res.json(r);
+  } catch (e) { return jsonError(res, 400, e.message); }
+}));
+
+// Renderiza um template com variáveis para preview
+router.post("/api/sms/templates/:id/preview", express.json(), ah(async (req, res) => {
+  const tpl = await SmsRepo.Templates.byId(req.params.id);
+  if (!tpl) return jsonError(res, 404, "Template não encontrado");
+  const vars = req.body?.vars || {};
+  const text = SmsRepo.renderTemplate(tpl.body, vars);
+  res.json({ text, length: text.length, segments: Math.ceil(text.length / 160) || 1 });
+}));
+
+// ── Log ──────────────────────────────────────────────────────
+router.get("/api/sms/log", ah(async (req, res) => {
+  const opts = {
+    status:         req.query.status         || undefined,
+    related_kind:   req.query.related_kind   || undefined,
+    related_id:     req.query.related_id     || undefined,
+    template_kind:  req.query.template_kind  || undefined,
+    beneficiary_id: req.query.beneficiary_id || undefined,
+    limit:          req.query.limit,
+  };
+  if (opts.status && opts.status.includes(",")) {
+    opts.status = opts.status.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  const [rows, counts] = await Promise.all([SmsRepo.Log.list(opts), SmsRepo.Log.counts()]);
+  res.json({ rows, counts });
+}));
+
+router.get("/api/sms/log/counts", ah(async (_req, res) => {
+  res.json(await SmsRepo.Log.counts());
+}));
+
+// Status de configuração: o admin sabe se a chave está configurada
+router.get("/api/sms/status", ah(async (_req, res) => {
+  const cfg = SmsApi.getConfig();
+  res.json({
+    configured: !!cfg.apiKey,
+    sender:     cfg.sender,
+    dry_run:    cfg.dryRun,
+    delay_ms:   cfg.delayMs,
+    prefix:     cfg.prefix,
+  });
+}));
+
+// ── Envio ad-hoc (1 número, sem template) ───────────────────
+router.post("/api/sms/send", express.json(), auth.requireRole("operator", "admin", "superadmin"), ah(async (req, res) => {
+  const { to, text } = req.body || {};
+  if (!to)   return jsonError(res, 400, "Campo 'to' obrigatório");
+  if (!text) return jsonError(res, 400, "Campo 'text' obrigatório");
+  const r = await SmsRepo.sendAndLog({
+    to, text, template_kind: "adhoc",
+    sent_by: req.user?.id,
+  });
+  await auth.logAction(req, "sms_send", "sms_log", r.log_id, JSON.stringify({ to, ok: r.ok, dry_run: r.dry_run }));
+  res.json(r);
+}));
+
+// ── Envio bulk via template para um SERVIÇO ─────────────────
+// POST /admin/api/distribution/services/:id/sms
+//   Body: { kind: "plan"|"arriving"|"delivered", template_id?: number, dry_run?: boolean }
+//   Itera os beneficiários do serviço, renderiza o template para cada
+//   um e envia. Devolve um sumário com ok/failed/skipped.
+//
+//   "skipped" = beneficiário sem telefone OU já tinha SMS deste tipo
+//               para este serviço.
+router.post("/api/distribution/services/:id/sms",
+  express.json(),
+  auth.requireRole("operator", "admin", "superadmin"),
+  ah(async (req, res) => {
+    const svc = await DistServices.byIdForRoteiro(req.params.id);
+    if (!svc) return jsonError(res, 404, "Serviço não encontrado");
+
+    const kind = String(req.body?.kind || "").trim();
+    if (!["plan", "arriving", "delivered", "supervisor"].includes(kind)) {
+      return jsonError(res, 400, "kind inválido — use 'plan', 'arriving', 'delivered' ou 'supervisor'");
+    }
+
+    // Resolve template (id explícito ou primeiro do tipo)
+    let tpl;
+    if (req.body?.template_id) {
+      tpl = await SmsRepo.Templates.byId(req.body.template_id);
+    } else {
+      tpl = await SmsRepo.Templates.byKind(kind);
+    }
+    if (!tpl) return jsonError(res, 400, `Sem template do tipo "${kind}". Cria um em /admin/sms.`);
+    if (!tpl.enabled) return jsonError(res, 400, `Template "${tpl.name}" está desactivado.`);
+
+    const skipDuplicates = req.body?.skip_duplicates !== false;  // default true
+    const previewOnly = req.body?.preview_only === true;
+
+    // ── Caso especial: SUPERVISOR ──
+    // Em vez de iterar beneficiários, extraímos supervisores únicos
+    // (por nome+telefone) e enviamos 1 SMS por supervisor com info
+    // agregada (n_extensionistas + total_kg dos benefs sob ele).
+    if (kind === "supervisor") {
+      const supervisors = SmsRepo.extractSupervisors(svc);
+      const supSummary = {
+        total: supervisors.length, ok: 0, failed: 0,
+        skipped_no_phone: 0, skipped_already_sent: 0,
+        n_benefs_sem_supervisor: (svc.beneficiaries || []).filter(
+          (b) => !(b.supervisor_phone || "").trim()
+        ).length,
+        results: [],
+      };
+      for (const sup of supervisors) {
+        // Skip duplicação: já enviámos a este supervisor para este serviço?
+        if (skipDuplicates) {
+          const prev = await SmsRepo.Log.wasSent("service", svc.id, sup.phone, "supervisor");
+          if (prev) {
+            supSummary.skipped_already_sent++;
+            supSummary.results.push({
+              supervisor_name: sup.name, phone: sup.phone,
+              status: "skipped_already_sent", previous_log_id: prev.id,
+            });
+            continue;
+          }
+        }
+        const vars = SmsRepo.buildSupervisorVars(svc, sup);
+        const text = SmsRepo.renderTemplate(tpl.body, vars);
+        if (previewOnly) {
+          supSummary.results.push({
+            supervisor_name: sup.name, phone: sup.phone,
+            n_benefs: sup.benefs.length, text, status: "preview",
+          });
+          continue;
+        }
+        const r = await SmsRepo.sendAndLog({
+          to: sup.phone, text,
+          template_id: tpl.id, template_kind: "supervisor",
+          // Para deduplicação: usamos o phone do supervisor como
+          // beneficiary_id (já que não há ext_id próprio para supervisores).
+          beneficiary_id: sup.phone,
+          beneficiary_name: sup.name,
+          related_kind: "service",
+          related_id: svc.id,
+          sent_by: req.user?.id,
+        });
+        if (r.ok) supSummary.ok++; else supSummary.failed++;
+        supSummary.results.push({
+          supervisor_name: sup.name, phone: sup.phone,
+          n_benefs: sup.benefs.length, text,
+          status: r.ok ? "sent" : "failed",
+          error: r.error, log_id: r.log_id, dry_run: r.dry_run,
+        });
+      }
+      await auth.logAction(req, "sms_bulk", "delivery_service", svc.id,
+        JSON.stringify({ kind, supervisors: supSummary.total, ok: supSummary.ok, failed: supSummary.failed, preview: previewOnly }));
+      return res.json({
+        service_id: svc.id, service_number: svc.service_number, kind,
+        template: { id: tpl.id, name: tpl.name },
+        preview_only: previewOnly,
+        summary: supSummary,
+      });
+    }
+
+    // ── Caso normal: extensionistas ──
+    const benefs = svc.beneficiaries || [];
+    const summary = { total: benefs.length, ok: 0, failed: 0, skipped_no_phone: 0, skipped_already_sent: 0, results: [] };
+
+    for (const b of benefs) {
+      // Skip se sem telefone
+      const phone = (b.contact || "").trim();
+      if (!phone) {
+        summary.skipped_no_phone++;
+        summary.results.push({
+          beneficiary_id: b.extensionist_id,
+          beneficiary_name: b.beneficiary_name,
+          status: "skipped_no_phone",
+        });
+        continue;
+      }
+      // Skip se já enviado (deduplicação)
+      if (skipDuplicates) {
+        const prev = await SmsRepo.Log.wasSent("service", svc.id, b.extensionist_id, kind);
+        if (prev) {
+          summary.skipped_already_sent++;
+          summary.results.push({
+            beneficiary_id: b.extensionist_id,
+            beneficiary_name: b.beneficiary_name,
+            status: "skipped_already_sent",
+            previous_log_id: prev.id,
+          });
+          continue;
+        }
+      }
+      const vars = SmsRepo.buildServiceVars(svc, b);
+      const text = SmsRepo.renderTemplate(tpl.body, vars);
+
+      // Modo preview — não envia, só mostra qual seria o texto
+      if (previewOnly) {
+        summary.results.push({
+          beneficiary_id: b.extensionist_id,
+          beneficiary_name: b.beneficiary_name,
+          phone, text, status: "preview",
+        });
+        continue;
+      }
+
+      const r = await SmsRepo.sendAndLog({
+        to: phone,
+        text,
+        template_id: tpl.id,
+        template_kind: kind,
+        beneficiary_id: b.extensionist_id,
+        beneficiary_name: b.beneficiary_name,
+        related_kind: "service",
+        related_id: svc.id,
+        sent_by: req.user?.id,
+      });
+      if (r.ok) summary.ok++; else summary.failed++;
+      summary.results.push({
+        beneficiary_id: b.extensionist_id,
+        beneficiary_name: b.beneficiary_name,
+        phone, text, status: r.ok ? "sent" : "failed",
+        error: r.error, log_id: r.log_id, dry_run: r.dry_run,
+      });
+    }
+
+    await auth.logAction(req, "sms_bulk", "delivery_service", svc.id,
+      JSON.stringify({ kind, total: summary.total, ok: summary.ok, failed: summary.failed, preview: previewOnly }));
+
+    res.json({
+      service_id: svc.id,
+      service_number: svc.service_number,
+      kind,
+      template: { id: tpl.id, name: tpl.name },
+      preview_only: previewOnly,
+      summary,
+    });
+  })
+);
+
+// ════════════════════════════════════════════════════════════
+// LEMBRETES / INFORMAÇÕES
+// ════════════════════════════════════════════════════════════
+const { Reminders } = require("../db/reminders-repo");
+
+// Página HTML
+router.get("/lembretes", (_req, res) => send(res, "lembretes.html"));
+
+// GET /admin/api/reminders — lista com filtros
+//   ?status=active|done|dismissed (ou múltiplos via vírgula)
+//   ?related_kind=service&related_id=42
+//   ?due_only=1   (só vencidos)
+//   ?upcoming=1   (só com data futura)
+router.get("/api/reminders", ah(async (req, res) => {
+  const opts = {
+    related_kind: req.query.related_kind || undefined,
+    related_id:   req.query.related_id   || undefined,
+    due_only:     req.query.due_only === "1",
+    upcoming:     req.query.upcoming === "1",
+    limit:        req.query.limit,
+  };
+  if (req.query.status) {
+    opts.status = String(req.query.status).split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  const [rows, counts] = await Promise.all([Reminders.list(opts), Reminders.counts()]);
+  res.json({ rows, counts });
+}));
+
+// Apenas as contagens — endpoint leve para a sidebar fazer poll
+router.get("/api/reminders/counts", ah(async (_req, res) => {
+  res.json(await Reminders.counts());
+}));
+
+// POST /admin/api/reminders — criar
+router.post("/api/reminders", express.json(), ah(async (req, res) => {
+  try {
+    const r = await Reminders.create(req.body || {}, req.user?.id);
+    await auth.logAction(req, "create", "reminder", r.id, JSON.stringify({
+      title: r.title, has_date: !!r.remind_at, related: r.related_kind ? r.related_kind + ":" + r.related_id : null,
+    }));
+    res.json(r);
+  } catch (e) {
+    return jsonError(res, 400, e.message);
+  }
+}));
+
+// PATCH /admin/api/reminders/:id — actualizar
+router.patch("/api/reminders/:id", express.json(), ah(async (req, res) => {
+  const existing = await Reminders.byId(req.params.id);
+  if (!existing) return jsonError(res, 404, "Lembrete não encontrado");
+  try {
+    const r = await Reminders.update(req.params.id, req.body || {}, req.user?.id);
+    await auth.logAction(req, "update", "reminder", r.id, JSON.stringify(req.body));
+    res.json(r);
+  } catch (e) {
+    return jsonError(res, 400, e.message);
+  }
+}));
+
+// POST /admin/api/reminders/:id/done — marca como tratado
+router.post("/api/reminders/:id/done", ah(async (req, res) => {
+  const existing = await Reminders.byId(req.params.id);
+  if (!existing) return jsonError(res, 404, "Lembrete não encontrado");
+  const r = await Reminders.markDone(req.params.id, req.user?.id);
+  await auth.logAction(req, "done", "reminder", r.id, null);
+  res.json(r);
+}));
+
+// POST /admin/api/reminders/:id/dismiss — descartar
+router.post("/api/reminders/:id/dismiss", ah(async (req, res) => {
+  const existing = await Reminders.byId(req.params.id);
+  if (!existing) return jsonError(res, 404, "Lembrete não encontrado");
+  const r = await Reminders.markDismissed(req.params.id, req.user?.id);
+  await auth.logAction(req, "dismiss", "reminder", r.id, null);
+  res.json(r);
+}));
+
+// POST /admin/api/reminders/:id/reactivate — torna a activar
+router.post("/api/reminders/:id/reactivate", ah(async (req, res) => {
+  const existing = await Reminders.byId(req.params.id);
+  if (!existing) return jsonError(res, 404, "Lembrete não encontrado");
+  const r = await Reminders.reactivate(req.params.id);
+  await auth.logAction(req, "reactivate", "reminder", r.id, null);
+  res.json(r);
+}));
+
+// DELETE /admin/api/reminders/:id — apagar permanentemente (admin+)
+router.delete("/api/reminders/:id", auth.requireRole("admin", "superadmin"), ah(async (req, res) => {
+  const existing = await Reminders.byId(req.params.id);
+  if (!existing) return jsonError(res, 404, "Lembrete não encontrado");
+  await Reminders.delete(req.params.id);
+  await auth.logAction(req, "delete", "reminder", req.params.id, JSON.stringify({ title: existing.title }));
+  res.json({ ok: true });
+}));
 
 module.exports = router;
