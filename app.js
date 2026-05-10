@@ -508,100 +508,149 @@ app.get("/api/public/batedores/export.xlsx", async (req, res) => {
 });
 
 // Endpoint de diagnóstico — verifica se a tela /batedores tem dados em prod.
-// Devolve: existência da tabela delivery_audit, totais, contagens por janela
-// temporal, timezones (Node vs MySQL), e amostra das últimas 3 linhas.
 // Sem auth (público) para o user poder simplesmente abrir o URL no browser.
+// VERSÃO 2: defensivo a sério — cada query separada com try/catch independente,
+// expõe destino DB (host/user/db) sem password, e dump completo dos erros.
 app.get("/api/public/batedores/diagnostic", async (_req, res) => {
+  // Helper: serializa erro de mysql2 expondo todos os campos úteis
+  const dumpErr = (e) => ({
+    message: e?.message || "(empty)",
+    code: e?.code || null,
+    errno: e?.errno || null,
+    sqlState: e?.sqlState || null,
+    sqlMessage: e?.sqlMessage || null,
+    name: e?.name || null,
+    stack: (e?.stack || "").split("\n").slice(0, 3).join(" | "),
+  });
+  // Helper: chama um SQL de forma segura, devolve { ok, value } | { ok:false, error }
+  const safe = async (label, fn) => {
+    try { return { ok: true, value: await fn() }; }
+    catch (e) { return { ok: false, label, error: dumpErr(e) }; }
+  };
+
   const out = {
     server: {
       now_node: new Date().toISOString(),
       now_local: new Date().toLocaleString("pt-MZ"),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      node_version: process.version,
+      node_env: process.env.NODE_ENV || "(unset)",
       cache_rows: cache.data?.length || 0,
       cache_last_updated: cache.lastUpdated || null,
     },
+    // Mostra para onde o Node está a tentar ligar (sem password)
+    db_target: {
+      host: process.env.DB_HOST || "(default localhost)",
+      port: process.env.DB_PORT || "(default 3306)",
+      user: process.env.DB_USER || "(default root)",
+      database: process.env.DB_NAME || "(default aqi_operations)",
+      password_set: process.env.DB_PASSWORD ? "yes" : "no/empty",
+    },
+    db: {},
+    counts: {},
+    errors: [],
   };
+
   const { query, queryOne } = require("./db/mysql");
-  try {
-    const [{ db_now, db_curdate, db_tz }] = await query(
-      "SELECT NOW() AS db_now, CURDATE() AS db_curdate, @@session.time_zone AS db_tz"
-    );
-    out.db = { now: db_now, curdate: db_curdate, time_zone: db_tz };
-  } catch (e) {
-    out.db = { error: "Failed to query DB time: " + e.message };
+
+  // 1. Conexão básica
+  let r = await safe("ping", () => query("SELECT 1 AS ok"));
+  out.db.ping = r.ok ? "ok" : "FAILED";
+  if (!r.ok) out.errors.push(r);
+  // Se nem o ping funciona, ainda tentamos os outros para mostrar pattern de erro
+  if (!r.ok) {
+    out.problem = "DB_UNREACHABLE";
+    out.fix = "Não consegue ligar ao MySQL. Verifica .env (DB_HOST/PORT/USER/PASSWORD/NAME) e se o IP da app está na whitelist da Hostinger (cPanel → Bases de Dados Remotas).";
     return res.json(out);
   }
 
-  // Tabela existe?
-  try {
-    const t = await queryOne(
-      "SELECT COUNT(*) AS exists_table FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'delivery_audit'"
-    );
-    out.table_exists = Number(t?.exists_table) > 0;
-  } catch (e) {
-    out.table_exists_error = e.message;
-  }
+  // 2. Tempo do servidor MySQL
+  r = await safe("now", () => queryOne("SELECT NOW() AS db_now"));
+  if (r.ok) out.db.now = r.value?.db_now;
+  else      out.errors.push(r);
 
-  if (!out.table_exists) {
+  // 3. Data actual do MySQL
+  r = await safe("curdate", () => queryOne("SELECT CURDATE() AS db_curdate"));
+  if (r.ok) out.db.curdate = r.value?.db_curdate;
+  else      out.errors.push(r);
+
+  // 4. Timezone (algumas hosts shared bloqueiam @@session.time_zone — não é crítico)
+  r = await safe("timezone", () => queryOne("SELECT @@session.time_zone AS tz, @@global.time_zone AS gtz"));
+  if (r.ok) out.db.time_zone = r.value;
+  else      out.db.time_zone_unavailable = r.error?.message || "blocked";
+
+  // 5. Nome efectivo da base de dados (resolve aliases)
+  r = await safe("dbname", () => queryOne("SELECT DATABASE() AS db, USER() AS \"user\""));
+  if (r.ok) out.db.effective = r.value;
+  else      out.errors.push(r);
+
+  // 6. Tabela existe?
+  r = await safe("table_exists", () => queryOne(
+    "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'delivery_audit'"
+  ));
+  out.table_exists = r.ok ? Number(r.value?.n) > 0 : null;
+  if (!r.ok) out.errors.push(r);
+
+  if (out.table_exists === false) {
     out.problem = "TABELA_NAO_EXISTE";
-    out.fix = "Reinicia o serviço Node em prod — as migrações idempotentes em db/mysql.js criam delivery_audit no arranque.";
+    out.fix = "A tabela delivery_audit não existe nesta DB. Reinicia o serviço Node em prod — as migrações idempotentes em db/mysql.js criam-na no arranque. Se não criar, verifica se o utilizador DB_USER tem permissão CREATE TABLE.";
     return res.json(out);
   }
-
-  // Contagens
-  try {
-    out.counts = {
-      total: Number((await queryOne("SELECT COUNT(*) AS n FROM delivery_audit"))?.n || 0),
-      last_24h: Number((await queryOne("SELECT COUNT(*) AS n FROM delivery_audit WHERE detected_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)"))?.n || 0),
-      last_7d:  Number((await queryOne("SELECT COUNT(*) AS n FROM delivery_audit WHERE detected_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"))?.n || 0),
-      today_by_detected_date:    Number((await queryOne("SELECT COUNT(*) AS n FROM delivery_audit WHERE detected_date = CURDATE()"))?.n || 0),
-      today_by_delivery_date:    Number((await queryOne("SELECT COUNT(*) AS n FROM delivery_audit WHERE delivery_date_iso = CURDATE()"))?.n || 0),
-      today_by_coalesce:         Number((await queryOne("SELECT COUNT(*) AS n FROM delivery_audit WHERE COALESCE(delivery_date_iso, detected_date) = CURDATE()"))?.n || 0),
-      with_delivered_qty: Number((await queryOne("SELECT COUNT(*) AS n FROM delivery_audit WHERE delivered_qty > 0"))?.n || 0),
-      distinct_submitters_total: Number((await queryOne("SELECT COUNT(DISTINCT submitted_by) AS n FROM delivery_audit WHERE submitted_by IS NOT NULL AND submitted_by <> ''"))?.n || 0),
-    };
-  } catch (e) {
-    out.counts_error = e.message;
+  if (out.table_exists === null) {
+    out.problem = "PERMISSAO_INFORMATION_SCHEMA";
+    out.fix = "Não consegue ler information_schema. Tenta SELECT * FROM delivery_audit LIMIT 1 manualmente para confirmar se existe ou não.";
+    // continua mesmo assim
   }
 
-  // Amostra das últimas 3 linhas
-  try {
-    out.last_3_rows = await query(
-      `SELECT id, submitted_by, beneficiary_name, product, delivered_qty,
-              delivery_date_iso, detected_date, detected_at, last_seen_at,
-              verification_status
-       FROM delivery_audit
-       ORDER BY detected_at DESC
-       LIMIT 3`
-    );
-  } catch (e) {
-    out.last_3_rows_error = e.message;
+  // 7. Contagens (cada uma com try/catch — para nenhuma derrubar o resto)
+  const queries = {
+    total:                 "SELECT COUNT(*) AS n FROM delivery_audit",
+    last_24h:              "SELECT COUNT(*) AS n FROM delivery_audit WHERE detected_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)",
+    last_7d:               "SELECT COUNT(*) AS n FROM delivery_audit WHERE detected_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)",
+    today_by_detected:     "SELECT COUNT(*) AS n FROM delivery_audit WHERE detected_date = CURDATE()",
+    today_by_delivery:     "SELECT COUNT(*) AS n FROM delivery_audit WHERE delivery_date_iso = CURDATE()",
+    today_by_coalesce:     "SELECT COUNT(*) AS n FROM delivery_audit WHERE COALESCE(delivery_date_iso, detected_date) = CURDATE()",
+    with_qty:              "SELECT COUNT(*) AS n FROM delivery_audit WHERE delivered_qty > 0",
+    distinct_submitters:   "SELECT COUNT(DISTINCT submitted_by) AS n FROM delivery_audit WHERE submitted_by IS NOT NULL AND submitted_by <> ''",
+  };
+  for (const [k, sql] of Object.entries(queries)) {
+    const rr = await safe("count_" + k, () => queryOne(sql));
+    out.counts[k] = rr.ok ? Number(rr.value?.n || 0) : null;
+    if (!rr.ok) out.errors.push(rr);
   }
 
-  // Range global de datas
-  try {
-    const [r] = await query(
-      "SELECT MIN(detected_at) AS first_seen, MAX(detected_at) AS last_seen, MIN(delivery_date_iso) AS min_dd, MAX(delivery_date_iso) AS max_dd FROM delivery_audit"
-    );
-    out.date_ranges = r;
-  } catch (e) {
-    out.date_ranges_error = e.message;
-  }
+  // 8. Amostra das últimas 3 linhas
+  r = await safe("last_3_rows", () => query(
+    `SELECT id, submitted_by, beneficiary_name, product, delivered_qty,
+            delivery_date_iso, detected_date, detected_at, last_seen_at,
+            verification_status
+     FROM delivery_audit
+     ORDER BY detected_at DESC
+     LIMIT 3`
+  ));
+  if (r.ok) out.last_3_rows = r.value;
+  else      out.errors.push(r);
 
-  // Diagnóstico final automático
-  if (out.counts) {
+  // 9. Range global
+  r = await safe("date_ranges", () => queryOne(
+    "SELECT MIN(detected_at) AS first_seen, MAX(detected_at) AS last_seen, MIN(delivery_date_iso) AS min_dd, MAX(delivery_date_iso) AS max_dd FROM delivery_audit"
+  ));
+  if (r.ok) out.date_ranges = r.value;
+  else      out.errors.push(r);
+
+  // Auto-diagnóstico
+  if (!out.problem) {
     if (out.counts.total === 0) {
       out.problem = "TABELA_VAZIA";
-      out.fix = "A tabela existe mas nunca capturou linhas. Verifica se refreshCache está a correr e se cache.data tem rows. Tenta GET /cron para forçar refresh.";
+      out.fix = "Tabela existe mas vazia. Tenta GET /cron para forçar refresh+capture, depois recarrega este diagnóstico. Se continuar vazia, verifica logs por '[AUDIT] capture failed'.";
     } else if (out.counts.today_by_coalesce === 0 && out.counts.last_24h > 0) {
       out.problem = "DESALINHAMENTO_TIMEZONE";
-      out.fix = "Há rows recentes mas nenhuma em 'hoje'. Provável diferença entre TZ do Node e do MySQL (compara server.timezone vs db.time_zone acima).";
+      out.fix = "Há rows nas últimas 24h mas nenhuma em 'hoje'. Provável diferença Node TZ ('" + out.server.timezone + "') vs MySQL TZ. Adiciona TZ='Africa/Maputo' ao .env do Node ou força datas absolutas no /batedores.";
     } else {
       out.problem = "OK";
-      out.fix = "Dados aparentemente normais. Se /batedores ainda não mostra nada, confirma que o frontend está a chamar /api/public/batedores e que NODE_ENV/JS cache estão limpos.";
+      out.fix = "Dados normais. Se /batedores não mostra, confirma que o browser não tem cache JS antigo (Ctrl+Shift+R).";
     }
   }
-
   res.json(out);
 });
 
