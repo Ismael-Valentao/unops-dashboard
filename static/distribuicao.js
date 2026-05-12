@@ -188,10 +188,13 @@
       const fulfilledKg = kg.fulfilled != null ? kg.fulfilled : kg.committed;
       const fulfilledL  = L.fulfilled  != null ? L.fulfilled  : (L.committed  || 0);
       const fulfilledUn = un.fulfilled != null ? un.fulfilled : (un.committed || 0);
+      // fmtFn ja inclui a unidade no resultado (ex. "5 001 395 kg"), por isso
+      // NAO anexamos `unitLabel` outra vez. O 4o parametro fica como dado
+      // semantico para tooltip/data-attribute, nao para visual.
       const renderMulti = (containerId, val, fmtFn, unitLabel, catLabel) => {
-        return `<div class="ms-line">
+        return `<div class="ms-line" data-unit="${unitLabel}">
           <span class="ms-cat">${catLabel}</span>
-          <span class="ms-num">${val > 0 ? fmtFn(val) : '<span class="ms-empty">—</span>'} <span style="font-size:.65rem;font-weight:600;color:#94a3b8">${unitLabel}</span></span>
+          <span class="ms-num">${val > 0 ? fmtFn(val) : '<span class="ms-empty">—</span>'}</span>
         </div>`;
       };
       $("#s-planned-multi").innerHTML =
@@ -218,8 +221,9 @@
       // Sub-rows extras
       const surplusKg = kg.surplus || 0, surplusL = L.surplus || 0, surplusUn = un.surplus || 0;
       const surplusParts = [];
+      // fmtKg/fmtL/fmtUn ja incluem a unidade — NAO concatenar de novo.
       if (surplusKg > 0) surplusParts.push(fmtKg(surplusKg));
-      if (surplusUn > 0) surplusParts.push(fmtUn(surplusUn) + " un");
+      if (surplusUn > 0) surplusParts.push(fmtUn(surplusUn));
       if (surplusL > 0)  surplusParts.push(fmtL(surplusL));
       if (surplusParts.length) {
         $("#s-delivered-other").textContent = "Excesso: " + surplusParts.join(" • ");
@@ -243,11 +247,12 @@
     const wrap = $("#prod-breakdown");
     if (!products || !products.length) { wrap.style.display = "none"; return; }
     wrap.style.display = "";
+    // fmtKg/fmtL/fmtUn ja devolvem a string com a unidade — NAO concatenar de novo.
     const fmtByUnit = (v, u) => {
       if (!(v > 0)) return "—";
-      if (u === "L") return fmtL(v) + " L";
-      if (u === "un") return fmtUn(v) + " un";
-      return fmtKg(v) + " kg";
+      if (u === "L") return fmtL(v);
+      if (u === "un") return fmtUn(v);
+      return fmtKg(v);
     };
     const pctClass = (p) => p < 30 ? "pb-pct-low" : (p < 80 ? "pb-pct-mid" : "pb-pct-high");
     const catLabel = { sementes: "Sementes (kg)", sacos: "Sacos Hermeticos (un)", quimicos: "Químicos (L)", outros: "Outros" };
