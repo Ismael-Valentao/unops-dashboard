@@ -1618,11 +1618,16 @@ const Reports = {
   },
 
   // ── Por Extensionista (vista WIDE: 1 row por extensionista, colunas por SKU) ──
-  // Devolve para cada extensionista: plano, entregue, falta — agrupado por SKU.
+  // Devolve para cada extensionista: plano, entregue, falta, excesso — agrupado por SKU.
   // Filtros: { province, district, posto, sku, q (search) }
   // Esta é a vista que vai para o Excel "Detalhe Extensionistas".
+  //
+  // INCLUI rows com plano=0 mas entregas registadas (beneficiários "extra", prefixo
+  // EXT-) — permite ver excessos / duplicação de IDs. Sem isto, ao filtrar Moamba
+  // + Feijão, faltavam 20 865 kg do "Fred~Bnio Bernardo (EXT-2601222)" que tinha
+  // plano=0 mas recebeu fisicamente 20 865 kg em camião.
   async byExtensionist(opts = {}) {
-    const where = ["b.planned_qty > 0"]; // só linhas com plano > 0
+    const where = ["(b.planned_qty > 0 OR b.delivered_qty > 0)"]; // inclui excessos
     const params = [];
     if (opts.province) { where.push("b.province = ?"); params.push(opts.province); }
     if (opts.district) { where.push("b.district = ?"); params.push(opts.district); }
@@ -1651,6 +1656,7 @@ const Reports = {
               b.committed_qty,
               b.delivered_qty,
               GREATEST(0, b.planned_qty - b.delivered_qty) AS remaining_qty,
+              GREATEST(0, b.delivered_qty - b.planned_qty) AS excess_qty,
               CASE WHEN b.planned_qty > 0
                    THEN ROUND(100 * b.delivered_qty / b.planned_qty, 1)
                    ELSE 0 END AS pct_delivered
@@ -1675,17 +1681,23 @@ const Reports = {
           contact: r.contact || "",
           province: r.province || "",
           district: r.district || "",
-          items: {}, // sku -> { planned, delivered, remaining, pct, unit, product_name }
+          items: {}, // sku -> { planned, delivered, remaining, excess, pct, unit, product_name, is_extra }
           // totais kg (apenas SKUs com unit=kg)
           total_planned_kg: 0,
           total_delivered_kg: 0,
           total_remaining_kg: 0,
+          total_excess_kg: 0,
+          // is_extra=true quando o extensionista tem TODOS os items sem plano (prefixo EXT- ou
+          // beneficiário criado fora do MAAP). Frontend pinta a linha de vermelho.
+          is_extra: false, // calculado abaixo após processar todos os items
         });
       }
       const ext = byExt.get(key);
       const planned   = Number(r.planned_qty)   || 0;
       const delivered = Number(r.delivered_qty) || 0;
       const remaining = Number(r.remaining_qty) || 0;
+      const excess    = Number(r.excess_qty)    || 0;
+      const itemIsExtra = planned <= 0 && delivered > 0;
       ext.items[r.sku] = {
         sku: r.sku,
         product_name: r.product_name,
@@ -1693,7 +1705,9 @@ const Reports = {
         planned,
         delivered,
         remaining,
+        excess,
         pct: Number(r.pct_delivered) || 0,
+        is_extra: itemIsExtra,
       };
       if (!skuSet.has(r.sku)) {
         skuSet.set(r.sku, { sku: r.sku, product_name: r.product_name, unit: r.unit });
@@ -1702,10 +1716,18 @@ const Reports = {
         ext.total_planned_kg   += planned;
         ext.total_delivered_kg += delivered;
         ext.total_remaining_kg += remaining;
+        ext.total_excess_kg    += excess;
       }
     }
 
+    // Marca extensionistas que NÃO têm plano em nenhum SKU (puramente "extra")
+    for (const ext of byExt.values()) {
+      ext.is_extra = ext.total_planned_kg <= 0 && ext.total_delivered_kg > 0;
+    }
+
+    // Ordena: extras (sem plano) primeiro para chamar atenção, depois alfabético
     const extensionists = [...byExt.values()].sort((a, b) => {
+      if (a.is_extra !== b.is_extra) return a.is_extra ? -1 : 1;
       if (a.province !== b.province) return (a.province || "").localeCompare(b.province || "");
       if (a.district !== b.district) return (a.district || "").localeCompare(b.district || "");
       return (a.name || "").localeCompare(b.name || "");
@@ -1713,14 +1735,17 @@ const Reports = {
     const skus = [...skuSet.values()].sort((a, b) => a.sku.localeCompare(b.sku));
 
     // Totais agregados
-    let totalPlannedKg = 0, totalDeliveredKg = 0, totalRemainingKg = 0;
-    let nFulfilled = 0, nPending = 0, nUntouched = 0;
+    let totalPlannedKg = 0, totalDeliveredKg = 0, totalRemainingKg = 0, totalExcessKg = 0;
+    let nFulfilled = 0, nPending = 0, nUntouched = 0, nExtra = 0;
     for (const ext of extensionists) {
       totalPlannedKg   += ext.total_planned_kg;
       totalDeliveredKg += ext.total_delivered_kg;
       totalRemainingKg += ext.total_remaining_kg;
+      totalExcessKg    += ext.total_excess_kg;
       // Conta extensionistas por estado (em kg-equivalentes)
-      if (ext.total_planned_kg > 0) {
+      if (ext.is_extra) {
+        nExtra++;
+      } else if (ext.total_planned_kg > 0) {
         if (ext.total_delivered_kg >= ext.total_planned_kg)      nFulfilled++;
         else if (ext.total_delivered_kg <= 0.001)                nUntouched++;
         else                                                      nPending++;
@@ -1733,11 +1758,12 @@ const Reports = {
       for (const sku of Object.keys(ext.items)) {
         const it = ext.items[sku];
         if (!totalsBySku[sku]) {
-          totalsBySku[sku] = { sku, product_name: it.product_name, unit: it.unit, planned: 0, delivered: 0, remaining: 0 };
+          totalsBySku[sku] = { sku, product_name: it.product_name, unit: it.unit, planned: 0, delivered: 0, remaining: 0, excess: 0 };
         }
         totalsBySku[sku].planned   += it.planned;
         totalsBySku[sku].delivered += it.delivered;
         totalsBySku[sku].remaining += it.remaining;
+        totalsBySku[sku].excess    += it.excess || 0;
       }
     }
 
@@ -1751,9 +1777,11 @@ const Reports = {
         n_fulfilled: nFulfilled,
         n_pending: nPending,
         n_untouched: nUntouched,
+        n_extra: nExtra,
         total_planned_kg: totalPlannedKg,
         total_delivered_kg: totalDeliveredKg,
         total_remaining_kg: totalRemainingKg,
+        total_excess_kg: totalExcessKg,
         pct_delivered_kg: totalPlannedKg > 0
           ? Math.round((totalDeliveredKg / totalPlannedKg) * 1000) / 10
           : 0,

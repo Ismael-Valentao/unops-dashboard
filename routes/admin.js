@@ -1746,6 +1746,8 @@ router.get("/api/distribution/report/extensionist-export.xlsx", ah(async (req, r
   const C_DONE       = "FFBBF7D0";
   const C_PARTIAL    = "FFFEE2A8";
   const C_NONE       = "FFFECACA";
+  const C_EXTRA      = "FFF3E8FF"; // roxo claro para extras (fora do plano)
+  const C_EXTRA_TXT  = "FF6B21A8"; // roxo escuro
   const C_TXT_WHITE  = "FFFFFFFF";
 
   const fmtNum = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -1786,13 +1788,15 @@ router.get("/api/distribution/report/extensionist-export.xlsx", ah(async (req, r
   r++;
   const s = data.summary;
   const sumRows = [
-    ["Extensionistas (com plano > 0)", s.n_extensionists],
+    ["Extensionistas (total)",         s.n_extensionists],
     ["Plano cumprido a 100%",          s.n_fulfilled],
     ["Plano em curso (parcial)",       s.n_pending],
     ["Sem entrega ainda",              s.n_untouched],
+    ["Fora do plano (recebeu sem plano)", s.n_extra || 0],
     ["Total planeado (kg)",            fmtNum(s.total_planned_kg)],
     ["Total entregue (kg)",            fmtNum(s.total_delivered_kg)],
     ["Total por entregar (kg)",        fmtNum(s.total_remaining_kg)],
+    ["Total em excesso (fora do plano, kg)", fmtNum(s.total_excess_kg || 0)],
     ["% cumprido (kg)",                s.pct_delivered_kg + "%"],
   ];
   for (const [k, v] of sumRows) {
@@ -1911,7 +1915,8 @@ router.get("/api/distribution/report/extensionist-export.xlsx", ah(async (req, r
     ws.getCell(bodyRow, 1).value = i + 1;
     ws.getCell(bodyRow, 2).value = ext.extensionist_id;
     ws.getCell(bodyRow, 3).value = ext.nuit;
-    ws.getCell(bodyRow, 4).value = ext.name;
+    // Marca extras na coluna Nome com prefixo visual
+    ws.getCell(bodyRow, 4).value = ext.is_extra ? "[FORA DO PLANO] " + ext.name : ext.name;
     ws.getCell(bodyRow, 5).value = ext.province;
     ws.getCell(bodyRow, 6).value = ext.district;
     ws.getCell(bodyRow, 7).value = ext.posto;
@@ -1924,17 +1929,29 @@ router.get("/api/distribution/report/extensionist-export.xlsx", ah(async (req, r
       if (cell) {
         ws.getCell(bodyRow, baseCol).value     = fmtNum(cell.planned);
         ws.getCell(bodyRow, baseCol + 1).value = fmtNum(cell.delivered);
-        ws.getCell(bodyRow, baseCol + 2).value = fmtNum(cell.remaining);
+        // Coluna "Falta": mostra excesso como negativo se delivered > planned
+        const faltaOrExcess = (cell.excess && cell.excess > 0)
+          ? -fmtNum(cell.excess)        // negativo => excesso
+          : fmtNum(cell.remaining);     // positivo => falta
+        ws.getCell(bodyRow, baseCol + 2).value = faltaOrExcess;
         ws.getCell(bodyRow, baseCol).numFmt     = "#,##0.00";
         ws.getCell(bodyRow, baseCol + 1).numFmt = "#,##0.00";
-        ws.getCell(bodyRow, baseCol + 2).numFmt = "#,##0.00";
+        // Formato condicional: negativos a vermelho com prefixo + (visualmente "+N excesso")
+        ws.getCell(bodyRow, baseCol + 2).numFmt = "#,##0.00;[Red]\"+\"#,##0.00";
         // Cor da célula "Entregue" conforme estado
-        if (cell.planned > 0) {
-          let fillColor = null;
-          if (cell.delivered <= 0.001)              fillColor = C_NONE;
-          else if (cell.delivered >= cell.planned)  fillColor = C_DONE;
-          else                                       fillColor = C_PARTIAL;
+        let fillColor = null;
+        if (cell.is_extra)                          fillColor = C_EXTRA;
+        else if (cell.planned <= 0)                 fillColor = null;
+        else if (cell.delivered <= 0.001)           fillColor = C_NONE;
+        else if (cell.delivered >= cell.planned)    fillColor = C_DONE;
+        else                                         fillColor = C_PARTIAL;
+        if (fillColor) {
           ws.getCell(bodyRow, baseCol + 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+          if (cell.is_extra) {
+            // Para extras, pinta os 3 sub-cells de roxo claro
+            ws.getCell(bodyRow, baseCol).fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+            ws.getCell(bodyRow, baseCol + 2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+          }
         }
       } else {
         // Sem registo deste SKU para o extensionista — deixa branco
@@ -1951,15 +1968,27 @@ router.get("/api/distribution/report/extensionist-export.xlsx", ah(async (req, r
     // Totais kg
     ws.getCell(bodyRow, totalsBaseCol).value     = fmtNum(ext.total_planned_kg);
     ws.getCell(bodyRow, totalsBaseCol + 1).value = fmtNum(ext.total_delivered_kg);
-    ws.getCell(bodyRow, totalsBaseCol + 2).value = fmtNum(ext.total_remaining_kg);
+    // Falta total: negativo se excesso > 0
+    const totFaltaOrExcess = (ext.total_excess_kg && ext.total_excess_kg > 0)
+      ? -fmtNum(ext.total_excess_kg)
+      : fmtNum(ext.total_remaining_kg);
+    ws.getCell(bodyRow, totalsBaseCol + 2).value = totFaltaOrExcess;
     ws.getCell(bodyRow, totalsBaseCol).numFmt     = "#,##0.00";
     ws.getCell(bodyRow, totalsBaseCol + 1).numFmt = "#,##0.00";
-    ws.getCell(bodyRow, totalsBaseCol + 2).numFmt = "#,##0.00";
+    ws.getCell(bodyRow, totalsBaseCol + 2).numFmt = "#,##0.00;[Red]\"+\"#,##0.00";
     ws.getCell(bodyRow, totalsBaseCol).font     = { bold: true };
     ws.getCell(bodyRow, totalsBaseCol + 1).font = { bold: true };
     ws.getCell(bodyRow, totalsBaseCol + 2).font = { bold: true };
-    // Linhas alternadas
-    if (i % 2 === 0) {
+    // Linhas alternadas — extras ficam sempre com fundo roxo claro
+    if (ext.is_extra) {
+      for (let c = 1; c <= totalCols; c++) {
+        const cell = ws.getCell(bodyRow, c);
+        if (!cell.fill || !cell.fill.fgColor) {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_EXTRA } };
+        }
+        cell.font = { ...(cell.font || {}), color: { argb: C_EXTRA_TXT } };
+      }
+    } else if (i % 2 === 0) {
       for (let c = 1; c <= totalCols; c++) {
         const cell = ws.getCell(bodyRow, c);
         if (!cell.fill || !cell.fill.fgColor) {

@@ -74,7 +74,10 @@
     .ext-tbl td.sku-block.done { background:#dcfce7; }
     .ext-tbl td.sku-block.partial { background:#fef9c3; }
     .ext-tbl td.sku-block.none { background:#fee2e2; }
+    .ext-tbl td.sku-block.extra { background:#f3e8ff; }
     .ext-tbl td.sku-block.empty { background:transparent; color:#cbd5e1; text-align:center; }
+    .ext-tbl tr.row-extra { background:#faf5ff !important; box-shadow:inset 4px 0 0 #9333ea; }
+    .ext-tbl tr.row-extra:hover { background:#f3e8ff !important; }
     .ext-status-pill {
       display:inline-block; padding:.1rem .45rem; border-radius:99px;
       font-size:.66rem; font-weight:600;
@@ -82,6 +85,7 @@
     .ext-status-pill.done { background:#dcfce7; color:#166534; }
     .ext-status-pill.partial { background:#fef9c3; color:#854d0e; }
     .ext-status-pill.none { background:#fee2e2; color:#991b1b; }
+    .ext-status-pill.extra { background:#f3e8ff; color:#6b21a8; border:1px solid #d8b4fe; }
     .ext-summary-bar {
       background:#fff; border:1px solid #e2e8f0; border-radius:6px;
       padding:.75rem 1rem; margin-bottom:.75rem;
@@ -176,7 +180,9 @@
           <span class="ext-status-pill done">100% entregue</span>
           <span class="ext-status-pill partial">parcial</span>
           <span class="ext-status-pill none">sem entrega</span>
-          · Cada bloco mostra <strong>Plan</strong> / <strong>Entreg.</strong> / <strong>Falta</strong>.
+          <span class="ext-status-pill extra">fora do plano</span>
+          · Cada bloco mostra <strong>Plan</strong> / <strong>Entreg.</strong> / <strong>Falta ou Excesso</strong>.
+          Excesso marcado a <strong style="color:#7c2d12">+N kg</strong> indica entregas além do planeado (provável duplicação de IDs).
           O Excel inclui esta vista em formato wide com formatação automática.
         </p>
       </div>
@@ -402,11 +408,15 @@
 
       // ── Por Extensionista ────────────────────────────────
       function renderExtSummary(s) {
+        const extraBlock = (s.n_extra && s.n_extra > 0)
+          ? `<span style="color:#9333ea">⚠ <strong>${fmt(s.n_extra)}</strong> fora do plano (+${fmt(s.total_excess_kg || 0)} kg)</span>`
+          : "";
         $("#ext-summary").innerHTML = `
-          <span><strong>${fmt(s.n_extensionists)}</strong> extensionistas com plano</span>
+          <span><strong>${fmt(s.n_extensionists)}</strong> extensionistas</span>
           <span style="color:#15803d">✓ <strong>${fmt(s.n_fulfilled)}</strong> a 100%</span>
           <span style="color:#b45309">⏳ <strong>${fmt(s.n_pending)}</strong> em curso</span>
           <span style="color:#b91c1c">✗ <strong>${fmt(s.n_untouched)}</strong> sem entrega</span>
+          ${extraBlock}
           <span style="margin-left:auto">
             <strong>${fmt(s.total_delivered_kg)} kg</strong> de ${fmt(s.total_planned_kg)} kg planeados
             (${s.pct_delivered_kg}%) · falta <strong style="color:#b45309">${fmt(s.total_remaining_kg)} kg</strong>
@@ -415,9 +425,11 @@
       }
 
       function statusOf(item) {
-        if (!item || item.planned <= 0) return "empty";
-        if (item.delivered >= item.planned)        return "done";
-        if (item.delivered <= 0.001)               return "none";
+        if (!item)                              return "empty";
+        if (item.is_extra)                      return "extra";   // delivered>0 mas plano=0
+        if (item.planned <= 0)                  return "empty";
+        if (item.delivered >= item.planned)     return "done";
+        if (item.delivered <= 0.001)            return "none";
         return "partial";
       }
 
@@ -438,11 +450,11 @@
           ${skus.map(() => `
             <th class="num" style="background:#bae6fd;color:#0c4a6e">Plan</th>
             <th class="num" style="background:#bbf7d0;color:#14532d">Entreg.</th>
-            <th class="num" style="background:#fde68a;color:#78350f">Falta</th>
+            <th class="num" style="background:#fde68a;color:#78350f">Falta/Exc.</th>
           `).join("")}
           <th class="num" style="background:#bae6fd;color:#0c4a6e">Plan</th>
           <th class="num" style="background:#bbf7d0;color:#14532d">Entreg.</th>
-          <th class="num" style="background:#fde68a;color:#78350f">Falta</th>
+          <th class="num" style="background:#fde68a;color:#78350f">Falta/Exc.</th>
         </tr>`;
         $("#ext-head").innerHTML = head;
 
@@ -451,6 +463,16 @@
           return;
         }
 
+        // Formata célula "Falta/Excesso": vermelho para falta, roxo para excesso
+        const renderFaltaCell = (item, cls) => {
+          if (item.excess && item.excess > 0) {
+            return `<td class="sku-block ${cls}" title="Excesso: ${fmt(item.excess)} kg entregues além do plano">
+              <span style="color:#7c2d12;font-weight:700">+${fmt(item.excess)}</span>
+            </td>`;
+          }
+          return `<td class="sku-block ${cls}"><span class="rem">${fmt(item.remaining)}</span></td>`;
+        };
+
         const body = exts.map((e, i) => {
           const cells = skus.map((s) => {
             const item = e.items[s.sku];
@@ -458,20 +480,28 @@
             const cls = statusOf(item);
             return `<td class="sku-block ${cls}"><span class="pll">${fmt(item.planned)}</span></td>
                     <td class="sku-block ${cls}"><span class="del">${fmt(item.delivered)}</span></td>
-                    <td class="sku-block ${cls}"><span class="rem">${fmt(item.remaining)}</span></td>`;
+                    ${renderFaltaCell(item, cls)}`;
           }).join("");
-          const totalCls = e.total_planned_kg > 0 && e.total_delivered_kg >= e.total_planned_kg
-            ? "done" : (e.total_delivered_kg <= 0.001 && e.total_planned_kg > 0 ? "none" : "partial");
-          return `<tr>
+          let totalCls = "partial";
+          if (e.is_extra) totalCls = "extra";
+          else if (e.total_planned_kg > 0 && e.total_delivered_kg >= e.total_planned_kg) totalCls = "done";
+          else if (e.total_delivered_kg <= 0.001 && e.total_planned_kg > 0) totalCls = "none";
+          const extraBadge = e.is_extra
+            ? `<span class="ext-status-pill extra" title="Beneficiário fora do plano original">FORA DO PLANO</span>`
+            : "";
+          const totalFalta = (e.total_excess_kg || 0) > 0
+            ? `<td class="sku-block ${totalCls}" title="Excesso total: ${fmt(e.total_excess_kg)} kg"><span style="color:#7c2d12;font-weight:700">+${fmt(e.total_excess_kg)}</span></td>`
+            : `<td class="sku-block ${totalCls}"><span class="rem">${fmt(e.total_remaining_kg)}</span></td>`;
+          return `<tr class="${e.is_extra ? 'row-extra' : ''}">
             <td>${i + 1}</td>
-            <td><strong>${esc(e.name)}</strong><br><span style="font-size:.66rem;color:#64748b">${esc(e.extensionist_id)}${e.nuit ? " · NUIT " + esc(e.nuit) : ""}</span></td>
+            <td><strong>${esc(e.name)}</strong> ${extraBadge}<br><span style="font-size:.66rem;color:#64748b">${esc(e.extensionist_id)}${e.nuit ? " · NUIT " + esc(e.nuit) : ""}</span></td>
             <td>${esc(e.province || "—")}</td>
             <td>${esc(e.district || "—")}</td>
             <td>${esc(e.posto || "—")}</td>
             ${cells}
             <td class="sku-block ${totalCls}"><span class="pll">${fmt(e.total_planned_kg)}</span></td>
             <td class="sku-block ${totalCls}"><span class="del">${fmt(e.total_delivered_kg)}</span></td>
-            <td class="sku-block ${totalCls}"><span class="rem">${fmt(e.total_remaining_kg)}</span></td>
+            ${totalFalta}
           </tr>`;
         }).join("");
         $("#ext-body").innerHTML = body;
