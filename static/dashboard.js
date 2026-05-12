@@ -2015,14 +2015,42 @@
     const items = all.slice(0, 20);
     const labels = items.map((d) => d.district);
 
+    // Quebra dos totais por distrito em (kg sem sacos) + (sacos em un).
+    // Usa pvdData.details para isolar sacos: tudo que NAO eh saco entra em kg,
+    // e sacos passam para un (delivered_kg ja em kg-equivalente, divide por 0.145).
+    const SACO = 0.145;
+    const kgPlannedByDist = {};   // district -> kg sem sacos
+    const kgDeliveredByDist = {};
+    const unPlannedByDist = {};   // district -> sacos em un
+    const unDeliveredByDist = {};
+    if (pvdData && Array.isArray(pvdData.details)) {
+      pvdData.details.forEach((it) => {
+        const dist = it.district || "";
+        const isSaco = isSacoProduct(it.product);
+        if (isSaco) {
+          unPlannedByDist[dist]   = (unPlannedByDist[dist]   || 0) + (Number(it.planned_kg)   || 0) / SACO;
+          unDeliveredByDist[dist] = (unDeliveredByDist[dist] || 0) + (Number(it.delivered_kg) || 0) / SACO;
+        } else {
+          kgPlannedByDist[dist]   = (kgPlannedByDist[dist]   || 0) + (Number(it.planned_kg)   || 0);
+          kgDeliveredByDist[dist] = (kgDeliveredByDist[dist] || 0) + (Number(it.delivered_kg) || 0);
+        }
+      });
+    }
+    const kgPlanned   = labels.map((d) => kgPlannedByDist[d]   || 0);
+    const kgDelivered = labels.map((d) => kgDeliveredByDist[d] || 0);
+    const unPlanned   = labels.map((d) => unPlannedByDist[d]   || 0);
+    const unDelivered = labels.map((d) => unDeliveredByDist[d] || 0);
+
     if (chartPvdDistrict) chartPvdDistrict.destroy();
     chartPvdDistrict = new Chart($("#chart-pvd-district"), {
       type: "bar",
       data: {
         labels,
         datasets: [
-          { label: "Planeado (kg)", data: items.map((d) => d.planned_kg), backgroundColor: "rgba(15,76,117,.7)", borderRadius: 4 },
-          { label: "Entregue (kg)", data: items.map((d) => d.delivered_kg), backgroundColor: "rgba(27,122,90,.8)", borderRadius: 4 },
+          { label: "Planeado (kg)",   data: kgPlanned,   backgroundColor: "rgba(15,76,117,.75)",  borderRadius: 4, yAxisID: "yKg",  stack: "kg" },
+          { label: "Entregue (kg)",   data: kgDelivered, backgroundColor: "rgba(27,122,90,.85)",  borderRadius: 4, yAxisID: "yKg",  stack: "kg" },
+          { label: "Sacos planeados (un)", data: unPlanned,   backgroundColor: "rgba(124,58,237,.6)",  borderRadius: 4, yAxisID: "yUn", stack: "un" },
+          { label: "Sacos entregues (un)", data: unDelivered, backgroundColor: "rgba(124,58,237,.9)",  borderRadius: 4, yAxisID: "yUn", stack: "un" },
         ],
       },
       options: {
@@ -2031,13 +2059,28 @@
           legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } },
           tooltip: {
             callbacks: {
-              afterBody: () => "Sacos hermeticos: convertidos a 0.145 kg/un",
+              label: (ctx) => {
+                const isUn = ctx.dataset.yAxisID === "yUn";
+                const val = Number(ctx.parsed.y) || 0;
+                return ctx.dataset.label + ": " +
+                  val.toLocaleString("pt-PT", { maximumFractionDigits: 0 }) +
+                  (isUn ? " un" : " kg");
+              },
             },
           },
         },
         scales: {
           x: { grid: { display: false }, ticks: { font: { size: 9 }, maxRotation: 45 } },
-          y: { grid: { color: "#f1f5f9" }, ticks: { font: { size: 9 } } },
+          yKg: {
+            position: "left", beginAtZero: true,
+            grid: { color: "#f1f5f9" }, ticks: { font: { size: 9 } },
+            title: { display: true, text: "kg (sementes + químicos)", font: { size: 10 }, color: "#0f4c75" },
+          },
+          yUn: {
+            position: "right", beginAtZero: true,
+            grid: { display: false }, ticks: { font: { size: 9 }, color: "#7c3aed" },
+            title: { display: true, text: "un (sacos hermeticos)", font: { size: 10 }, color: "#7c3aed" },
+          },
         },
       },
     });
