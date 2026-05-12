@@ -744,6 +744,35 @@
     return name;
   }
 
+  // Sacos hermeticos: armazenados em kg-equivalente (qty × 0.145) mas tipicamente
+  // contados em unidades. Helpers para mostrar correctamente nos gráficos.
+  function isSacoProduct(name) {
+    if (!name) return false;
+    const lower = String(name).toLowerCase();
+    return lower.includes("saco") || lower.includes("hermetic");
+  }
+  // Converte qty (em kg interno) para a unidade de display do produto.
+  // Devolve { value, unit } onde value é o número a mostrar e unit é "kg" ou "un".
+  function displayQty(qtyKg, productName) {
+    if (isSacoProduct(productName)) {
+      return { value: (Number(qtyKg) || 0) / SACO_KG_PER_UNIT, unit: "un" };
+    }
+    return { value: Number(qtyKg) || 0, unit: "kg" };
+  }
+  // Formata para tooltip: "1.234,5 un" ou "1.234,5 kg"
+  function fmtQtyForProduct(qtyKg, productName) {
+    const d = displayQty(qtyKg, productName);
+    return d.value.toLocaleString("pt-PT", { maximumFractionDigits: 1 }) + " " + d.unit;
+  }
+  // Apêndice de unidade no label de legenda. Idempotente: se o nome já termina
+  // com "(un)" (caso comum: "Hermetic bags (un)") devolve tal e qual; só anexa
+  // quando o nome dum saco não tem essa marcação ainda.
+  function labelWithUnit(productName) {
+    if (!isSacoProduct(productName)) return productName;
+    if (/\(un\)\s*$/i.test(productName)) return productName;
+    return productName + " (un)";
+  }
+
   function renderDistrictChart() {
     // Aggregate delivered qty per district AND per product
     const totalByDistrict = {};       // district -> total delivered_kg
@@ -781,8 +810,11 @@
     function fmtNum(n) { return Number(n).toLocaleString("pt-PT", { maximumFractionDigits: 1 }); }
 
     // One dataset per product, stacked horizontal bars
+    // Os valores ficam em kg-equivalente para os totais somarem coerentemente.
+    // O tooltip mostra cada produto na sua unidade natural (sacos em un).
     const datasets = products.map((p, i) => ({
-      label: p,
+      label: labelWithUnit(p),
+      _rawProduct: p, // referência original para tooltips/breakdowns
       data: labels.map((d) => +(districtProducts[d][p] || 0).toFixed(1)),
       backgroundColor: PRODUCT_PALETTE[i % PRODUCT_PALETTE.length],
       borderRadius: 3,
@@ -827,10 +859,13 @@
                   if (deliv <= 0) return;
                   const plan = planned[canonicalProduct(prod)] || planned[prod] || 0;
                   const pct = plan > 0 ? ((deliv / plan) * 100).toFixed(1) : "—";
-                  const planTxt = plan > 0 ? fmtNum(plan) : "?";
+                  // Sacos hermeticos sao mostrados em unidades (deliv interno em kg)
+                  const planDisp = displayQty(plan, prod);
+                  const delivDisp = displayQty(deliv, prod);
+                  const planTxt = plan > 0 ? fmtNum(planDisp.value) + " " + planDisp.unit : "?";
                   lines.push("  " + prod);
-                  lines.push("    Planeado: " + planTxt + " kg");
-                  lines.push("    Entregue: " + fmtNum(deliv) + " kg" +
+                  lines.push("    Planeado: " + planTxt);
+                  lines.push("    Entregue: " + fmtNum(delivDisp.value) + " " + delivDisp.unit +
                     (plan > 0 ? "  (" + pct + "%)" : ""));
                 });
                 return lines;
@@ -966,10 +1001,12 @@
       return tb - ta;
     });
 
-    // Distinct color palette
+    // Distinct color palette. Sacos hermeticos: stack em kg-equivalente para
+    // os totais somarem, tooltip mostra em unidades (un).
     const palette = PRODUCT_PALETTE;
     const datasets = products.map((p, i) => ({
-      label: p,
+      label: labelWithUnit(p),
+      _rawProduct: p,
       data: sortedDates.map((d) => +(dateProductMap[d][p] || 0).toFixed(1)),
       backgroundColor: palette[i % palette.length],
       borderRadius: 3,
@@ -988,9 +1025,25 @@
           tooltip: {
             mode: "index",
             callbacks: {
+              // Cada linha do tooltip: mostra o produto na sua unidade natural
+              label: (ctx) => {
+                const ds = ctx.dataset;
+                const raw = ds._rawProduct || ds.label;
+                const d = displayQty(ctx.parsed.y, raw);
+                return ds.label + ": " + d.value.toLocaleString("pt-PT", { maximumFractionDigits: 1 }) + " " + d.unit;
+              },
               footer: (items) => {
-                const tot = items.reduce((s, it) => s + (Number(it.parsed.y) || 0), 0);
-                return "Total: " + tot.toLocaleString("pt-PT") + " kg";
+                // Totais kg (só produtos kg) + Totais un (só sacos)
+                let totalKg = 0, totalUn = 0;
+                items.forEach((it) => {
+                  const raw = it.dataset._rawProduct || it.dataset.label;
+                  if (isSacoProduct(raw)) totalUn += (Number(it.parsed.y) || 0) / SACO_KG_PER_UNIT;
+                  else                    totalKg += Number(it.parsed.y) || 0;
+                });
+                const lines = [];
+                if (totalKg > 0) lines.push("Total kg: " + totalKg.toLocaleString("pt-PT", { maximumFractionDigits: 0 }) + " kg");
+                if (totalUn > 0) lines.push("Total sacos: " + Math.round(totalUn).toLocaleString("pt-PT") + " un");
+                return lines.join(" · ");
               },
             },
           },
@@ -998,7 +1051,7 @@
         scales: {
           x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 45, font: { size: 10 } } },
           y: { stacked: true, beginAtZero: true, grid: { color: "#f1f5f9" }, ticks: { font: { size: 9 } },
-            title: { display: true, text: "Quantidade (kg)", font: { size: 10 } } },
+            title: { display: true, text: "Quantidade (kg / kg-equiv. para sacos)", font: { size: 10 } } },
         },
       },
     });
@@ -1974,7 +2027,14 @@
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } } },
+        plugins: {
+          legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } },
+          tooltip: {
+            callbacks: {
+              afterBody: () => "Sacos hermeticos: convertidos a 0.145 kg/un",
+            },
+          },
+        },
         scales: {
           x: { grid: { display: false }, ticks: { font: { size: 9 }, maxRotation: 45 } },
           y: { grid: { color: "#f1f5f9" }, ticks: { font: { size: 9 } } },
@@ -1985,10 +2045,27 @@
 
   function renderPvdProductChart() {
     const items = pvdData.by_product;
-    const labels = items.map((p) => p.product);
+    // Para sacos hermeticos: converte valores kg → un (cada linha eh um produto
+    // separado, portanto nao ha problema de mistura de unidades no eixo X).
+    // Cada item armazena os valores de DISPLAY (un para sacos, kg para outros).
+    const displayItems = items.map((p) => {
+      const planned = displayQty(p.planned_kg, p.product);
+      const delivered = displayQty(p.delivered_kg, p.product);
+      return {
+        product: labelWithUnit(p.product),
+        raw_product: p.product,
+        unit: planned.unit,
+        planned_display: planned.value,
+        delivered_display: delivered.value,
+        // Preserva os kg originais para o calculo de %
+        planned_raw_kg: p.planned_kg,
+        delivered_raw_kg: p.delivered_kg,
+      };
+    });
+    const labels = displayItems.map((p) => p.product);
     // Build "Entregue (X%)" labels with the execution % per product
-    const deliveredLabels = items.map((p) => {
-      const pct = p.planned_kg > 0 ? (p.delivered_kg / p.planned_kg * 100) : 0;
+    const deliveredLabels = displayItems.map((p) => {
+      const pct = p.planned_raw_kg > 0 ? (p.delivered_raw_kg / p.planned_raw_kg * 100) : 0;
       return pct.toFixed(1) + "%";
     });
 
@@ -1998,8 +2075,8 @@
       data: {
         labels,
         datasets: [
-          { label: "Planeado (kg)", data: items.map((p) => p.planned_kg), backgroundColor: "rgba(15,76,117,.7)", borderRadius: 4 },
-          { label: "Entregue (kg)", data: items.map((p) => p.delivered_kg), backgroundColor: "rgba(27,122,90,.8)", borderRadius: 4,
+          { label: "Planeado", data: displayItems.map((p) => p.planned_display), backgroundColor: "rgba(15,76,117,.7)", borderRadius: 4 },
+          { label: "Entregue", data: displayItems.map((p) => p.delivered_display), backgroundColor: "rgba(27,122,90,.8)", borderRadius: 4,
             _pctLabels: deliveredLabels },
         ],
       },
@@ -2011,11 +2088,11 @@
           tooltip: {
             callbacks: {
               label: function(ctx) {
+                const p = displayItems[ctx.dataIndex];
                 const val = ctx.parsed.x;
-                const base = ctx.dataset.label + ": " + Number(val).toLocaleString("pt-PT");
+                const base = ctx.dataset.label + ": " + Number(val).toLocaleString("pt-PT", { maximumFractionDigits: 1 }) + " " + p.unit;
                 if (ctx.datasetIndex === 1) {
-                  const p = items[ctx.dataIndex];
-                  const pct = p.planned_kg > 0 ? (p.delivered_kg / p.planned_kg * 100) : 0;
+                  const pct = p.planned_raw_kg > 0 ? (p.delivered_raw_kg / p.planned_raw_kg * 100) : 0;
                   return base + "  (" + pct.toFixed(1) + "% do planeado)";
                 }
                 return base;
