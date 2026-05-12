@@ -2010,36 +2010,51 @@
 
   function renderPvdDistrictChart() {
     const provFilter = ($("#pvd-chart-province") || {}).value || "";
-    let all = pvdData.by_district.filter((d) => d.planned_kg > 0);
-    if (provFilter) all = all.filter((d) => d.province === provFilter);
-    const items = all.slice(0, 20);
-    const labels = items.map((d) => d.district);
-
-    // Quebra dos totais por distrito em (kg sem sacos) + (sacos em un).
-    // Usa pvdData.details para isolar sacos: tudo que NAO eh saco entra em kg,
-    // e sacos passam para un (delivered_kg ja em kg-equivalente, divide por 0.145).
+    const skuFilter  = ($("#pvd-chart-sku")      || {}).value || ""; // "", "Milho", "Sacos Hermeticos", etc.
+    const isSacoFilter = isSacoProduct(skuFilter);
     const SACO = 0.145;
-    const kgPlannedByDist = {};   // district -> kg sem sacos
-    const kgDeliveredByDist = {};
-    const unPlannedByDist = {};   // district -> sacos em un
-    const unDeliveredByDist = {};
-    if (pvdData && Array.isArray(pvdData.details)) {
+
+    // Dados a mostrar: se ha filtro de produto, usa pvdData.details filtrado;
+    // caso contrario, usa o agregado pvdData.by_district.
+    let labels, planned, delivered, unitLabel;
+
+    if (skuFilter) {
+      // Filtra details por produto (canonico). Agrupa por distrito.
+      const agg = {}; // district -> { plan, del }
       pvdData.details.forEach((it) => {
-        const dist = it.district || "";
-        const isSaco = isSacoProduct(it.product);
-        if (isSaco) {
-          unPlannedByDist[dist]   = (unPlannedByDist[dist]   || 0) + (Number(it.planned_kg)   || 0) / SACO;
-          unDeliveredByDist[dist] = (unDeliveredByDist[dist] || 0) + (Number(it.delivered_kg) || 0) / SACO;
-        } else {
-          kgPlannedByDist[dist]   = (kgPlannedByDist[dist]   || 0) + (Number(it.planned_kg)   || 0);
-          kgDeliveredByDist[dist] = (kgDeliveredByDist[dist] || 0) + (Number(it.delivered_kg) || 0);
-        }
+        const prod = it.product || "";
+        if (prod !== skuFilter) return;
+        if (provFilter && it.province !== provFilter) return;
+        if (!agg[it.district]) agg[it.district] = { plan: 0, del: 0 };
+        agg[it.district].plan += Number(it.planned_kg)   || 0;
+        agg[it.district].del  += Number(it.delivered_kg) || 0;
       });
+      // Para sacos: valores estao em kg-equivalente; converte para un
+      const conv = isSacoFilter ? (v) => v / SACO : (v) => v;
+      const arr = Object.entries(agg)
+        .map(([d, v]) => ({ district: d, plan: conv(v.plan), del: conv(v.del) }))
+        .filter((x) => x.plan > 0)
+        .sort((a, b) => b.plan - a.plan)
+        .slice(0, 20);
+      labels    = arr.map((x) => x.district);
+      planned   = arr.map((x) => x.plan);
+      delivered = arr.map((x) => x.del);
+      unitLabel = isSacoFilter ? "un" : "kg";
+    } else {
+      // Sem filtro de produto: comportamento original (todos em kg, sacos em kg-equiv)
+      let all = pvdData.by_district.filter((d) => d.planned_kg > 0);
+      if (provFilter) all = all.filter((d) => d.province === provFilter);
+      const items = all.slice(0, 20);
+      labels    = items.map((d) => d.district);
+      planned   = items.map((d) => d.planned_kg);
+      delivered = items.map((d) => d.delivered_kg);
+      unitLabel = "kg";
     }
-    const kgPlanned   = labels.map((d) => kgPlannedByDist[d]   || 0);
-    const kgDelivered = labels.map((d) => kgDeliveredByDist[d] || 0);
-    const unPlanned   = labels.map((d) => unPlannedByDist[d]   || 0);
-    const unDelivered = labels.map((d) => unDeliveredByDist[d] || 0);
+
+    // Cores diferentes para sacos vs kg, para o user ver de imediato a mudanca de unidade
+    const bgPlan = isSacoFilter ? "rgba(124,58,237,.6)" : "rgba(15,76,117,.7)";
+    const bgDel  = isSacoFilter ? "rgba(124,58,237,.9)" : "rgba(27,122,90,.8)";
+    const axisColor = isSacoFilter ? "#7c3aed" : "#0f4c75";
 
     if (chartPvdDistrict) chartPvdDistrict.destroy();
     chartPvdDistrict = new Chart($("#chart-pvd-district"), {
@@ -2047,10 +2062,8 @@
       data: {
         labels,
         datasets: [
-          { label: "Planeado (kg)",   data: kgPlanned,   backgroundColor: "rgba(15,76,117,.75)",  borderRadius: 4, yAxisID: "yKg",  stack: "kg" },
-          { label: "Entregue (kg)",   data: kgDelivered, backgroundColor: "rgba(27,122,90,.85)",  borderRadius: 4, yAxisID: "yKg",  stack: "kg" },
-          { label: "Sacos planeados (un)", data: unPlanned,   backgroundColor: "rgba(124,58,237,.6)",  borderRadius: 4, yAxisID: "yUn", stack: "un" },
-          { label: "Sacos entregues (un)", data: unDelivered, backgroundColor: "rgba(124,58,237,.9)",  borderRadius: 4, yAxisID: "yUn", stack: "un" },
+          { label: "Planeado (" + unitLabel + ")", data: planned,   backgroundColor: bgPlan, borderRadius: 4 },
+          { label: "Entregue (" + unitLabel + ")", data: delivered, backgroundColor: bgDel,  borderRadius: 4 },
         ],
       },
       options: {
@@ -2060,26 +2073,20 @@
           tooltip: {
             callbacks: {
               label: (ctx) => {
-                const isUn = ctx.dataset.yAxisID === "yUn";
                 const val = Number(ctx.parsed.y) || 0;
                 return ctx.dataset.label + ": " +
-                  val.toLocaleString("pt-PT", { maximumFractionDigits: 0 }) +
-                  (isUn ? " un" : " kg");
+                  val.toLocaleString("pt-PT", { maximumFractionDigits: 0 }) + " " + unitLabel;
               },
+              afterBody: () => skuFilter ? null : "Sacos hermeticos: convertidos a 0.145 kg/un",
             },
           },
         },
         scales: {
           x: { grid: { display: false }, ticks: { font: { size: 9 }, maxRotation: 45 } },
-          yKg: {
-            position: "left", beginAtZero: true,
+          y: {
+            beginAtZero: true,
             grid: { color: "#f1f5f9" }, ticks: { font: { size: 9 } },
-            title: { display: true, text: "kg (sementes + químicos)", font: { size: 10 }, color: "#0f4c75" },
-          },
-          yUn: {
-            position: "right", beginAtZero: true,
-            grid: { display: false }, ticks: { font: { size: 9 }, color: "#7c3aed" },
-            title: { display: true, text: "un (sacos hermeticos)", font: { size: 10 }, color: "#7c3aed" },
+            title: { display: !!skuFilter, text: unitLabel, font: { size: 10 }, color: axisColor },
           },
         },
       },
@@ -2476,6 +2483,11 @@
     $("#pvd-chart-province").addEventListener("change", () => {
       if (pvdData) renderPvdDistrictChart();
     });
+    if ($("#pvd-chart-sku")) {
+      $("#pvd-chart-sku").addEventListener("change", () => {
+        if (pvdData) renderPvdDistrictChart();
+      });
+    }
     $("#pvd-search").addEventListener("input", (e) => {
       pvdSearchTerm = e.target.value.trim();
       pvdPage = 1;
