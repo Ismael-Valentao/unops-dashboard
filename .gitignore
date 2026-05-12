@@ -5,6 +5,7 @@ data/snapshots.db-shm
 data/uploads/
 data/maap-conflitos-*.xlsx
 data/servicos.bak.*.xlsx
+data/Planeamento_Actualizado.xlsx.bak-*
 data/sample-*.pdf
 data/sample-*.xlsx
 data/sms-report.xlsx
