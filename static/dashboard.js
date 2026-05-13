@@ -2590,6 +2590,8 @@
     }
 
     async function loadLogistics() {
+      // Guard: se a UI da seccao foi removida, nao faz fetch nem render
+      if (!document.getElementById("logistics-content")) return;
       try {
         const res = await fetch("/api/logistics/compare");
         if (!res.ok) { alert("Erro ao carregar dados logísticos"); return; }
@@ -2600,10 +2602,15 @@
 
     function renderLogistics() {
       if (!logisticsData) return;
+      // Guard: UI nao presente → sai cedo para evitar 'null.style'
+      const emptyEl = document.getElementById("logistics-empty");
+      const contentEl = document.getElementById("logistics-content");
+      if (!emptyEl || !contentEl) return;
       const s = logisticsData.summary;
-      $("#logistics-empty").style.display = "none";
-      $("#logistics-content").style.display = "";
-      $("#btn-export-logistics").style.display = "";
+      emptyEl.style.display = "none";
+      contentEl.style.display = "";
+      const exportBtn = document.getElementById("btn-export-logistics");
+      if (exportBtn) exportBtn.style.display = "";
 
       const fmtP = (n) => Number(n).toLocaleString("pt-PT", { maximumFractionDigits: 0 }) + " kg";
       $("#log-concluidos").textContent = s.concluidos.toLocaleString("pt-PT");
