@@ -672,6 +672,71 @@ app.get("/api/data", (_req, res) => {
   res.json({ rows: cache.data, last_updated: cache.lastUpdated });
 });
 
+// ── Integração ADICIONAL DMS API ────────────────────────────
+// Diagnostic + smoke test para a integração com a API de Servicos
+// do sistema ADICIONAL (portaldms.adicional.co.mz). Permite ao
+// operador testar credenciais e ver a lista de servicos disponivel
+// antes de configurar sync automatico.
+const adicionalApi = require("./lib/adicional-api");
+
+// GET /api/admin/adicional/status — diagnostico sem chamar /api/projects
+app.get("/api/admin/adicional/status", auth.requireRole("admin", "superadmin"), async (_req, res) => {
+  try {
+    const status = adicionalApi.tokenStatus();
+    // Tenta obter token (refresh se preciso) — confirma que creds funcionam
+    let tokenOk = false, tokenErr = null;
+    try { await adicionalApi.getToken(); tokenOk = true; }
+    catch (e) { tokenErr = e.message; }
+    res.json({
+      ...status,
+      token_fetch_ok: tokenOk,
+      token_fetch_error: tokenErr,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/adicional/projects?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD
+//     [&summary=1] — só devolve estatisticas (status/sku/provincia distrib.)
+//     [&raw=1]     — devolve a resposta crua da API ADICIONAL
+app.get("/api/admin/adicional/projects", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const fromDate = req.query.fromDate || "";
+    const toDate   = req.query.toDate   || "";
+    if (!fromDate || !toDate) return res.status(400).json({ error: "fromDate e toDate obrigatórios (YYYY-MM-DD)" });
+    const data = await adicionalApi.listProjects({ fromDate, toDate });
+    const arr = Array.isArray(data) ? data : (data?.data || []);
+    if (req.query.raw === "1") return res.json(arr);
+
+    // Sumário rápido
+    const byStatus = {}, byPlan = {}, bySku = {}, byProvince = {}, byDistrict = {};
+    let totalWeight = 0, totalVolumes = 0;
+    for (const r of arr) {
+      byStatus[r.StatusName || "(sem)"]      = (byStatus[r.StatusName || "(sem)"] || 0) + 1;
+      byPlan[r.InvoicePlanName || "(sem)"]   = (byPlan[r.InvoicePlanName || "(sem)"] || 0) + 1;
+      bySku[r.SKU || "(sem)"]                = (bySku[r.SKU || "(sem)"] || 0) + 1;
+      byProvince[r.ReceiverAddress || "(sem)"]  = (byProvince[r.ReceiverAddress || "(sem)"] || 0) + 1;
+      byDistrict[r.ReceiverPostalPlace || "(sem)"] = (byDistrict[r.ReceiverPostalPlace || "(sem)"] || 0) + 1;
+      totalWeight += Number(r.Weight) || 0;
+      totalVolumes += Number(r.VolumesQty) || 0;
+    }
+    res.json({
+      period: { fromDate, toDate },
+      count: arr.length,
+      totals: { weight: totalWeight, volumes: totalVolumes },
+      by_status: byStatus,
+      by_plan: byPlan,
+      by_sku: bySku,
+      by_province: byProvince,
+      by_district: byDistrict,
+      sample: arr[0] || null,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post("/api/refresh", async (_req, res) => {
   await refreshCache();
   res.json({ rows: cache.data, last_updated: cache.lastUpdated });
