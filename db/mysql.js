@@ -278,6 +278,20 @@ async function migrate() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
   );
 
+  // Migração idempotente: adiciona coluna deleted_at se ainda não existe.
+  // Marca rows que desapareceram da Google Sheet (user editou/eliminou
+  // submissões erradas). audit-capture.js seta isto quando uma row não
+  // aparece num fetch — e des-seta se a row reaparecer.
+  try {
+    const [cols] = await getPool().query(
+      "SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'delivery_audit' AND column_name = 'deleted_at'"
+    );
+    if (cols && cols[0] && Number(cols[0].n) === 0) {
+      await getPool().query("ALTER TABLE delivery_audit ADD COLUMN deleted_at DATETIME NULL AFTER last_seen_at");
+      await getPool().query("ALTER TABLE delivery_audit ADD INDEX idx_audit_deleted (deleted_at)");
+    }
+  } catch (e) { /* idempotente — se falhar não bloqueia */ }
+
   // ── Audit-history (histórico de mudanças de status) ────────
   // Sempre que delivery_audit.verification_status muda, gravamos
   // 1 row aqui para forensics: "este GTU passou de Pending → Verified

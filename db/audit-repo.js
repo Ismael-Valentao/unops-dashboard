@@ -38,7 +38,8 @@ async function counts() {
        SUM(CASE WHEN detected_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS this_week,
        SUM(CASE WHEN detected_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
                 AND detected_date <  DATE_SUB(CURDATE(), INTERVAL 7 DAY)  THEN 1 ELSE 0 END) AS prev_week
-     FROM delivery_audit`
+     FROM delivery_audit
+     WHERE deleted_at IS NULL`
   );
   const num = (k) => Number((r || {})[k]) || 0;
   const thisWeek = num("this_week");
@@ -75,6 +76,7 @@ async function rankSubmitters(opts = {}) {
                 THEN TIMESTAMPDIFF(HOUR, detected_at, status_changed_at) END) AS avg_verif_hours
      FROM delivery_audit
      WHERE submitted_by IS NOT NULL AND submitted_by <> ''
+       AND deleted_at IS NULL
      GROUP BY submitted_by
      ORDER BY total DESC
      LIMIT ${limit}`
@@ -89,6 +91,7 @@ async function rankSubmitters(opts = {}) {
        FROM delivery_audit
        WHERE submitted_by IN (${placeholders})
          AND detected_date >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+         AND deleted_at IS NULL
        GROUP BY submitted_by, detected_date`,
       emails
     );
@@ -125,6 +128,7 @@ async function timeline(days = 30) {
             SUM(CASE WHEN verification_status = 'Rejected'             THEN 1 ELSE 0 END) AS rejected
      FROM delivery_audit
      WHERE detected_date >= DATE_SUB(CURDATE(), INTERVAL ${d} DAY)
+       AND deleted_at IS NULL
      GROUP BY detected_date ORDER BY detected_date ASC`
   );
 }
@@ -150,6 +154,9 @@ async function list(opts = {}) {
     where.push("(gtu LIKE ? OR adsn LIKE ? OR beneficiary_name LIKE ?)");
     params.push(term, term, term);
   }
+  // Por default exclui rows marcadas como deleted (submissões apagadas da
+  // sheet). Para ver rows apagadas (auditoria), passa opts.include_deleted=true.
+  if (!opts.include_deleted) where.push("deleted_at IS NULL");
   const w = where.length ? "WHERE " + where.join(" AND ") : "";
 
   // Pagination
@@ -225,6 +232,7 @@ async function topDistricts(limit = 15) {
             COUNT(DISTINCT submitted_by) AS submitters
      FROM delivery_audit
      WHERE district IS NOT NULL AND district <> ''
+       AND deleted_at IS NULL
      GROUP BY district, province
      ORDER BY total DESC LIMIT ${lim}`
   );
@@ -237,6 +245,7 @@ async function topProducts(limit = 10) {
             SUM(delivered_qty) AS qty_total
      FROM delivery_audit
      WHERE product IS NOT NULL AND product <> ''
+       AND deleted_at IS NULL
      GROUP BY product, unit
      ORDER BY total DESC LIMIT ${lim}`
   );
@@ -255,6 +264,7 @@ async function anomalies() {
        FROM delivery_audit
        WHERE submitted_by IS NOT NULL AND submitted_by <> ''
          AND detected_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
+         AND deleted_at IS NULL
        GROUP BY submitted_by, detected_date
      ),
      stats AS (
@@ -369,6 +379,7 @@ async function byDayPerSubmitter(arg = 14) {
      WHERE submitted_by IS NOT NULL AND submitted_by <> ''
        AND delivery_date_iso IS NOT NULL
        AND delivery_date_iso BETWEEN ? AND ?
+       AND deleted_at IS NULL
      GROUP BY submitted_by, delivery_date_iso`,
     [fromDate, toDate]
   );
@@ -427,6 +438,7 @@ async function districtHeat() {
             COUNT(DISTINCT submitted_by) AS submitters
      FROM delivery_audit
      WHERE district IS NOT NULL AND district <> ''
+       AND deleted_at IS NULL
      GROUP BY district, province
      ORDER BY total DESC`
   );
