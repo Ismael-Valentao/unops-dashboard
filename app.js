@@ -697,14 +697,14 @@ app.get("/api/admin/adicional/status", auth.requireRole("admin", "superadmin"), 
   }
 });
 
-// GET /api/admin/adicional/projects?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD
-//     [&summary=1] — só devolve estatisticas (status/sku/provincia distrib.)
-//     [&raw=1]     — devolve a resposta crua da API ADICIONAL
+// GET /api/admin/adicional/projects[?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD]
+//     Defaults: toDate = hoje (sempre actualizado), fromDate = 60 dias atrás
+//     [&raw=1] — devolve a resposta crua da API ADICIONAL (caso contrário, sumário)
 app.get("/api/admin/adicional/projects", auth.requireRole("admin", "superadmin"), async (req, res) => {
   try {
-    const fromDate = req.query.fromDate || "";
-    const toDate   = req.query.toDate   || "";
-    if (!fromDate || !toDate) return res.status(400).json({ error: "fromDate e toDate obrigatórios (YYYY-MM-DD)" });
+    // Defaults: toDate=hoje, fromDate=60d atrás (gerido pelo lib)
+    const fromDate = req.query.fromDate || undefined;
+    const toDate   = req.query.toDate   || undefined;
     const data = await adicionalApi.listProjects({ fromDate, toDate });
     const arr = Array.isArray(data) ? data : (data?.data || []);
     if (req.query.raw === "1") return res.json(arr);
@@ -721,8 +721,12 @@ app.get("/api/admin/adicional/projects", auth.requireRole("admin", "superadmin")
       totalWeight += Number(r.Weight) || 0;
       totalVolumes += Number(r.VolumesQty) || 0;
     }
+    // Devolve os defaults resolvidos para o operador saber exactamente
+    // que período foi consultado quando deixa em branco
+    const effFrom = fromDate || adicionalApi.daysAgoYmd(60);
+    const effTo   = toDate   || adicionalApi.todayYmd();
     res.json({
-      period: { fromDate, toDate },
+      period: { fromDate: effFrom, toDate: effTo, defaults_applied: !fromDate || !toDate },
       count: arr.length,
       totals: { weight: totalWeight, volumes: totalVolumes },
       by_status: byStatus,
