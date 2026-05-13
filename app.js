@@ -697,6 +697,70 @@ app.get("/api/admin/adicional/status", auth.requireRole("admin", "superadmin"), 
   }
 });
 
+// GET /api/admin/adicional/reconcile[?fromDate=&toDate=&chunkDays=&bucket=]
+// Cruza GTU+nome+qty entre ADICIONAL DMS API e delivery_audit (Google Sheet).
+// Devolve sumário + buckets (matched/qty_mismatch/name_mismatch/api_only/sheet_only).
+// ?bucket=NAME limita o response a esse bucket (para paginação manual).
+app.get("/api/admin/adicional/reconcile", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const adMatch = require("./lib/adicional-match");
+    const fromDate = req.query.fromDate || undefined;
+    const toDate   = req.query.toDate   || undefined;
+    const chunkDays = req.query.chunkDays ? Number(req.query.chunkDays) : undefined;
+
+    // 1. ADICIONAL API (chunked)
+    const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays });
+
+    // 2. delivery_audit (já filtrado por deleted_at IS NULL — não inclui apagados)
+    const { query } = require("./db/mysql");
+    const dateFilter = [];
+    const dateParams = [];
+    if (apiResult.period.fromDate) {
+      dateFilter.push("(delivery_date_iso >= ? OR detected_date >= ?)");
+      dateParams.push(apiResult.period.fromDate, apiResult.period.fromDate);
+    }
+    if (apiResult.period.toDate) {
+      dateFilter.push("(delivery_date_iso <= ? OR detected_date <= ?)");
+      dateParams.push(apiResult.period.toDate, apiResult.period.toDate);
+    }
+    const where = "deleted_at IS NULL" +
+      (dateFilter.length ? " AND " + dateFilter.join(" AND ") : "");
+    const sheetRows = await query(
+      `SELECT gtu, adsn, beneficiary_name, product, delivered_qty, unit,
+              district, province, submitted_by, delivery_date_iso, detected_date,
+              verification_status
+       FROM delivery_audit
+       WHERE ${where}`,
+      dateParams
+    );
+
+    // 3. Reconcilia
+    const result = adMatch.reconcile(apiResult.rows, sheetRows);
+
+    const out = {
+      period: apiResult.period,
+      api: { count: apiResult.rows.length, chunks: apiResult.chunks_total, chunks_failed: apiResult.chunks_failed },
+      sheet: { count: sheetRows.length },
+      summary: result.summary,
+    };
+    const bucket = String(req.query.bucket || "").toLowerCase();
+    if (["matched","qty_mismatch","name_mismatch","api_only","sheet_only"].includes(bucket)) {
+      out[bucket] = result[bucket];
+    } else {
+      // Default: devolve só primeiras 50 de cada bucket para não rebentar o JSON
+      out.matched        = result.matched.slice(0, 50);
+      out.qty_mismatch   = result.qty_mismatch;        // este interessa todo (auditoria)
+      out.name_mismatch  = result.name_mismatch;       // idem
+      out.api_only       = result.api_only.slice(0, 50);
+      out.sheet_only     = result.sheet_only;          // suspeitos — todo
+      out.note = "matched + api_only truncados aos primeiros 50. Use ?bucket=NAME para o detalhe completo.";
+    }
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message, stack: e.stack?.split("\n").slice(0, 3) });
+  }
+});
+
 // GET /api/admin/adicional/projects[?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD&chunkDays=N]
 //     Defaults: toDate = hoje, fromDate = 60d atrás, chunkDays = 7
 //     A API ADICIONAL pode timeout em windows grandes (>30d), por isso
