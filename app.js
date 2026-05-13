@@ -697,6 +697,60 @@ app.get("/api/admin/adicional/status", auth.requireRole("admin", "superadmin"), 
   }
 });
 
+// GET /api/admin/adicional/suppliers[?fromDate=&toDate=&chunkDays=&includeAllStatuses=]
+// Agrega serviços ADICIONAL por fornecedor (canonical key = ShipAcountNumber).
+// Devolve lista de fornecedores ordenada por peso entregue (kg),
+// com breakdown por SKU, província, status, aliases de nome, etc.
+app.get("/api/admin/adicional/suppliers", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const supLib = require("./lib/adicional-suppliers");
+    const fromDate = req.query.fromDate || undefined;
+    const toDate   = req.query.toDate   || undefined;
+    const chunkDays = req.query.chunkDays ? Number(req.query.chunkDays) : undefined;
+    const includeAll = req.query.includeAllStatuses === "1";
+
+    const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays });
+    const result = supLib.aggregateSuppliers(apiResult.rows, { includeAllStatuses: includeAll });
+
+    res.json({
+      period: apiResult.period,
+      api: { total: apiResult.rows.length, chunks: apiResult.chunks_total, chunks_failed: apiResult.chunks_failed },
+      filter: { include_all_statuses: includeAll, statuses_considered: includeAll ? "(todos)" : ["TRANSITO", "FINALIZADO"] },
+      totals: result.totals,
+      suppliers: result.suppliers,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/adicional/suppliers/:key/services[?fromDate=&toDate=&chunkDays=&includeAllStatuses=]
+// Drill-down: serviços individuais de 1 fornecedor (lista de ADSNs).
+// key = "acct:53" ou "name:NORMALIZED" (devolvido por /suppliers).
+app.get("/api/admin/adicional/suppliers/:key/services", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const supLib = require("./lib/adicional-suppliers");
+    const fromDate = req.query.fromDate || undefined;
+    const toDate   = req.query.toDate   || undefined;
+    const chunkDays = req.query.chunkDays ? Number(req.query.chunkDays) : undefined;
+    const includeAll = req.query.includeAllStatuses === "1";
+
+    const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays });
+    const rows = supLib.rowsForSupplier(apiResult.rows, req.params.key, { includeAllStatuses: includeAll });
+
+    // Ordena por data desc + devolve campos essenciais
+    rows.sort((a, b) => String(b.CreateDate || "").localeCompare(String(a.CreateDate || "")));
+    res.json({
+      period: apiResult.period,
+      key: req.params.key,
+      count: rows.length,
+      rows,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/adicional/reconcile[?fromDate=&toDate=&chunkDays=&bucket=]
 // Cruza GTU+nome+qty entre ADICIONAL DMS API e delivery_audit (Google Sheet).
 // Devolve sumário + buckets (matched/qty_mismatch/name_mismatch/api_only/sheet_only).

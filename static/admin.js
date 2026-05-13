@@ -38,6 +38,7 @@ window.AdminUI = (function () {
     { key: "audit-entregas",  label: "Auditoria Entregas",icon: ICO.shield,     href: "/admin/audit-entregas" },
     { key: "reconciliacao",   label: "Reconciliação",     icon: ICO.clipboard,  href: "/admin/reconciliacao" },
     { key: "relatorio-provincias", label: "Relatório por Província", icon: ICO.map, href: "/admin/relatorio-provincias" },
+    { key: "origens",         label: "Origens (API DMS)", icon: ICO.factory, href: "/admin/origens" },
     { section: "Compras" },
     { key: "purchase-orders", label: "Purchase Orders",   icon: ICO.file,       href: "/admin/purchase-orders" },
     { key: "authorizations",  label: "Autorizações",      icon: ICO.clipboard,  href: "/admin/authorizations" },

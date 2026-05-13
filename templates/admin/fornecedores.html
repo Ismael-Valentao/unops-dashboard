@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Fornecedores</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    /* ── Fornecedores ────────────────────────────────────── */
+    .forn-ctrl {
+      display: flex; gap: .75rem; flex-wrap: wrap; align-items: end;
+      margin-bottom: 1rem; padding: .85rem 1rem;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+    }
+    .forn-ctrl label {
+      display: block; font-size: .68rem; text-transform: uppercase;
+      letter-spacing: .04em; color: #64748b; font-weight: 700; margin-bottom: .3rem;
+    }
+    .forn-ctrl input, .forn-ctrl select {
+      padding: .45rem .6rem; border: 1px solid #cbd5e1; border-radius: 6px;
+      font-size: .85rem; background: #fff;
+    }
+    .forn-ctrl .btn {
+      padding: .5rem 1rem; background: #0f4c75; color: #fff; border: 0;
+      border-radius: 6px; cursor: pointer; font-size: .85rem; font-weight: 600;
+    }
+    .forn-ctrl .btn:hover { background: #1e6ba8; }
+    .forn-ctrl .btn-secondary { background: #fff; color: #0f4c75; border: 1px solid #cbd5e1; }
+    .forn-ctrl .btn-secondary:hover { background: #f1f5f9; }
+
+    /* KPI cards */
+    .forn-kpis {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: .75rem; margin-bottom: 1rem;
+    }
+    .kpi-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      padding: .85rem 1rem; border-left: 4px solid #0f4c75;
+    }
+    .kpi-card .lbl { font-size: .65rem; text-transform: uppercase;
+      letter-spacing: .05em; color: #64748b; font-weight: 700; }
+    .kpi-card .val { font-size: 1.6rem; font-weight: 800; color: #0f172a;
+      line-height: 1.1; margin-top: .25rem; font-variant-numeric: tabular-nums; }
+    .kpi-card .sub { font-size: .7rem; color: #94a3b8; margin-top: .2rem; }
+    .kpi-card.green { border-left-color: #16a34a; }
+    .kpi-card.green .val { color: #15803d; }
+    .kpi-card.amber { border-left-color: #d97706; }
+    .kpi-card.amber .val { color: #b45309; }
+
+    /* Tabela */
+    .forn-tbl {
+      width: 100%; border-collapse: collapse; font-size: .85rem;
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      overflow: hidden;
+    }
+    .forn-tbl thead { background: #0f4c75; color: #fff; }
+    .forn-tbl thead th {
+      padding: .65rem .8rem; text-align: left; font-weight: 600;
+      font-size: .78rem; text-transform: uppercase; letter-spacing: .03em;
+    }
+    .forn-tbl thead th.num { text-align: right; }
+    .forn-tbl tbody td {
+      padding: .65rem .8rem; border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+    .forn-tbl tbody tr { cursor: pointer; transition: background .12s; }
+    .forn-tbl tbody tr:hover { background: #f8fafc; }
+    .forn-tbl tbody tr.expanded { background: #f0f9ff; }
+    .forn-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .forn-tbl td.name {
+      font-weight: 700; color: #0f172a; min-width: 200px;
+    }
+    .forn-tbl td.name .aliases {
+      display: block; font-size: .7rem; color: #94a3b8;
+      font-weight: 400; margin-top: .15rem;
+    }
+    .forn-tbl td.name .acct {
+      display: inline-block; background: #e0f2fe; color: #075985;
+      font-size: .65rem; padding: .05rem .4rem; border-radius: 99px;
+      margin-left: .35rem; font-weight: 600;
+    }
+
+    .chips { display: flex; flex-wrap: wrap; gap: .25rem; }
+    .chip {
+      background: #f1f5f9; color: #475569; padding: .1rem .45rem;
+      border-radius: 99px; font-size: .68rem; font-weight: 600;
+    }
+    .chip.green { background: #dcfce7; color: #166534; }
+    .chip.amber { background: #fef9c3; color: #854d0e; }
+    .chip.blue  { background: #dbeafe; color: #1e40af; }
+
+    .status-bar {
+      display: flex; height: 8px; border-radius: 4px; overflow: hidden;
+      width: 130px; background: #f1f5f9;
+    }
+    .status-bar > div { height: 100%; }
+    .status-bar .s-fin     { background: #16a34a; }
+    .status-bar .s-tra     { background: #f59e0b; }
+    .status-text {
+      font-size: .68rem; color: #64748b; margin-top: .15rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Drill-down */
+    .drill-row td {
+      background: #fafbfc; padding: .85rem 1rem !important;
+      border-bottom: 2px solid #e2e8f0 !important;
+    }
+    .drill-tbl {
+      width: 100%; border-collapse: collapse; font-size: .78rem;
+      background: #fff; border-radius: 6px; overflow: hidden;
+      border: 1px solid #e2e8f0;
+    }
+    .drill-tbl thead { background: #f1f5f9; color: #475569; }
+    .drill-tbl thead th { padding: .45rem .6rem; text-align: left; font-weight: 600; font-size: .7rem; text-transform: uppercase; }
+    .drill-tbl tbody td { padding: .45rem .6rem; border-bottom: 1px solid #f1f5f9; }
+    .drill-tbl tbody td.num { text-align: right; }
+    .drill-tbl .status-pill {
+      display: inline-block; padding: .1rem .4rem; border-radius: 99px;
+      font-size: .65rem; font-weight: 600;
+    }
+    .drill-tbl .status-pill.FINALIZADO { background: #dcfce7; color: #166534; }
+    .drill-tbl .status-pill.TRANSITO   { background: #fef9c3; color: #854d0e; }
+    .drill-tbl .status-pill.CRIADO     { background: #f1f5f9; color: #475569; }
+
+    .loading { padding: 2rem; text-align: center; color: #94a3b8; font-style: italic; }
+    .error { padding: 1rem; background: #fef2f2; border: 1px solid #fecaca;
+      border-radius: 6px; color: #b91c1c; }
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Origens dos Produtos</h1>
+      <span class="admin-sub">Fornecedores agregados da API ADICIONAL DMS · click numa linha para drill-down</span>
+    </header>
+
+    <section class="admin-section">
+
+      <!-- Controlos -->
+      <div class="forn-ctrl">
+        <div>
+          <label>De</label>
+          <input type="date" id="f-from">
+        </div>
+        <div>
+          <label>Até</label>
+          <input type="date" id="f-to">
+        </div>
+        <div>
+          <label>Status</label>
+          <select id="f-status">
+            <option value="0">TRÂNSITO + FINALIZADO</option>
+            <option value="1">Todos (incluir CRIADO)</option>
+          </select>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:.5rem">
+          <button class="btn" id="btn-load">Carregar</button>
+          <button class="btn btn-secondary" id="btn-preset-30">30d</button>
+          <button class="btn btn-secondary" id="btn-preset-60">60d</button>
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div class="forn-kpis" id="kpis"></div>
+
+      <!-- Tabela -->
+      <div id="tbl-wrap">
+        <table class="forn-tbl" id="tbl">
+          <thead>
+            <tr>
+              <th>Fornecedor</th>
+              <th>Origem</th>
+              <th class="num">Serviços</th>
+              <th class="num">Total (kg)</th>
+              <th>Status</th>
+              <th>Top Produtos</th>
+              <th>Destinos</th>
+            </tr>
+          </thead>
+          <tbody id="tbl-body">
+            <tr><td colspan="7" class="loading">Carregue para começar.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, esc, toast } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+      const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+      // Default: 60d
+      function ymd(d) {
+        return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      }
+      const today = new Date(); today.setHours(0,0,0,0);
+      const d60 = new Date(today); d60.setDate(d60.getDate() - 60);
+      $("#f-from").value = ymd(d60);
+      $("#f-to").value   = ymd(today);
+
+      let lastData = null;
+      const expanded = new Set();
+      const drilldownCache = new Map(); // key → rows
+
+      // SKU labels amigáveis (reaproveitar lógica existente)
+      const SKU_LABEL = {
+        MXIXMILHOKG: "Milho",
+        MXIXFEIJAOKG: "Feijão",
+        MXIXARROZKG: "Arroz",
+        AGRIFEMMA0125L: "Emamectim",
+        AGRIFEMTINL: "Emamectim",
+        SEEDARROZM50KG: "Arroz (saco)",
+        MSEEDFJNHB5KG: "Feijão (saco)",
+        MSEEDOPVZM523: "Milho (OPV)",
+        AGRIMIDACLORIPLT: "Imidacloprid",
+        AGRIMHMCPALT: "MCPA",
+        MMRMINTER25: "Stocofer",
+        SUSSACO: "Sacos Hermét.",
+      };
+      function skuLabel(sku) { return SKU_LABEL[sku] || sku; }
+      function fmtKg(kg) {
+        const n = Number(kg) || 0;
+        if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+        if (n >= 1_000)     return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "k";
+        return String(Math.round(n));
+      }
+
+      function statusBar(byStatus) {
+        const fin = byStatus.FINALIZADO || 0;
+        const tra = byStatus.TRANSITO   || 0;
+        const total = fin + tra;
+        if (total === 0) return "";
+        const finPct = (fin / total) * 100;
+        const traPct = (tra / total) * 100;
+        return `
+          <div class="status-bar" title="Finalizado: ${fin} · Em trânsito: ${tra}">
+            <div class="s-fin" style="width:${finPct}%"></div>
+            <div class="s-tra" style="width:${traPct}%"></div>
+          </div>
+          <div class="status-text">${fin} fin · ${tra} trânsito</div>
+        `;
+      }
+
+      function renderKpis(totals) {
+        $("#kpis").innerHTML = `
+          <div class="kpi-card">
+            <div class="lbl">Fornecedores</div>
+            <div class="val">${fmt(totals.suppliers)}</div>
+            <div class="sub">distintos</div>
+          </div>
+          <div class="kpi-card">
+            <div class="lbl">Serviços</div>
+            <div class="val">${fmt(totals.services)}</div>
+            <div class="sub">ADSNs</div>
+          </div>
+          <div class="kpi-card green">
+            <div class="lbl">Entregue</div>
+            <div class="val">${fmt(Math.round(totals.delivered_kg / 1000))}<span style="font-size:.85rem;color:#64748b"> t</span></div>
+            <div class="sub">${fmt(totals.delivered_kg)} kg</div>
+          </div>
+          <div class="kpi-card amber">
+            <div class="lbl">Em Trânsito</div>
+            <div class="val">${fmt(Math.round(totals.in_transit_kg / 1000))}<span style="font-size:.85rem;color:#64748b"> t</span></div>
+            <div class="sub">${fmt(totals.in_transit_kg)} kg</div>
+          </div>
+        `;
+      }
+
+      function renderTable(data) {
+        const body = $("#tbl-body");
+        if (!data.suppliers.length) {
+          body.innerHTML = `<tr><td colspan="7" class="loading">Sem fornecedores no período.</td></tr>`;
+          return;
+        }
+        body.innerHTML = data.suppliers.map((s) => {
+          const aliasLine = s.aliases.length > 1 ? `<span class="aliases">aliases: ${s.aliases.slice(0, 3).map(esc).join(" · ")}</span>` : "";
+          const acctChip = s.account_number ? `<span class="acct">#${esc(s.account_number)}</span>` : "";
+          const topSku = s.by_sku.slice(0, 3).map((x) => `<span class="chip blue">${esc(skuLabel(x.sku))}</span>`).join("");
+          const topProv = s.by_province.slice(0, 3).map((x) => `<span class="chip">${esc(x.province)}</span>`).join("");
+          const origin = (s.origins[0] || "").trim();
+          return `
+            <tr data-key="${esc(s.key)}">
+              <td class="name">${esc(s.canonical_name)}${acctChip}${aliasLine}</td>
+              <td><span class="chip">${esc(origin)}</span></td>
+              <td class="num">${fmt(s.count_services)}</td>
+              <td class="num"><strong>${fmt(s.total_weight)}</strong></td>
+              <td>${statusBar(s.by_status)}</td>
+              <td><div class="chips">${topSku}</div></td>
+              <td><div class="chips">${topProv}</div></td>
+            </tr>
+          `;
+        }).join("");
+        // Wire click → toggle drill-down
+        $$("#tbl-body tr[data-key]").forEach((row) => {
+          row.addEventListener("click", () => toggleDrilldown(row));
+        });
+      }
+
+      async function toggleDrilldown(row) {
+        const key = row.dataset.key;
+        if (expanded.has(key)) {
+          // Collapse
+          expanded.delete(key);
+          row.classList.remove("expanded");
+          const next = row.nextElementSibling;
+          if (next && next.classList.contains("drill-row")) next.remove();
+          return;
+        }
+        // Expand
+        expanded.add(key);
+        row.classList.add("expanded");
+        const drillRow = document.createElement("tr");
+        drillRow.className = "drill-row";
+        drillRow.innerHTML = `<td colspan="7"><div class="loading">A carregar serviços…</div></td>`;
+        row.parentNode.insertBefore(drillRow, row.nextSibling);
+
+        let services = drilldownCache.get(key);
+        if (!services) {
+          try {
+            const from = $("#f-from").value;
+            const to   = $("#f-to").value;
+            const inclAll = $("#f-status").value === "1";
+            const params = new URLSearchParams({ fromDate: from, toDate: to });
+            if (inclAll) params.set("includeAllStatuses", "1");
+            const data = await fetchJSON(`/api/admin/adicional/suppliers/${encodeURIComponent(key)}/services?${params}`);
+            services = data.rows || [];
+            drilldownCache.set(key, services);
+          } catch (e) {
+            drillRow.querySelector("td").innerHTML = `<div class="error">Erro: ${esc(e.message)}</div>`;
+            return;
+          }
+        }
+        if (!services.length) {
+          drillRow.querySelector("td").innerHTML = `<div class="loading">Sem serviços para este fornecedor neste período.</div>`;
+          return;
+        }
+        const rowsHtml = services.slice(0, 100).map((s) => `
+          <tr>
+            <td>${esc((s.CreateDate || "").slice(0, 10))}</td>
+            <td><code style="font-size:.7rem">${esc(s.ServiceCode || "")}</code></td>
+            <td><code style="font-size:.7rem">${esc(s.ClientBarCode || "")}</code></td>
+            <td>${esc(s.ReceiverName || "")}</td>
+            <td>${esc(s.ReceiverPostalPlace || "")} / ${esc(s.ReceiverAddress || "")}</td>
+            <td>${esc(skuLabel(s.SKU))}</td>
+            <td class="num">${fmt(Math.round(Number(s.Weight) || 0))} kg</td>
+            <td>${esc(s.VehiclePlate || "")}</td>
+            <td>${esc(s.Transporter || "")}</td>
+            <td><span class="status-pill ${esc(s.StatusName || "")}">${esc(s.StatusName || "")}</span></td>
+          </tr>
+        `).join("");
+        const note = services.length > 100 ? `<div style="font-size:.7rem;color:#94a3b8;margin-top:.4rem">Mostrando 100 de ${services.length}.</div>` : "";
+        drillRow.querySelector("td").innerHTML = `
+          <table class="drill-tbl">
+            <thead><tr>
+              <th>Data</th><th>ADSN</th><th>GTU</th><th>Destinatário</th>
+              <th>Distrito / Província</th><th>Produto</th><th class="num">Peso</th>
+              <th>Matrícula</th><th>Transportador</th><th>Status</th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>${note}
+        `;
+      }
+
+      async function load() {
+        const from = $("#f-from").value;
+        const to   = $("#f-to").value;
+        const inclAll = $("#f-status").value === "1";
+        const params = new URLSearchParams({ fromDate: from, toDate: to });
+        if (inclAll) params.set("includeAllStatuses", "1");
+        $("#tbl-body").innerHTML = `<tr><td colspan="7" class="loading">A carregar (~30-60s para 60 dias)…</td></tr>`;
+        $("#kpis").innerHTML = "";
+        // Reset estado
+        expanded.clear();
+        drilldownCache.clear();
+        try {
+          const data = await fetchJSON(`/api/admin/adicional/suppliers?${params}`);
+          lastData = data;
+          renderKpis(data.totals);
+          renderTable(data);
+          if (toast) toast(`${data.suppliers.length} fornecedores, ${fmt(data.totals.services)} serviços`, { kind: "ok" });
+        } catch (e) {
+          $("#tbl-body").innerHTML = `<tr><td colspan="7"><div class="error">Erro: ${esc(e.message)}</div></td></tr>`;
+          if (toast) toast("Erro: " + e.message, { kind: "err" });
+        }
+      }
+
+      $("#btn-load").addEventListener("click", load);
+      $("#btn-preset-30").addEventListener("click", () => {
+        const d = new Date(today); d.setDate(d.getDate() - 30);
+        $("#f-from").value = ymd(d);
+        load();
+      });
+      $("#btn-preset-60").addEventListener("click", () => {
+        const d = new Date(today); d.setDate(d.getDate() - 60);
+        $("#f-from").value = ymd(d);
+        load();
+      });
+
+      AdminUI.renderLayout("origens");
+      // Auto-load no primeiro acesso
+      load();
+    })();
+  </script>
+</body>
+</html>
