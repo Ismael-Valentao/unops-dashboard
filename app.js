@@ -708,8 +708,16 @@ app.get("/api/admin/adicional/reconcile", auth.requireRole("admin", "superadmin"
     const toDate   = req.query.toDate   || undefined;
     const chunkDays = req.query.chunkDays ? Number(req.query.chunkDays) : undefined;
 
-    // 1. ADICIONAL API (chunked)
+    // 1. ADICIONAL API (chunked) — só TRANSITO + FINALIZADO interessam.
+    // CRIADO = ainda no armazem, sem entrega real possivel → ignora.
+    // EXPEDIÇÃO SEM TRANSPORTE = idem (camião ainda não saiu).
+    // Operador pode forçar inclusão de todos com ?includeAllStatuses=1.
     const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays });
+    const RELEVANT_STATUSES = new Set(["TRANSITO", "FINALIZADO"]);
+    const includeAll = req.query.includeAllStatuses === "1";
+    const apiFilteredRows = includeAll
+      ? apiResult.rows
+      : apiResult.rows.filter((r) => RELEVANT_STATUSES.has(String(r.StatusName || "").toUpperCase()));
 
     // 2. delivery_audit (já filtrado por deleted_at IS NULL — não inclui apagados)
     const { query } = require("./db/mysql");
@@ -734,12 +742,27 @@ app.get("/api/admin/adicional/reconcile", auth.requireRole("admin", "superadmin"
       dateParams
     );
 
-    // 3. Reconcilia
-    const result = adMatch.reconcile(apiResult.rows, sheetRows);
+    // 3. Reconcilia (só sobre rows TRANSITO+FINALIZADO)
+    const result = adMatch.reconcile(apiFilteredRows, sheetRows);
+
+    // Contagem por status (para o operador ver porque é que api_only é tão alto)
+    const byStatus = {};
+    apiResult.rows.forEach((r) => {
+      const s = String(r.StatusName || "(sem)").toUpperCase();
+      byStatus[s] = (byStatus[s] || 0) + 1;
+    });
 
     const out = {
       period: apiResult.period,
-      api: { count: apiResult.rows.length, chunks: apiResult.chunks_total, chunks_failed: apiResult.chunks_failed },
+      api: {
+        total: apiResult.rows.length,
+        relevant: apiFilteredRows.length,
+        filtered_out: apiResult.rows.length - apiFilteredRows.length,
+        by_status: byStatus,
+        statuses_considered: includeAll ? "(todos)" : Array.from(RELEVANT_STATUSES),
+        chunks: apiResult.chunks_total,
+        chunks_failed: apiResult.chunks_failed,
+      },
       sheet: { count: sheetRows.length },
       summary: result.summary,
     };
