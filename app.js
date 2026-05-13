@@ -697,17 +697,22 @@ app.get("/api/admin/adicional/status", auth.requireRole("admin", "superadmin"), 
   }
 });
 
-// GET /api/admin/adicional/projects[?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD]
-//     Defaults: toDate = hoje (sempre actualizado), fromDate = 60 dias atrás
-//     [&raw=1] — devolve a resposta crua da API ADICIONAL (caso contrário, sumário)
+// GET /api/admin/adicional/projects[?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD&chunkDays=N]
+//     Defaults: toDate = hoje, fromDate = 60d atrás, chunkDays = 7
+//     A API ADICIONAL pode timeout em windows grandes (>30d), por isso
+//     o cliente divide automaticamente em chunks de 7d (configurável)
+//     e faz retry com backoff. Devolve sempre o universo unificado.
+//     [&raw=1] — devolve a array completa de servicos crus
 app.get("/api/admin/adicional/projects", auth.requireRole("admin", "superadmin"), async (req, res) => {
   try {
-    // Defaults: toDate=hoje, fromDate=60d atrás (gerido pelo lib)
     const fromDate = req.query.fromDate || undefined;
     const toDate   = req.query.toDate   || undefined;
-    const data = await adicionalApi.listProjects({ fromDate, toDate });
-    const arr = Array.isArray(data) ? data : (data?.data || []);
-    if (req.query.raw === "1") return res.json(arr);
+    const chunkDays = req.query.chunkDays ? Number(req.query.chunkDays) : undefined;
+    const result = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays });
+    const arr = result.rows;
+    if (req.query.raw === "1") {
+      return res.json({ ...result, rows: arr });
+    }
 
     // Sumário rápido
     const byStatus = {}, byPlan = {}, bySku = {}, byProvince = {}, byDistrict = {};
@@ -721,12 +726,10 @@ app.get("/api/admin/adicional/projects", auth.requireRole("admin", "superadmin")
       totalWeight += Number(r.Weight) || 0;
       totalVolumes += Number(r.VolumesQty) || 0;
     }
-    // Devolve os defaults resolvidos para o operador saber exactamente
-    // que período foi consultado quando deixa em branco
-    const effFrom = fromDate || adicionalApi.daysAgoYmd(60);
-    const effTo   = toDate   || adicionalApi.todayYmd();
     res.json({
-      period: { fromDate: effFrom, toDate: effTo, defaults_applied: !fromDate || !toDate },
+      period: result.period,
+      chunks: { total: result.chunks_total, ok: result.chunks_ok, failed: result.chunks_failed },
+      errors: result.errors,
       count: arr.length,
       totals: { weight: totalWeight, volumes: totalVolumes },
       by_status: byStatus,
