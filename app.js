@@ -260,6 +260,9 @@ async function buildBatedoresPayload(arg) {
   const submitters = (data.submitters || []).map((s, i) => ({
     rank: i + 1,
     email: s.email,
+    name: s.name || null,         // ← do Excel Batedores.xlsx (null se nao encontrado)
+    contact: s.contact || null,
+    contact_alt: s.contact_alt || null,
     total_kg: Math.round(s.total_kg || 0),
     total_tons: +((s.total_kg || 0) / 1000).toFixed(2),
     total_submissions: s.total || 0,
@@ -367,7 +370,7 @@ app.get("/api/public/batedores/export.xlsx", async (req, res) => {
 
     // ── Sheet 2: Ranking ──────────────────────────────────
     const rkWs = wb.addWorksheet("Ranking", { views: [{ state: "frozen", ySplit: 1 }] });
-    const rkHead = ["#", "Batedor (email)", "Submissões", "Total kg", "Toneladas", "Pagamento MZN", "Verificado kg", "Pendente kg", "Rejeitado kg"];
+    const rkHead = ["#", "Nome", "Email", "Contacto", "Submissões", "Total kg", "Toneladas", "Pagamento MZN", "Verificado kg", "Pendente kg", "Rejeitado kg"];
     rkHead.forEach((h, i) => {
       const c = rkWs.getCell(1, i + 1);
       c.value = h;
@@ -375,37 +378,44 @@ app.get("/api/public/batedores/export.xlsx", async (req, res) => {
       c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_HEADER } };
       c.alignment = { vertical: "middle", horizontal: "center" };
     });
-    rkWs.getColumn(1).width = 5;
-    rkWs.getColumn(2).width = 36;
-    for (let i = 3; i <= 9; i++) rkWs.getColumn(i).width = 14;
+    rkWs.getColumn(1).width = 5;   // #
+    rkWs.getColumn(2).width = 30;  // Nome
+    rkWs.getColumn(3).width = 36;  // Email
+    rkWs.getColumn(4).width = 14;  // Contacto
+    for (let i = 5; i <= 11; i++) rkWs.getColumn(i).width = 14;
 
+    const NCOLS = rkHead.length; // 11
     payload.submitters.forEach((sub, i) => {
       const row = i + 2;
-      rkWs.getCell(row, 1).value = sub.rank;
-      rkWs.getCell(row, 2).value = sub.email;
-      rkWs.getCell(row, 3).value = sub.total_submissions;
-      rkWs.getCell(row, 4).value = sub.total_kg;
-      rkWs.getCell(row, 5).value = sub.total_tons;
-      rkWs.getCell(row, 6).value = sub.payment_mzn;
-      rkWs.getCell(row, 7).value = sub.kg_verified;
-      rkWs.getCell(row, 8).value = sub.kg_pending;
-      rkWs.getCell(row, 9).value = sub.kg_rejected;
-      // formatos numéricos
-      rkWs.getCell(row, 4).numFmt = "#,##0";
-      rkWs.getCell(row, 5).numFmt = "#,##0.00";
-      rkWs.getCell(row, 6).numFmt = "#,##0";
-      rkWs.getCell(row, 7).numFmt = "#,##0";
-      rkWs.getCell(row, 8).numFmt = "#,##0";
-      rkWs.getCell(row, 9).numFmt = "#,##0";
-      rkWs.getCell(row, 7).font = { color: { argb: C_GREEN } };
-      rkWs.getCell(row, 8).font = { color: { argb: C_AMBER } };
-      rkWs.getCell(row, 9).font = { color: { argb: C_RED } };
+      rkWs.getCell(row, 1).value  = sub.rank;
+      rkWs.getCell(row, 2).value  = sub.name || (sub.email || "").split("@")[0];
+      rkWs.getCell(row, 3).value  = sub.email;
+      rkWs.getCell(row, 4).value  = sub.contact || "";
+      rkWs.getCell(row, 5).value  = sub.total_submissions;
+      rkWs.getCell(row, 6).value  = sub.total_kg;
+      rkWs.getCell(row, 7).value  = sub.total_tons;
+      rkWs.getCell(row, 8).value  = sub.payment_mzn;
+      rkWs.getCell(row, 9).value  = sub.kg_verified;
+      rkWs.getCell(row, 10).value = sub.kg_pending;
+      rkWs.getCell(row, 11).value = sub.kg_rejected;
+      // formatos numéricos (cols 6-11)
+      rkWs.getCell(row, 6).numFmt  = "#,##0";
+      rkWs.getCell(row, 7).numFmt  = "#,##0.00";
+      rkWs.getCell(row, 8).numFmt  = "#,##0";
+      rkWs.getCell(row, 9).numFmt  = "#,##0";
+      rkWs.getCell(row, 10).numFmt = "#,##0";
+      rkWs.getCell(row, 11).numFmt = "#,##0";
+      rkWs.getCell(row, 9).font  = { color: { argb: C_GREEN } };
+      rkWs.getCell(row, 10).font = { color: { argb: C_AMBER } };
+      rkWs.getCell(row, 11).font = { color: { argb: C_RED } };
+      // Nome em negrito
+      rkWs.getCell(row, 2).font = { bold: true };
       // medalhas no rank
       if (sub.rank === 1) rkWs.getCell(row, 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE08B" } };
       if (sub.rank === 2) rkWs.getCell(row, 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
       if (sub.rank === 3) rkWs.getCell(row, 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFCD7BE" } };
       if (i % 2 === 0) {
-        for (let c = 1; c <= 9; c++) {
+        for (let c = 1; c <= NCOLS; c++) {
           const cell = rkWs.getCell(row, c);
           if (!cell.fill || !cell.fill.fgColor) {
             cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
@@ -416,27 +426,29 @@ app.get("/api/public/batedores/export.xlsx", async (req, res) => {
     // Totais
     if (payload.submitters.length) {
       const totRow = payload.submitters.length + 2;
-      rkWs.getCell(totRow, 1).value = "";
-      rkWs.getCell(totRow, 2).value = "TOTAL";
-      rkWs.getCell(totRow, 3).value = s.total_submissions;
-      rkWs.getCell(totRow, 4).value = s.total_kg;
-      rkWs.getCell(totRow, 5).value = s.total_tons;
-      rkWs.getCell(totRow, 6).value = s.total_payment_mzn;
-      rkWs.getCell(totRow, 7).value = s.total_kg_verified;
-      rkWs.getCell(totRow, 8).value = s.total_kg_pending;
-      rkWs.getCell(totRow, 9).value = s.total_kg_rejected;
-      for (let c = 1; c <= 9; c++) {
+      rkWs.getCell(totRow, 1).value  = "";
+      rkWs.getCell(totRow, 2).value  = "TOTAL";
+      rkWs.getCell(totRow, 3).value  = "";
+      rkWs.getCell(totRow, 4).value  = "";
+      rkWs.getCell(totRow, 5).value  = s.total_submissions;
+      rkWs.getCell(totRow, 6).value  = s.total_kg;
+      rkWs.getCell(totRow, 7).value  = s.total_tons;
+      rkWs.getCell(totRow, 8).value  = s.total_payment_mzn;
+      rkWs.getCell(totRow, 9).value  = s.total_kg_verified;
+      rkWs.getCell(totRow, 10).value = s.total_kg_pending;
+      rkWs.getCell(totRow, 11).value = s.total_kg_rejected;
+      for (let c = 1; c <= NCOLS; c++) {
         rkWs.getCell(totRow, c).font = { bold: true };
         rkWs.getCell(totRow, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_TOTAL } };
       }
-      rkWs.getCell(totRow, 4).numFmt = "#,##0";
-      rkWs.getCell(totRow, 5).numFmt = "#,##0.00";
-      rkWs.getCell(totRow, 6).numFmt = "#,##0";
-      rkWs.getCell(totRow, 7).numFmt = "#,##0";
-      rkWs.getCell(totRow, 8).numFmt = "#,##0";
-      rkWs.getCell(totRow, 9).numFmt = "#,##0";
+      rkWs.getCell(totRow, 6).numFmt  = "#,##0";
+      rkWs.getCell(totRow, 7).numFmt  = "#,##0.00";
+      rkWs.getCell(totRow, 8).numFmt  = "#,##0";
+      rkWs.getCell(totRow, 9).numFmt  = "#,##0";
+      rkWs.getCell(totRow, 10).numFmt = "#,##0";
+      rkWs.getCell(totRow, 11).numFmt = "#,##0";
     }
-    rkWs.autoFilter = { from: { row: 1, column: 1 }, to: { row: payload.submitters.length + 1, column: 9 } };
+    rkWs.autoFilter = { from: { row: 1, column: 1 }, to: { row: payload.submitters.length + 1, column: NCOLS } };
 
     // ── Sheet 3: Por Dia (matriz batedor × dia) ───────────
     const ddWs = wb.addWorksheet("Por Dia", { views: [{ state: "frozen", ySplit: 1, xSplit: 2 }] });
@@ -450,14 +462,16 @@ app.get("/api/public/batedores/export.xlsx", async (req, res) => {
       c.alignment = { vertical: "middle", horizontal: "center" };
     });
     ddWs.getColumn(1).width = 5;
-    ddWs.getColumn(2).width = 36;
+    ddWs.getColumn(2).width = 55;  // Nome <email> precisa de espaço
     for (let i = 3; i <= days.length + 2; i++) ddWs.getColumn(i).width = 11;
     ddWs.getColumn(days.length + 3).width = 13;
 
     payload.submitters.forEach((sub, i) => {
       const row = i + 2;
       ddWs.getCell(row, 1).value = sub.rank;
-      ddWs.getCell(row, 2).value = sub.email;
+      // Nome + email para identificação clara
+      const displayLabel = sub.name ? (sub.name + " <" + sub.email + ">") : sub.email;
+      ddWs.getCell(row, 2).value = displayLabel;
       // calcula max para heatmap por linha
       const vals = days.map((d) => Math.round((sub.by_day[d]?.kg) || 0));
       const max = Math.max(...vals, 1);

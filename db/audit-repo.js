@@ -384,13 +384,31 @@ async function byDayPerSubmitter(arg = 14) {
     [fromDate, toDate]
   );
 
+  // 2.5. Lookup batedores (email → name/contact) numa só query
+  // — tolerante a tabela inexistente (ainda não importada).
+  const batedoresMap = new Map();
+  try {
+    const bts = await query("SELECT email, name, contact, contact_alt FROM batedores");
+    for (const b of bts) {
+      batedoresMap.set(String(b.email || "").toLowerCase(), {
+        name: b.name || null,
+        contact: b.contact || null,
+        contact_alt: b.contact_alt || null,
+      });
+    }
+  } catch (_) { /* tabela ainda não existe ou import não correu — fica vazio */ }
+
   // 3. Agrupar por email
   const byEmail = new Map();
   for (const r of rows) {
     const date = r.date instanceof Date ? ymd(r.date) : String(r.date);
     if (!byEmail.has(r.email)) {
+      const meta = batedoresMap.get(String(r.email || "").toLowerCase()) || {};
       byEmail.set(r.email, {
         email: r.email,
+        name: meta.name || null,        // ← enriquecido do Excel Batedores.xlsx
+        contact: meta.contact || null,
+        contact_alt: meta.contact_alt || null,
         total: 0, total_kg: 0,
         kg_verified: 0, kg_pending: 0, kg_rejected: 0,
         by_day: {},

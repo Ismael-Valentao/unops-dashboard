@@ -424,9 +424,15 @@
       for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
       return colors[Math.abs(h) % colors.length];
     }
-    function avatarInitials(email) {
-      const name = String(email || "?").split("@")[0];
-      return name.slice(0, 2).toUpperCase();
+    function avatarInitials(s) {
+      // s pode ser submitter object (com name) ou email puro
+      const base = (s && typeof s === "object")
+        ? (s.name || String(s.email || "").split("@")[0])
+        : String(s || "?").split("@")[0];
+      // Primeiras letras de cada palavra, máx 2
+      const words = base.trim().split(/\s+/).filter(Boolean);
+      if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+      return base.slice(0, 2).toUpperCase();
     }
     function rankClass(r) {
       if (r === 1) return "gold";
@@ -439,6 +445,13 @@
       if (r === 2) return "🥈";
       if (r === 3) return "🥉";
       return "#" + r;
+    }
+    function displayName(s) {
+      // Nome real do batedor (do Excel) — fallback para parte local do email
+      if (s && s.name) return s.name;
+      const local = String((s && s.email) || s || "").split("@")[0] || "";
+      if (local.length <= 22) return local;
+      return local.slice(0, 20) + "…";
     }
     function shortEmail(email) {
       const local = String(email || "").split("@")[0] || "";
@@ -625,7 +638,7 @@
       $("#chart-top-empty").style.display = top.length > 0 ? "none" : "flex";
       if (!top.length) return;
 
-      const labels = top.map((s) => `${rankIcon(s.rank)}  ${shortEmail(s.email)}`);
+      const labels = top.map((s) => `${rankIcon(s.rank)}  ${displayName(s)}`);
       const tons   = top.map((s) => +(s.total_kg / 1000).toFixed(2));
       const mzn    = top.map((s) => s.payment_mzn);
       const colors = top.map((s, i) => {
@@ -712,14 +725,20 @@
       }
       const html = subs.map((s) => {
         const isExpanded = state.expanded.has(s.email);
+        // Sub-line: contacto (se existir) + email + submissões/verified
+        const contactBits = [];
+        if (s.contact) contactBits.push("📞 " + esc(s.contact));
+        if (s.contact_alt) contactBits.push(esc(s.contact_alt));
+        const contactLine = contactBits.length ? contactBits.join(" · ") + " · " : "";
         return `
           <div class="row ${isExpanded ? "expanded" : ""}" data-email="${esc(s.email)}">
             <div class="rank ${rankClass(s.rank)}">${rankIcon(s.rank)}</div>
             <div class="person">
               <div class="person-top">
-                <div class="avatar" style="background:${avatarColor(s.email)}">${avatarInitials(s.email)}</div>
+                <div class="avatar" style="background:${avatarColor(s.email)}">${avatarInitials(s)}</div>
                 <div style="min-width:0">
-                  <div class="person-name">${esc(s.email)}</div>
+                  <div class="person-name" title="${esc(s.email)}">${esc(displayName(s))}</div>
+                  <div class="person-meta">${contactLine}<span style="opacity:.7">${esc(s.email)}</span></div>
                   <div class="person-meta">${fmt(s.total_submissions)} submissões · ✓ ${fmt(s.kg_verified)} kg verified</div>
                 </div>
               </div>

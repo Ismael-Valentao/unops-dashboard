@@ -310,6 +310,21 @@ async function migrate() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
   );
 
+  // ── Batedores (mapeamento email → nome real + contacto) ─────
+  // Tabela leve só para enriquecer os submissions (que vêm com email)
+  // com identidade real para mostrar no /batedores e usar em SMS/exports.
+  // Importado de Excel via script ou /admin futuro.
+  await getPool().query(
+    `CREATE TABLE IF NOT EXISTS batedores (
+      email VARCHAR(255) NOT NULL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      contact VARCHAR(64) NULL,
+      contact_alt VARCHAR(64) NULL,
+      imported_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_batedores_name (name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+
   // ── SMS templates + log ─────────────────────────────────────
   // sms_templates: 3 templates default + custom (editáveis em /admin/sms).
   //   kind:
