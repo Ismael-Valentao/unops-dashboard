@@ -185,6 +185,13 @@
       $("#s-available-label").textContent = "Falta";
 
       // Render 3 linhas por card. Cada linha = (categoria, valor formatado).
+      // ENTREGUE = total fisico real (delivered), inclui excessos a beneficiarios
+      // com plano=0 (ex. EXT-*) ou over-delivery. O 'fulfilled' (LEAST plan,
+      // delivered) e mantido SO para calculo da % de cumprimento do plano.
+      const deliveredKg = kg.delivered != null ? kg.delivered : (kg.fulfilled || 0);
+      const deliveredL  = L.delivered  != null ? L.delivered  : (L.fulfilled  || 0);
+      const deliveredUn = un.delivered != null ? un.delivered : (un.fulfilled || 0);
+      // Fulfilled (para % cumprimento, abaixo) — nao mostrado directamente
       const fulfilledKg = kg.fulfilled != null ? kg.fulfilled : kg.committed;
       const fulfilledL  = L.fulfilled  != null ? L.fulfilled  : (L.committed  || 0);
       const fulfilledUn = un.fulfilled != null ? un.fulfilled : (un.committed || 0);
@@ -202,9 +209,9 @@
         renderMulti("planned", un.planned, fmtUn, "un", "Sacos") +
         renderMulti("planned", L.planned,  fmtL,  "L",  "Químicos");
       $("#s-delivered-multi").innerHTML =
-        renderMulti("delivered", fulfilledKg, fmtKg, "kg", "Sementes") +
-        renderMulti("delivered", fulfilledUn, fmtUn, "un", "Sacos") +
-        renderMulti("delivered", fulfilledL,  fmtL,  "L",  "Químicos");
+        renderMulti("delivered", deliveredKg, fmtKg, "kg", "Sementes") +
+        renderMulti("delivered", deliveredUn, fmtUn, "un", "Sacos") +
+        renderMulti("delivered", deliveredL,  fmtL,  "L",  "Químicos");
       $("#s-available-multi").innerHTML =
         renderMulti("available", kg.available, fmtKg, "kg", "Sementes") +
         renderMulti("available", un.available, fmtUn, "un", "Sacos") +
@@ -264,12 +271,20 @@
         html += `<tr class="cat-header"><td colspan="7">${catLabel[p.categoria] || p.categoria}</td></tr>`;
         lastCat = p.categoria;
       }
+      // % cumprimento usa fulfilled (LEAST plan, delivered) — nunca passa 100%.
+      // A coluna "Entregue" usa delivered (fisico real) — pode exceder o plano
+      // se houver entregas a beneficiarios extra (EXT-*) ou over-delivery.
       const pct = p.planned > 0 ? Math.round(p.fulfilled / p.planned * 1000) / 10 : 0;
+      // Marca visual se entregue > planeado (excesso)
+      const hasExcess = p.delivered > p.planned;
+      const excessTip = hasExcess
+        ? ` title="Inclui ${fmtByUnit(p.delivered - p.planned, p.unit)} fora do plano (beneficiarios EXT-* ou over-delivery)"`
+        : "";
       html += `<tr>
         <td class="cat">${p.produto}</td>
         <td class="num">${fmtByUnit(p.planned, p.unit)}</td>
         <td class="num" style="color:${p.realocado_recebido > 0 ? '#dc2626' : '#94a3b8'}">${p.realocado_recebido > 0 ? '−' + fmtByUnit(p.realocado_recebido, p.unit) : '—'}</td>
-        <td class="num">${fmtByUnit(p.fulfilled, p.unit)}</td>
+        <td class="num"${excessTip}>${fmtByUnit(p.delivered, p.unit)}${hasExcess ? ' <span style="color:#9333ea;font-size:.65rem;font-weight:700">⚠</span>' : ''}</td>
         <td class="num" style="color:#dc2626;font-weight:700">${fmtByUnit(p.available, p.unit)}</td>
         <td class="num"><span class="pb-pct ${pctClass(pct)}">${pct.toFixed(1)}%</span></td>
         <td class="num">${fmt(p.n_benef)}</td>
@@ -278,7 +293,7 @@
       if (totals[p.categoria]) {
         totals[p.categoria].p += p.planned;
         totals[p.categoria].r += p.realocado_recebido;
-        totals[p.categoria].d += p.fulfilled;
+        totals[p.categoria].d += p.delivered;
         totals[p.categoria].a += p.available;
       }
     }
