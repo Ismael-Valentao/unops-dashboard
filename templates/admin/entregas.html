@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Entregas (Live)</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    /* ── Entregas ─────────────────────────────────────────── */
+    .ent-ctrl {
+      display: flex; gap: .5rem; flex-wrap: wrap; align-items: end;
+      margin-bottom: 1rem; padding: .85rem 1rem;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+    }
+    .ent-ctrl > div { display: flex; flex-direction: column; }
+    .ent-ctrl label {
+      font-size: .65rem; text-transform: uppercase; letter-spacing: .04em;
+      color: #64748b; font-weight: 700; margin-bottom: .25rem;
+    }
+    .ent-ctrl input, .ent-ctrl select {
+      padding: .4rem .55rem; border: 1px solid #cbd5e1; border-radius: 6px;
+      font-size: .82rem; background: #fff; min-width: 110px;
+    }
+    .ent-ctrl input[type=text] { min-width: 160px; }
+    .ent-ctrl .btn {
+      padding: .45rem 1rem; background: #0f4c75; color: #fff; border: 0;
+      border-radius: 6px; cursor: pointer; font-size: .82rem; font-weight: 600;
+    }
+    .ent-ctrl .btn:hover { background: #1e6ba8; }
+    .ent-ctrl .btn-sec { background: #fff; color: #0f4c75; border: 1px solid #cbd5e1; }
+    .ent-ctrl .btn-sec:hover { background: #f1f5f9; }
+    .ent-ctrl .btn-ex { background: #15803d; }
+    .ent-ctrl .btn-ex:hover { background: #166534; }
+
+    /* KPIs */
+    .ent-kpis {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: .5rem; margin-bottom: 1rem;
+    }
+    .kpi {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 6px;
+      padding: .55rem .75rem; border-left: 3px solid #0f4c75;
+    }
+    .kpi .lbl { font-size: .62rem; text-transform: uppercase;
+      letter-spacing: .04em; color: #64748b; font-weight: 700; }
+    .kpi .val { font-size: 1.25rem; font-weight: 800; color: #0f172a;
+      line-height: 1.1; margin-top: .15rem; font-variant-numeric: tabular-nums; }
+    .kpi .sub { font-size: .65rem; color: #94a3b8; margin-top: .15rem; }
+    .kpi.green { border-left-color: #16a34a; } .kpi.green .val { color: #15803d; }
+    .kpi.amber { border-left-color: #d97706; } .kpi.amber .val { color: #b45309; }
+    .kpi.purple{ border-left-color: #9333ea; } .kpi.purple .val { color: #7e22ce; }
+
+    /* Tabela */
+    .ent-tbl-wrap {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      overflow: auto; max-height: calc(100vh - 280px);
+    }
+    .ent-tbl {
+      width: 100%; border-collapse: collapse; font-size: .78rem;
+      white-space: nowrap;
+    }
+    .ent-tbl thead {
+      background: #0f4c75; color: #fff;
+      position: sticky; top: 0; z-index: 5;
+    }
+    .ent-tbl thead th {
+      padding: .55rem .65rem; text-align: left; font-weight: 600;
+      font-size: .68rem; text-transform: uppercase; letter-spacing: .03em;
+      border-right: 1px solid rgba(255,255,255,.1);
+    }
+    .ent-tbl thead th.num { text-align: right; }
+    .ent-tbl thead th.sortable { cursor: pointer; user-select: none; }
+    .ent-tbl thead th.sortable:hover { background: rgba(0,0,0,.15); }
+    .ent-tbl thead th.sort-asc::after  { content: " ▲"; opacity: .8; }
+    .ent-tbl thead th.sort-desc::after { content: " ▼"; opacity: .8; }
+    .ent-tbl tbody td {
+      padding: .45rem .65rem; border-bottom: 1px solid #f1f5f9;
+    }
+    .ent-tbl tbody tr:nth-child(even) { background: #fafbfc; }
+    .ent-tbl tbody tr:hover { background: #e0f2fe; }
+    .ent-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .ent-tbl td.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .72rem; }
+    .ent-tbl td.muted { color: #cbd5e1; font-style: italic; }
+    .ent-tbl td.name { font-weight: 600; }
+
+    .pill {
+      display: inline-block; padding: .08rem .45rem; border-radius: 99px;
+      font-size: .65rem; font-weight: 700;
+    }
+    .pill.FINALIZADO { background: #dcfce7; color: #166534; }
+    .pill.TRANSITO   { background: #fef9c3; color: #854d0e; }
+    .pill.CRIADO     { background: #f1f5f9; color: #475569; }
+    .pill.green      { background: #dcfce7; color: #166534; }
+    .pill.purple     { background: #f3e8ff; color: #6b21a8; }
+
+    .driver-line { display: flex; flex-direction: column; gap: .1rem; }
+    .driver-line .secondary { font-size: .68rem; color: #64748b; }
+
+    .loading { padding: 2.5rem; text-align: center; color: #94a3b8; font-style: italic; }
+    .error { padding: 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #b91c1c; }
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Entregas (Live)</h1>
+      <span class="admin-sub">Tudo num só sítio · API ADICIONAL + Sheet + Batedores · 1 linha por ADSN</span>
+    </header>
+
+    <section class="admin-section">
+
+      <!-- Controlos -->
+      <div class="ent-ctrl">
+        <div><label>De</label><input type="date" id="f-from"></div>
+        <div><label>Até</label><input type="date" id="f-to"></div>
+        <div>
+          <label>Status</label>
+          <select id="f-status">
+            <option value="">Trânsito + Finalizado</option>
+            <option value="FINALIZADO">Só Finalizado</option>
+            <option value="TRANSITO">Só Trânsito</option>
+            <option value="ALL">Todos (incl. Criado)</option>
+          </select>
+        </div>
+        <div><label>Província</label><input type="text" id="f-province" placeholder="Ex: Gaza"></div>
+        <div><label>Distrito</label><input type="text" id="f-district" placeholder="Ex: Mapai"></div>
+        <div><label>Fornecedor</label><input type="text" id="f-supplier" placeholder="Ex: PHOENIX"></div>
+        <div><label>Batedor</label><input type="text" id="f-batedor" placeholder="Nome ou email"></div>
+        <div style="flex:1;min-width:200px"><label>Pesquisa (ADSN/GTU/nome)</label><input type="text" id="f-q"></div>
+        <div style="display:flex;gap:.4rem;align-self:end">
+          <button class="btn" id="btn-load">Carregar</button>
+          <button class="btn btn-sec" id="btn-clear">Limpar</button>
+          <button class="btn btn-ex" id="btn-export" disabled>Excel</button>
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div class="ent-kpis" id="kpis"></div>
+
+      <!-- Tabela -->
+      <div class="ent-tbl-wrap">
+        <table class="ent-tbl" id="tbl">
+          <thead>
+            <tr>
+              <th class="sortable" data-sort="create_date">Data</th>
+              <th class="sortable" data-sort="truck_plate">Matrícula</th>
+              <th class="sortable" data-sort="transporter_co">Transportador</th>
+              <th>Motorista</th>
+              <th class="sortable" data-sort="batedor_name">Batedor</th>
+              <th class="sortable" data-sort="supplier">Forn. Insumo</th>
+              <th class="sortable" data-sort="product">Artigo</th>
+              <th class="num sortable" data-sort="weight_ton">Peso (Ton)</th>
+              <th class="sortable" data-sort="ext_name">Extensionista</th>
+              <th class="sortable" data-sort="district">Distrito</th>
+              <th class="sortable" data-sort="province">Província</th>
+              <th>ADSE / ADSN</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tbl-body">
+            <tr><td colspan="13" class="loading">Carregue para começar.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, esc, toast, exportCSV } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+      const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+      function ymd(d) {
+        return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+      }
+      const today = new Date(); today.setHours(0,0,0,0);
+      const d30 = new Date(today); d30.setDate(d30.getDate() - 30);
+      $("#f-from").value = ymd(d30);
+      $("#f-to").value   = ymd(today);
+
+      let lastData = null;
+      let sortCol = "create_date";
+      let sortAsc = false;
+
+      function renderKpis(d) {
+        $("#kpis").innerHTML = `
+          <div class="kpi">
+            <div class="lbl">Entregas</div>
+            <div class="val">${fmt(d.count)}</div>
+            <div class="sub">ADSNs</div>
+          </div>
+          <div class="kpi green">
+            <div class="lbl">Total</div>
+            <div class="val">${fmt(d.total_ton)}<span style="font-size:.75rem;color:#64748b"> t</span></div>
+            <div class="sub">${fmt(d.total_kg)} kg</div>
+          </div>
+          <div class="kpi purple">
+            <div class="lbl">Com Batedor</div>
+            <div class="val">${fmt(d.with_batedor)}</div>
+            <div class="sub">match via GTU</div>
+          </div>
+          <div class="kpi amber">
+            <div class="lbl">Sem Batedor</div>
+            <div class="val">${fmt(d.without_batedor)}</div>
+            <div class="sub">submissão pendente</div>
+          </div>
+        `;
+      }
+
+      function renderTable(rows) {
+        if (!rows.length) {
+          $("#tbl-body").innerHTML = `<tr><td colspan="13" class="loading">Sem entregas para os filtros aplicados.</td></tr>`;
+          return;
+        }
+        // Sort
+        const sorted = rows.slice().sort((a, b) => {
+          const va = a[sortCol], vb = b[sortCol];
+          const cmp = typeof va === "number" && typeof vb === "number"
+            ? va - vb
+            : String(va || "").localeCompare(String(vb || ""), "pt", { numeric: true });
+          return sortAsc ? cmp : -cmp;
+        });
+
+        // Update sort indicators
+        $$("th.sortable").forEach((th) => th.classList.remove("sort-asc", "sort-desc"));
+        const activeTh = document.querySelector(`th.sortable[data-sort="${sortCol}"]`);
+        if (activeTh) activeTh.classList.add(sortAsc ? "sort-asc" : "sort-desc");
+
+        $("#tbl-body").innerHTML = sorted.map((e) => {
+          const date = (e.create_date || "").slice(0, 10);
+          const driverParts = (e.driver || "").split("/").map((s) => s.trim()).filter(Boolean);
+          const driverHtml = driverParts.length >= 2
+            ? `<div class="driver-line"><div>${esc(driverParts[0])}</div><div class="secondary">${esc(driverParts.slice(1).join(" · "))}</div></div>`
+            : esc(e.driver);
+          const batedor = e.batedor_name
+            ? `<div class="driver-line"><div>${esc(e.batedor_name)}</div><div class="secondary">${esc(e.batedor_contact || e.batedor_email || "")}</div></div>`
+            : (e.batedor_email
+                ? `<div class="driver-line"><div class="muted">${esc(e.batedor_email)}</div></div>`
+                : `<span class="muted">—</span>`);
+          const ext = e.ext_name
+            ? `<div class="driver-line"><div>${esc(e.ext_name)}</div>${e.ext_contact ? `<div class="secondary">${esc(e.ext_contact)}</div>` : ""}</div>`
+            : `<span class="muted">—</span>`;
+          const adseAdsn = `<div class="mono" style="font-size:.65rem">${esc(e.adse || "")}</div><div class="mono">${esc(e.adsn || "")}</div>`;
+          return `<tr>
+            <td>${esc(date)}</td>
+            <td class="mono">${esc(e.truck_plate || "")}</td>
+            <td>${esc(e.transporter_co || "")}</td>
+            <td>${driverHtml}</td>
+            <td class="name">${batedor}</td>
+            <td>${esc(e.supplier || "")}</td>
+            <td>${esc(e.product || e.sku || "")}</td>
+            <td class="num"><strong>${fmt(e.weight_ton)}</strong></td>
+            <td>${ext}</td>
+            <td>${esc(e.district || "")}</td>
+            <td>${esc(e.province || "")}</td>
+            <td>${adseAdsn}</td>
+            <td><span class="pill ${esc(e.status)}">${esc(e.status)}</span></td>
+          </tr>`;
+        }).join("");
+      }
+
+      function pickFilters() {
+        const f = {};
+        const from = $("#f-from").value;
+        const to   = $("#f-to").value;
+        if (from) f.fromDate = from;
+        if (to)   f.toDate   = to;
+        const status = $("#f-status").value;
+        if (status === "ALL") f.includeAllStatuses = "1";
+        else if (status)      f.status = status;
+        ["province","district","supplier","batedor","q"].forEach((k) => {
+          const v = $("#f-" + k)?.value?.trim();
+          if (v) f[k] = v;
+        });
+        return f;
+      }
+
+      async function load() {
+        const f = pickFilters();
+        const params = new URLSearchParams(f);
+        $("#tbl-body").innerHTML = `<tr><td colspan="13" class="loading">A carregar (~30-60s para 30 dias)…</td></tr>`;
+        $("#kpis").innerHTML = "";
+        $("#btn-export").disabled = true;
+        try {
+          const data = await fetchJSON("/api/admin/adicional/entregas?" + params);
+          lastData = data;
+          renderKpis(data);
+          renderTable(data.rows);
+          $("#btn-export").disabled = false;
+          if (toast) toast(`${fmt(data.count)} entregas (${fmt(data.total_ton)} t)`, { kind: "ok" });
+        } catch (e) {
+          $("#tbl-body").innerHTML = `<tr><td colspan="13"><div class="error">Erro: ${esc(e.message)}</div></td></tr>`;
+          if (toast) toast("Erro: " + e.message, { kind: "err" });
+        }
+      }
+
+      function exportExcel() {
+        if (!lastData || !lastData.rows.length) return;
+        const headers = [
+          "Data", "Matrícula", "Transportador", "Motorista", "Contacto Motorista",
+          "Batedor", "Contacto Batedor", "Email Batedor",
+          "Forn. Insumo", "Origem", "Artigo", "SKU", "Peso (kg)", "Peso (Ton)",
+          "Extensionista", "NUIT", "Contacto Ext.", "Distrito", "Província",
+          "ADSE", "ADSN", "GTU", "Status",
+        ];
+        const rows = lastData.rows.map((e) => {
+          const driverParts = (e.driver || "").split("/").map((s) => s.trim());
+          return [
+            (e.create_date || "").slice(0, 10),
+            e.truck_plate || "",
+            e.transporter_co || "",
+            driverParts[0] || "",
+            driverParts.slice(1).join(" / "),
+            e.batedor_name || "",
+            e.batedor_contact || "",
+            e.batedor_email || "",
+            e.supplier || "",
+            e.supplier_origin || "",
+            e.product || "",
+            e.sku || "",
+            e.weight_kg,
+            e.weight_ton,
+            e.ext_name || "",
+            e.ext_nuit || "",
+            e.ext_contact || "",
+            e.district || "",
+            e.province || "",
+            e.adse || "",
+            e.adsn || "",
+            e.gtu || "",
+            e.status || "",
+          ];
+        });
+        const today = new Date().toISOString().slice(0, 10);
+        if (exportCSV) exportCSV(`entregas_${today}.csv`, headers, rows);
+      }
+
+      $("#btn-load").addEventListener("click", load);
+      $("#btn-clear").addEventListener("click", () => {
+        $("#f-province").value = ""; $("#f-district").value = "";
+        $("#f-supplier").value = ""; $("#f-batedor").value = "";
+        $("#f-q").value = ""; $("#f-status").value = "";
+      });
+      $("#btn-export").addEventListener("click", exportExcel);
+      // Enter no campo de pesquisa
+      $("#f-q").addEventListener("keydown", (ev) => { if (ev.key === "Enter") load(); });
+
+      // Sort
+      $$("th.sortable").forEach((th) => {
+        th.addEventListener("click", () => {
+          const col = th.dataset.sort;
+          if (sortCol === col) sortAsc = !sortAsc;
+          else { sortCol = col; sortAsc = false; }
+          if (lastData) renderTable(lastData.rows);
+        });
+      });
+
+      AdminUI.renderLayout("entregas");
+      load();
+    })();
+  </script>
+</body>
+</html>

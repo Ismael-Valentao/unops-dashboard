@@ -1228,6 +1228,7 @@ router.get("/reconciliacao",       (_req, res) => send(res, "reconciliacao.html"
 router.get("/aprovacoes",          (_req, res) => send(res, "aprovacoes.html"));
 router.get("/relatorio-provincias", (_req, res) => send(res, "relatorio-provincias.html"));
 router.get("/origens",             (_req, res) => send(res, "fornecedores.html"));
+router.get("/entregas",            (_req, res) => send(res, "entregas.html"));
 
 // ── API ─────────────────────────────────────────────────────
 router.get("/api/distribution/geography", ah(async (_req, res) => {

@@ -697,6 +697,119 @@ app.get("/api/admin/adicional/status", auth.requireRole("admin", "superadmin"), 
   }
 });
 
+// GET /api/admin/adicional/entregas[?fromDate=&toDate=&chunkDays=&status=&province=&district=&supplier=&q=]
+// Vista flat de TODAS as entregas: API + Sheet match + Batedores (nome/contacto).
+// Filtros server-side. Pronto para mostrar numa tabela tipo Excel ou exportar.
+app.get("/api/admin/adicional/entregas", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const entLib = require("./lib/adicional-entregas");
+    const fromDate = req.query.fromDate || undefined;
+    const toDate   = req.query.toDate   || undefined;
+    const chunkDays = req.query.chunkDays ? Number(req.query.chunkDays) : undefined;
+    const includeAll = req.query.includeAllStatuses === "1";
+
+    // 1. API ADICIONAL (chunked)
+    const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays });
+    let apiRows = apiResult.rows;
+    if (!includeAll) {
+      const RELEVANT = new Set(["TRANSITO", "FINALIZADO"]);
+      apiRows = apiRows.filter((r) => RELEVANT.has(String(r.StatusName || "").toUpperCase()));
+    }
+
+    // 2. Sheet (delivery_audit) — só rows não apagadas
+    const { query } = require("./db/mysql");
+    const sheetRows = await query(
+      `SELECT gtu, beneficiary_name, delivered_qty, unit, product, submitted_by,
+              delivery_date_iso, district, province
+       FROM delivery_audit
+       WHERE deleted_at IS NULL`
+    );
+
+    // 3. Batedores: mapa email → {name, contact}
+    const batedoresMap = new Map();
+    try {
+      const bts = await query("SELECT email, name, contact, contact_alt FROM batedores");
+      for (const b of bts) {
+        batedoresMap.set(String(b.email || "").toLowerCase(), {
+          name: b.name, contact: b.contact, contact_alt: b.contact_alt,
+        });
+      }
+    } catch (_) { /* tabela inexistente — fica vazio */ }
+
+    // 4. Beneficiários (extensionistas): mapa nuit → {name, contact}
+    const beneficiariesMap = new Map();
+    try {
+      const bens = await query("SELECT nuit, name, contact FROM beneficiaries WHERE nuit IS NOT NULL AND nuit <> ''");
+      for (const b of bens) {
+        beneficiariesMap.set(String(b.nuit).trim(), { name: b.name, contact: b.contact });
+      }
+    } catch (_) { /* idem */ }
+
+    // 5. Build entregas
+    let entregas = entLib.buildEntregas({ apiRows, sheetRows, batedoresMap, beneficiariesMap });
+
+    // 6. Filtros server-side (string match case-insensitive)
+    const norm = (s) => String(s || "").toLowerCase();
+    if (req.query.status) {
+      const want = norm(req.query.status);
+      entregas = entregas.filter((e) => norm(e.status) === want);
+    }
+    if (req.query.province) {
+      const want = norm(req.query.province);
+      entregas = entregas.filter((e) => norm(e.province) === want);
+    }
+    if (req.query.district) {
+      const want = norm(req.query.district);
+      entregas = entregas.filter((e) => norm(e.district) === want);
+    }
+    if (req.query.supplier) {
+      const want = norm(req.query.supplier);
+      entregas = entregas.filter((e) => norm(e.supplier).includes(want));
+    }
+    if (req.query.batedor) {
+      const want = norm(req.query.batedor);
+      entregas = entregas.filter((e) =>
+        norm(e.batedor_name).includes(want) || norm(e.batedor_email).includes(want));
+    }
+    if (req.query.q) {
+      const want = norm(req.query.q);
+      entregas = entregas.filter((e) =>
+        norm(e.adsn).includes(want) ||
+        norm(e.gtu).includes(want) ||
+        norm(e.ext_name).includes(want) ||
+        norm(e.driver).includes(want));
+    }
+
+    // Sort por data desc (mais recentes primeiro)
+    entregas.sort((a, b) => String(b.create_date).localeCompare(String(a.create_date)));
+
+    // Sumário
+    const totalKg = entregas.reduce((s, e) => s + e.weight_kg, 0);
+    const matched = entregas.filter((e) => e.sheet_matched).length;
+
+    res.json({
+      period: apiResult.period,
+      filters_applied: {
+        status: req.query.status || null,
+        province: req.query.province || null,
+        district: req.query.district || null,
+        supplier: req.query.supplier || null,
+        batedor: req.query.batedor || null,
+        q: req.query.q || null,
+        includeAllStatuses: includeAll,
+      },
+      count: entregas.length,
+      total_kg: Math.round(totalKg),
+      total_ton: Number((totalKg / 1000).toFixed(2)),
+      with_batedor: matched,
+      without_batedor: entregas.length - matched,
+      rows: entregas,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/adicional/suppliers[?fromDate=&toDate=&chunkDays=&includeAllStatuses=]
 // Agrega serviços ADICIONAL por fornecedor (canonical key = ShipAcountNumber).
 // Devolve lista de fornecedores ordenada por peso entregue (kg),
