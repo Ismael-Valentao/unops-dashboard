@@ -260,7 +260,10 @@
                 <div class="cam">${esc(v.cam_label)}</div>
                 <div class="titulo">
                   <strong>${esc(v.destino_distrito)}</strong>  ·  ${esc(v.matricula)}  ·  ${esc(dateStr)}
-                  <span class="sub">${esc(v.fornecedor || "")} → ${esc(v.destino_provincia || "")} · ${esc(v.transportador || "")}</span>
+                  <span class="sub">
+                    ${v.adse ? `<code style="background:rgba(255,255,255,.18);padding:0 .35rem;border-radius:3px;font-size:.68rem">${esc(v.adse)}</code> · ` : ""}
+                    ${esc(v.fornecedor || "")} → ${esc(v.destino_provincia || "")} · ${esc(v.transportador || "")}
+                  </span>
                 </div>
                 <div class="ton">${fmt(v.total_ton)}<span class="u"> t</span></div>
                 <div class="n-ext">${fmt(v.n_extensionistas)} ext.</div>
