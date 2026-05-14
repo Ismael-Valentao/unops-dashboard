@@ -58,44 +58,83 @@
     .viagem {
       background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
       overflow: hidden;
-      flex: 0 0 auto;   /* evita shrink no flex parent (estava a colapsar a 1px) */
+      flex: 0 0 auto;
+      transition: box-shadow .15s ease, border-color .15s ease;
     }
+    .viagem:hover { box-shadow: 0 2px 8px rgba(15,23,42,.08); border-color: #cbd5e1; }
+    .viagem.open  { box-shadow: 0 4px 12px rgba(15,23,42,.10); border-color: #93c5fd; }
+
+    /* Header CALMO — fundo branco, hierarquia clara, ponto colorido para status */
     .viagem-head {
       display: grid;
-      grid-template-columns: 70px 1fr auto auto auto;
-      gap: .65rem; align-items: center;
-      padding: .55rem .85rem; cursor: pointer; user-select: none;
-      background: linear-gradient(180deg, #0f4c75 0%, #145290 100%);
-      color: #fff;
+      grid-template-columns: 56px 1fr auto;
+      gap: .9rem; align-items: center;
+      padding: .8rem 1rem; cursor: pointer; user-select: none;
+      position: relative;
     }
-    .viagem-head:hover { background: linear-gradient(180deg, #145290 0%, #1e6ba8 100%); }
-    .viagem-head .cam { font-weight: 800; font-size: 1.05rem; letter-spacing: .03em; }
-    .viagem-head .titulo { font-size: .85rem; }
-    .viagem-head .titulo strong { font-weight: 700; }
-    .viagem-head .titulo .sub { font-size: .72rem; opacity: .8; margin-top: .1rem; display: block; }
-    .viagem-head .ton {
-      font-size: 1.1rem; font-weight: 800; font-variant-numeric: tabular-nums;
-      background: rgba(255,255,255,.18); padding: .15rem .55rem; border-radius: 6px;
+    /* Faixa colorida fina à esquerda indica status */
+    .viagem-head::before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
     }
-    .viagem-head .ton .u { font-size: .7rem; opacity: .8; font-weight: 600; }
-    .viagem-head .n-ext {
-      font-size: .7rem; opacity: .85;
-    }
-    .viagem-head .pill {
-      padding: .12rem .55rem; border-radius: 99px; font-size: .68rem;
-      font-weight: 700; text-transform: uppercase;
-    }
-    .viagem-head .pill.entregue   { background: #dcfce7; color: #166534; }
-    .viagem-head .pill.transito   { background: #fef9c3; color: #854d0e; }
-    .viagem-head .pill.parcial    { background: #ddd6fe; color: #5b21b6; }
-    .viagem-head .pill.criado     { background: #f1f5f9; color: #475569; }
+    .viagem.s-entregue .viagem-head::before { background: #16a34a; }
+    .viagem.s-transito .viagem-head::before { background: #f59e0b; }
+    .viagem.s-parcial  .viagem-head::before { background: #8b5cf6; }
+    .viagem.s-criado   .viagem-head::before { background: #94a3b8; }
 
-    .viagem-meta {
-      background: #f8fafc; padding: .45rem .85rem;
-      border-bottom: 1px solid #e2e8f0;
-      font-size: .72rem; color: #475569; display: flex; gap: 1rem; flex-wrap: wrap;
+    .viagem-head .cam {
+      font-weight: 700; font-size: .8rem; letter-spacing: .04em;
+      color: #64748b; text-align: center;
+      background: #f1f5f9; padding: .4rem 0; border-radius: 6px;
     }
-    .viagem-meta strong { color: #0f172a; }
+    .viagem.open .viagem-head .cam { background: #dbeafe; color: #1e40af; }
+
+    .viagem-head .titulo-main {
+      font-size: 1rem; font-weight: 700; color: #0f172a; letter-spacing: -.01em;
+    }
+    .viagem-head .titulo-sub {
+      font-size: .78rem; color: #64748b; margin-top: .15rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .viagem-head .ton-wrap {
+      display: flex; align-items: center; gap: .65rem;
+    }
+    .viagem-head .ton {
+      font-size: 1.2rem; font-weight: 700; color: #0f172a;
+      font-variant-numeric: tabular-nums; line-height: 1;
+    }
+    .viagem-head .ton .u { font-size: .75rem; color: #94a3b8; font-weight: 500; margin-left: 2px; }
+    .viagem-head .ton-sub {
+      font-size: .68rem; color: #94a3b8; margin-top: .2rem; text-align: right;
+    }
+    .viagem-head .status-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+    .viagem.s-entregue .status-dot { background: #16a34a; }
+    .viagem.s-transito .status-dot { background: #f59e0b; }
+    .viagem.s-parcial  .status-dot { background: #8b5cf6; }
+    .viagem.s-criado   .status-dot { background: #94a3b8; }
+
+    /* Meta só aparece quando expandido */
+    .viagem-meta {
+      background: #f8fafc; padding: .65rem 1rem;
+      border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;
+      font-size: .76rem; color: #475569;
+      display: none;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: .6rem 1.2rem;
+    }
+    .viagem.open .viagem-meta { display: grid; }
+    .viagem-meta .meta-cell { display: flex; flex-direction: column; }
+    .viagem-meta .meta-lbl {
+      font-size: .62rem; text-transform: uppercase; letter-spacing: .05em;
+      color: #94a3b8; font-weight: 700; margin-bottom: .15rem;
+    }
+    .viagem-meta strong { color: #0f172a; font-weight: 600; }
+    .viagem-meta .adse-code {
+      font-family: ui-monospace, monospace; font-size: .72rem; color: #475569;
+      background: #fff; border: 1px solid #e2e8f0; padding: .1rem .35rem;
+      border-radius: 4px; display: inline-block; max-width: max-content;
+    }
 
     .viagem-body { display: none; padding: 0; }
     .viagem.open .viagem-body { display: block; }
@@ -200,11 +239,17 @@
 
       let lastData = null;
 
-      function statusPillClass(s) {
-        if (s === "ENTREGUE")       return "entregue";
-        if (s === "Em trânsito")    return "transito";
-        if (s === "Parcial")        return "parcial";
-        return "criado";
+      function statusClass(s) {
+        if (s === "ENTREGUE")       return "s-entregue";
+        if (s === "Em trânsito")    return "s-transito";
+        if (s === "Parcial")        return "s-parcial";
+        return "s-criado";
+      }
+      function fmtDateShort(iso) {
+        if (!iso) return "—";
+        const parts = String(iso).split("-");
+        if (parts.length !== 3) return iso;
+        return parts[2] + "/" + parts[1];
       }
 
       function renderKpis(summary) {
@@ -242,7 +287,6 @@
           return;
         }
         $("#viagens").innerHTML = viagens.map((v, idx) => {
-          const dateStr = v.data_saida;
           const items = v.items.map((it) => `
             <tr>
               <td class="mono">${esc(it.adsn || "")}</td>
@@ -257,24 +301,42 @@
             </tr>
           `).join("");
           return `
-            <article class="viagem" data-idx="${idx}">
-              <header class="viagem-head" data-toggle="${idx}">
+            <article class="viagem ${statusClass(v.status)}" data-idx="${idx}">
+              <header class="viagem-head" title="Click para expandir">
                 <div class="cam">${esc(v.cam_label)}</div>
-                <div class="titulo">
-                  <strong>${esc(v.destino_distrito)}</strong>  ·  ${esc(v.matricula)}  ·  ${esc(dateStr)}
-                  <span class="sub">
-                    ${v.adse ? `<code style="background:rgba(255,255,255,.18);padding:0 .35rem;border-radius:3px;font-size:.68rem">${esc(v.adse)}</code> · ` : ""}
-                    ${esc(v.fornecedor || "")} → ${esc(v.destino_provincia || "")} · ${esc(v.transportador || "")}
-                  </span>
+                <div>
+                  <div class="titulo-main">${esc(v.destino_distrito || "—")}</div>
+                  <div class="titulo-sub">${esc(v.matricula || "—")}  ·  ${esc(fmtDateShort(v.data_saida))}  ·  ${fmt(v.n_extensionistas)} ext.</div>
                 </div>
-                <div class="ton">${fmt(v.total_ton)}<span class="u"> t</span></div>
-                <div class="n-ext">${fmt(v.n_extensionistas)} ext.</div>
-                <div><span class="pill ${statusPillClass(v.status)}">${esc(v.status)}</span></div>
+                <div class="ton-wrap">
+                  <div>
+                    <div class="ton">${fmt(v.total_ton)}<span class="u">t</span></div>
+                    <div class="ton-sub">${esc(v.status)}</div>
+                  </div>
+                  <div class="status-dot" title="${esc(v.status)}"></div>
+                </div>
               </header>
               <div class="viagem-meta">
-                <span>Motorista: <strong>${esc(v.motorista || "—")}</strong></span>
-                <span>Batedor: <strong>${esc(v.batedor || "—")}</strong>${v.batedor_contact ? " · " + esc(v.batedor_contact) : ""}</span>
-                ${v.supervisor_phone ? `<span>Supervisor: <strong>${esc(v.supervisor_phone)}</strong></span>` : ""}
+                <div class="meta-cell">
+                  <span class="meta-lbl">ADSE</span>
+                  <span class="adse-code">${esc(v.adse || "(fallback)")}</span>
+                </div>
+                <div class="meta-cell">
+                  <span class="meta-lbl">Origem · Transportador</span>
+                  <span><strong>${esc(v.fornecedor || "—")}</strong> · ${esc(v.transportador || "—")}</span>
+                </div>
+                <div class="meta-cell">
+                  <span class="meta-lbl">Motorista</span>
+                  <span><strong>${esc(v.motorista || "—")}</strong></span>
+                </div>
+                <div class="meta-cell">
+                  <span class="meta-lbl">Batedor</span>
+                  <span><strong>${esc(v.batedor || "—")}</strong>${v.batedor_contact ? " · " + esc(v.batedor_contact) : ""}</span>
+                </div>
+                ${v.supervisor_phone ? `<div class="meta-cell">
+                  <span class="meta-lbl">Supervisor</span>
+                  <span><strong>${esc(v.supervisor_phone)}</strong></span>
+                </div>` : ""}
               </div>
               <div class="viagem-body">
                 <table class="items-tbl">
