@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Viagens (Mapa)</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    /* ── Viagens ───────────────────────────────────────────── */
+    .via-ctrl {
+      display: flex; gap: .5rem; flex-wrap: wrap; align-items: end;
+      margin-bottom: 1rem; padding: .85rem 1rem;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+    }
+    .via-ctrl > div { display: flex; flex-direction: column; }
+    .via-ctrl label {
+      font-size: .65rem; text-transform: uppercase; letter-spacing: .04em;
+      color: #64748b; font-weight: 700; margin-bottom: .25rem;
+    }
+    .via-ctrl input, .via-ctrl select {
+      padding: .4rem .55rem; border: 1px solid #cbd5e1; border-radius: 6px;
+      font-size: .82rem; background: #fff; min-width: 110px;
+    }
+    .via-ctrl .btn {
+      padding: .45rem 1rem; background: #0f4c75; color: #fff; border: 0;
+      border-radius: 6px; cursor: pointer; font-size: .82rem; font-weight: 600;
+    }
+    .via-ctrl .btn:hover { background: #1e6ba8; }
+    .via-ctrl .btn-sec { background: #fff; color: #0f4c75; border: 1px solid #cbd5e1; }
+    .via-ctrl .btn-sec:hover { background: #f1f5f9; }
+    .via-ctrl .btn-ex { background: #15803d; }
+    .via-ctrl .btn-ex:hover { background: #166534; }
+
+    /* KPIs */
+    .via-kpis {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: .5rem; margin-bottom: 1rem;
+    }
+    .kpi {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 6px;
+      padding: .55rem .75rem; border-left: 3px solid #0f4c75;
+    }
+    .kpi .lbl { font-size: .62rem; text-transform: uppercase;
+      letter-spacing: .04em; color: #64748b; font-weight: 700; }
+    .kpi .val { font-size: 1.25rem; font-weight: 800; color: #0f172a;
+      line-height: 1.1; margin-top: .15rem; font-variant-numeric: tabular-nums; }
+    .kpi .sub { font-size: .65rem; color: #94a3b8; margin-top: .15rem; }
+    .kpi.green { border-left-color: #16a34a; } .kpi.green .val { color: #15803d; }
+    .kpi.amber { border-left-color: #d97706; } .kpi.amber .val { color: #b45309; }
+
+    /* Lista de viagens */
+    .viagens-wrap {
+      display: flex; flex-direction: column; gap: .6rem;
+      max-height: calc(100vh - 280px); overflow: auto;
+    }
+
+    .viagem {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      overflow: hidden;
+    }
+    .viagem-head {
+      display: grid;
+      grid-template-columns: 70px 1fr auto auto auto;
+      gap: .65rem; align-items: center;
+      padding: .55rem .85rem; cursor: pointer; user-select: none;
+      background: linear-gradient(180deg, #0f4c75 0%, #145290 100%);
+      color: #fff;
+    }
+    .viagem-head:hover { background: linear-gradient(180deg, #145290 0%, #1e6ba8 100%); }
+    .viagem-head .cam { font-weight: 800; font-size: 1.05rem; letter-spacing: .03em; }
+    .viagem-head .titulo { font-size: .85rem; }
+    .viagem-head .titulo strong { font-weight: 700; }
+    .viagem-head .titulo .sub { font-size: .72rem; opacity: .8; margin-top: .1rem; display: block; }
+    .viagem-head .ton {
+      font-size: 1.1rem; font-weight: 800; font-variant-numeric: tabular-nums;
+      background: rgba(255,255,255,.18); padding: .15rem .55rem; border-radius: 6px;
+    }
+    .viagem-head .ton .u { font-size: .7rem; opacity: .8; font-weight: 600; }
+    .viagem-head .n-ext {
+      font-size: .7rem; opacity: .85;
+    }
+    .viagem-head .pill {
+      padding: .12rem .55rem; border-radius: 99px; font-size: .68rem;
+      font-weight: 700; text-transform: uppercase;
+    }
+    .viagem-head .pill.entregue   { background: #dcfce7; color: #166534; }
+    .viagem-head .pill.transito   { background: #fef9c3; color: #854d0e; }
+    .viagem-head .pill.parcial    { background: #ddd6fe; color: #5b21b6; }
+    .viagem-head .pill.criado     { background: #f1f5f9; color: #475569; }
+
+    .viagem-meta {
+      background: #f8fafc; padding: .45rem .85rem;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: .72rem; color: #475569; display: flex; gap: 1rem; flex-wrap: wrap;
+    }
+    .viagem-meta strong { color: #0f172a; }
+
+    .viagem-body { display: none; padding: 0; }
+    .viagem.open .viagem-body { display: block; }
+
+    .items-tbl {
+      width: 100%; border-collapse: collapse; font-size: .76rem;
+    }
+    .items-tbl thead { background: #f1f5f9; color: #475569; }
+    .items-tbl thead th {
+      padding: .4rem .55rem; text-align: left; font-weight: 700;
+      font-size: .67rem; text-transform: uppercase; letter-spacing: .03em;
+      border-bottom: 1px solid #cbd5e1;
+    }
+    .items-tbl thead th.num { text-align: right; }
+    .items-tbl tbody td {
+      padding: .4rem .55rem; border-bottom: 1px solid #f1f5f9;
+    }
+    .items-tbl tbody tr:hover { background: #f8fafc; }
+    .items-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .items-tbl td.mono { font-family: ui-monospace, monospace; font-size: .68rem; color: #475569; }
+    .items-tbl tfoot td {
+      background: #e0f2fe; font-weight: 700; padding: .4rem .55rem;
+      border-top: 2px solid #0f4c75;
+    }
+    .status-pill {
+      display: inline-block; padding: .05rem .4rem; border-radius: 99px;
+      font-size: .65rem; font-weight: 700;
+    }
+    .status-pill.FINALIZADO { background: #dcfce7; color: #166534; }
+    .status-pill.TRANSITO   { background: #fef9c3; color: #854d0e; }
+    .status-pill.CRIADO     { background: #f1f5f9; color: #475569; }
+
+    .loading { padding: 2.5rem; text-align: center; color: #94a3b8; font-style: italic; }
+    .error { padding: 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #b91c1c; }
+
+    @media print {
+      .via-ctrl, .via-kpis, .admin-sidebar, .admin-header { display: none !important; }
+      .viagem-body { display: block !important; }
+      .viagem { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Viagens (Mapa)</h1>
+      <span class="admin-sub">Agrupado por matrícula + data + batedor · format do mapa Excel original</span>
+    </header>
+
+    <section class="admin-section">
+
+      <!-- Controlos -->
+      <div class="via-ctrl">
+        <div><label>De</label><input type="date" id="f-from"></div>
+        <div><label>Até</label><input type="date" id="f-to"></div>
+        <div>
+          <label>Status</label>
+          <select id="f-status">
+            <option value="">Todos (TRA + FIN)</option>
+            <option value="ENTREGUE">Entregue</option>
+            <option value="Em trânsito">Em trânsito</option>
+            <option value="Parcial">Parcial</option>
+          </select>
+        </div>
+        <div><label>Província</label><input type="text" id="f-province" placeholder="Ex: Gaza"></div>
+        <div><label>Distrito</label><input type="text" id="f-district" placeholder="Ex: Chibuto"></div>
+        <div><label>Fornecedor</label><input type="text" id="f-supplier" placeholder="Ex: SEEDCO"></div>
+        <div><label>Batedor</label><input type="text" id="f-batedor" placeholder="Nome ou email"></div>
+        <div style="display:flex;gap:.4rem;align-self:end">
+          <button class="btn" id="btn-load">Carregar</button>
+          <button class="btn btn-sec" id="btn-clear">Limpar</button>
+          <button class="btn btn-sec" id="btn-expand-all">Expandir tudo</button>
+          <button class="btn btn-ex" id="btn-export" disabled>Excel (mapa)</button>
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div class="via-kpis" id="kpis"></div>
+
+      <!-- Lista de viagens -->
+      <div id="viagens" class="viagens-wrap">
+        <div class="loading">Carregue para começar.</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, esc, toast } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+      const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+      function ymd(d) {
+        return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+      }
+      const today = new Date(); today.setHours(0,0,0,0);
+      const d30 = new Date(today); d30.setDate(d30.getDate() - 30);
+      $("#f-from").value = ymd(d30);
+      $("#f-to").value   = ymd(today);
+
+      let lastData = null;
+
+      function statusPillClass(s) {
+        if (s === "ENTREGUE")       return "entregue";
+        if (s === "Em trânsito")    return "transito";
+        if (s === "Parcial")        return "parcial";
+        return "criado";
+      }
+
+      function renderKpis(summary) {
+        const byStatusEntries = Object.entries(summary.by_status || {});
+        const entregue  = (summary.by_status?.ENTREGUE) || 0;
+        const transito  = (summary.by_status?.["Em trânsito"]) || 0;
+        const parcial   = (summary.by_status?.Parcial) || 0;
+        $("#kpis").innerHTML = `
+          <div class="kpi">
+            <div class="lbl">Viagens</div>
+            <div class="val">${fmt(summary.viagens)}</div>
+            <div class="sub">${fmt(summary.total_items)} ADSNs · ${fmt(summary.distritos)} distritos</div>
+          </div>
+          <div class="kpi green">
+            <div class="lbl">Total</div>
+            <div class="val">${fmt(summary.total_ton)}<span style="font-size:.75rem;color:#64748b"> t</span></div>
+            <div class="sub">${fmt(summary.total_kg)} kg</div>
+          </div>
+          <div class="kpi green">
+            <div class="lbl">Entregues</div>
+            <div class="val">${fmt(entregue)}</div>
+            <div class="sub">100% finalizadas</div>
+          </div>
+          <div class="kpi amber">
+            <div class="lbl">Em Trânsito / Parcial</div>
+            <div class="val">${fmt(transito + parcial)}</div>
+            <div class="sub">${transito} trânsito · ${parcial} parcial</div>
+          </div>
+        `;
+      }
+
+      function renderViagens(viagens) {
+        if (!viagens.length) {
+          $("#viagens").innerHTML = `<div class="loading">Sem viagens para os filtros aplicados.</div>`;
+          return;
+        }
+        $("#viagens").innerHTML = viagens.map((v, idx) => {
+          const dateStr = v.data_saida;
+          const items = v.items.map((it) => `
+            <tr>
+              <td class="mono">${esc(it.adsn || "")}</td>
+              <td>${esc(it.ext_name || "")}</td>
+              <td>${esc(it.ext_contact || "")}</td>
+              <td class="mono">${esc(it.ext_nuit || "")}</td>
+              <td>${esc(it.product || "")}</td>
+              <td class="num">${fmt(it.volumes || 0)}</td>
+              <td class="num">${fmt(Math.round(it.weight_kg || 0))}</td>
+              <td class="num"><strong>${fmt(it.weight_ton)}</strong></td>
+              <td><span class="status-pill ${esc(it.status)}">${esc(it.status)}</span></td>
+            </tr>
+          `).join("");
+          return `
+            <article class="viagem" data-idx="${idx}">
+              <header class="viagem-head" data-toggle="${idx}">
+                <div class="cam">${esc(v.cam_label)}</div>
+                <div class="titulo">
+                  <strong>${esc(v.destino_distrito)}</strong>  ·  ${esc(v.matricula)}  ·  ${esc(dateStr)}
+                  <span class="sub">${esc(v.fornecedor || "")} → ${esc(v.destino_provincia || "")} · ${esc(v.transportador || "")}</span>
+                </div>
+                <div class="ton">${fmt(v.total_ton)}<span class="u"> t</span></div>
+                <div class="n-ext">${fmt(v.n_extensionistas)} ext.</div>
+                <div><span class="pill ${statusPillClass(v.status)}">${esc(v.status)}</span></div>
+              </header>
+              <div class="viagem-meta">
+                <span>Motorista: <strong>${esc(v.motorista || "—")}</strong></span>
+                <span>Batedor: <strong>${esc(v.batedor || "—")}</strong>${v.batedor_contact ? " · " + esc(v.batedor_contact) : ""}</span>
+                ${v.supervisor_phone ? `<span>Supervisor: <strong>${esc(v.supervisor_phone)}</strong></span>` : ""}
+              </div>
+              <div class="viagem-body">
+                <table class="items-tbl">
+                  <thead><tr>
+                    <th>Código Serviço</th>
+                    <th>Nome Extensionista</th>
+                    <th>Telf Ext.</th>
+                    <th>NUIT</th>
+                    <th>Artigo</th>
+                    <th class="num">Volumes</th>
+                    <th class="num">Peso (kg)</th>
+                    <th class="num">Ton</th>
+                    <th>Estado</th>
+                  </tr></thead>
+                  <tbody>${items}</tbody>
+                  <tfoot><tr>
+                    <td colspan="5" style="text-align:right">TOTAL</td>
+                    <td class="num">${fmt(v.total_volumes)}</td>
+                    <td class="num">${fmt(Math.round(v.total_kg))}</td>
+                    <td class="num">${fmt(v.total_ton)}</td>
+                    <td></td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            </article>
+          `;
+        }).join("");
+
+        // Wire click handlers
+        $$("#viagens .viagem-head").forEach((h) => {
+          h.addEventListener("click", () => {
+            const idx = h.dataset.toggle;
+            const art = h.closest(".viagem");
+            if (art) art.classList.toggle("open");
+          });
+        });
+      }
+
+      function pickFilters() {
+        const f = {};
+        const from = $("#f-from").value;
+        const to   = $("#f-to").value;
+        if (from) f.fromDate = from;
+        if (to)   f.toDate   = to;
+        ["status","province","district","supplier","batedor"].forEach((k) => {
+          const v = $("#f-" + k)?.value?.trim();
+          if (v) f[k] = v;
+        });
+        return f;
+      }
+
+      async function load() {
+        const f = pickFilters();
+        const params = new URLSearchParams(f);
+        $("#viagens").innerHTML = `<div class="loading">A carregar (~30-60s)…</div>`;
+        $("#kpis").innerHTML = "";
+        $("#btn-export").disabled = true;
+        try {
+          const data = await fetchJSON("/api/admin/adicional/viagens?" + params);
+          lastData = data;
+          renderKpis({ ...data.summary, viagens: data.viagens.length });
+          renderViagens(data.viagens);
+          $("#btn-export").disabled = false;
+          if (toast) toast(`${fmt(data.viagens.length)} viagens (${fmt(data.summary.total_ton)} t)`, { kind: "ok" });
+        } catch (e) {
+          $("#viagens").innerHTML = `<div class="error">Erro: ${esc(e.message)}</div>`;
+          if (toast) toast("Erro: " + e.message, { kind: "err" });
+        }
+      }
+
+      $("#btn-load").addEventListener("click", load);
+      $("#btn-clear").addEventListener("click", () => {
+        ["status","province","district","supplier","batedor"].forEach((k) => { $("#f-"+k).value = ""; });
+      });
+      $("#btn-expand-all").addEventListener("click", () => {
+        const arts = $$("#viagens .viagem");
+        const allOpen = arts.every((a) => a.classList.contains("open"));
+        arts.forEach((a) => a.classList.toggle("open", !allOpen));
+        $("#btn-expand-all").textContent = allOpen ? "Expandir tudo" : "Recolher tudo";
+      });
+      $("#btn-export").addEventListener("click", () => {
+        const params = new URLSearchParams(pickFilters());
+        window.location.href = "/api/admin/adicional/viagens/export.xlsx?" + params;
+        if (toast) toast("A gerar Excel…", { kind: "ok" });
+      });
+
+      AdminUI.renderLayout("viagens");
+      load();
+    })();
+  </script>
+</body>
+</html>

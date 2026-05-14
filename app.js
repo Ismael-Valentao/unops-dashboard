@@ -810,6 +810,234 @@ app.get("/api/admin/adicional/entregas", auth.requireRole("admin", "superadmin")
   }
 });
 
+// ── Viagens (agrupado por matrícula+data+batedor — vista tipo Excel) ──
+// Helper partilhado: monta entregas + supervisorMap para o pipeline /viagens
+async function buildViagensDataset(req) {
+  const entLib = require("./lib/adicional-entregas");
+  const viaLib = require("./lib/adicional-viagens");
+  const { query } = require("./db/mysql");
+
+  const fromDate = req.query.fromDate || undefined;
+  const toDate   = req.query.toDate   || undefined;
+  const chunkDays = req.query.chunkDays ? Number(req.query.chunkDays) : undefined;
+  const includeAll = req.query.includeAllStatuses === "1";
+
+  // 1. API (chunked)
+  const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays });
+  let apiRows = apiResult.rows;
+  if (!includeAll) {
+    const RELEVANT = new Set(["TRANSITO", "FINALIZADO"]);
+    apiRows = apiRows.filter((r) => RELEVANT.has(String(r.StatusName || "").toUpperCase()));
+  }
+
+  // 2. Sheet + batedores + beneficiarios + supervisores
+  const sheetRows = await query(
+    `SELECT gtu, beneficiary_name, delivered_qty, unit, product, submitted_by,
+            delivery_date_iso, district, province
+     FROM delivery_audit WHERE deleted_at IS NULL`
+  );
+  const batedoresMap = new Map();
+  try {
+    const bts = await query("SELECT email, name, contact, contact_alt FROM batedores");
+    for (const b of bts) batedoresMap.set(String(b.email || "").toLowerCase(), b);
+  } catch (_) {}
+  const beneficiariesMap = new Map();
+  try {
+    const bens = await query("SELECT nuit, name, contact FROM beneficiaries WHERE nuit IS NOT NULL AND nuit <> ''");
+    for (const b of bens) beneficiariesMap.set(String(b.nuit).trim(), { name: b.name, contact: b.contact });
+  } catch (_) {}
+  // Supervisor: NUIT do extensionista → "Nome / Telefone" (vem do MAAP)
+  // NUIT vive em beneficiaries.nuit (não em delivery_balances)
+  const supervisorMap = new Map();
+  try {
+    const sups = await query(
+      `SELECT nuit, supervisor_phone, supervisor_name
+       FROM beneficiaries
+       WHERE nuit IS NOT NULL AND nuit <> ''
+         AND supervisor_phone IS NOT NULL AND supervisor_phone <> ''`
+    );
+    for (const s of sups) {
+      const label = s.supervisor_name
+        ? `${s.supervisor_name} / ${s.supervisor_phone}`
+        : String(s.supervisor_phone);
+      supervisorMap.set(String(s.nuit).trim(), label);
+    }
+  } catch (_) {}
+
+  // 3. Build entregas + agrupa em viagens
+  const entregas = entLib.buildEntregas({ apiRows, sheetRows, batedoresMap, beneficiariesMap });
+  let result = viaLib.groupByViagem(entregas, supervisorMap);
+
+  // 4. Filtros server-side (apply ao viagens)
+  const norm = (s) => String(s || "").toLowerCase();
+  let viagens = result.viagens;
+  if (req.query.province) {
+    const want = norm(req.query.province);
+    viagens = viagens.filter((v) => norm(v.destino_provincia) === want);
+  }
+  if (req.query.district) {
+    const want = norm(req.query.district);
+    viagens = viagens.filter((v) => norm(v.destino_distrito) === want);
+  }
+  if (req.query.supplier) {
+    const want = norm(req.query.supplier);
+    viagens = viagens.filter((v) => norm(v.fornecedor).includes(want));
+  }
+  if (req.query.batedor) {
+    const want = norm(req.query.batedor);
+    viagens = viagens.filter((v) =>
+      norm(v.batedor).includes(want) || norm(v.batedor_email).includes(want));
+  }
+  if (req.query.status) {
+    const want = norm(req.query.status);
+    viagens = viagens.filter((v) => norm(v.status) === want);
+  }
+
+  return { period: apiResult.period, viagens, summary: result.summary };
+}
+
+// GET /api/admin/adicional/viagens — JSON com viagens agrupadas
+app.get("/api/admin/adicional/viagens", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const result = await buildViagensDataset(req);
+    res.json({
+      period: result.period,
+      summary: { ...result.summary, viagens: result.viagens.length },
+      viagens: result.viagens,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/adicional/viagens/export.xlsx — Excel idêntico ao mapa
+app.get("/api/admin/adicional/viagens/export.xlsx", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const ExcelJS = require("exceljs");
+    const result = await buildViagensDataset(req);
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "AQI Dashboard";
+    wb.created = new Date();
+
+    // Para fidelidade ao mapa, agrupa viagens por STATUS_GROUP:
+    //   ENTREGUE/Parcial → sheet "ENTREGUES"
+    //   Em trânsito       → sheet "TRANSITO"
+    // (Sem misturar. Replica o formato exacto: header CAM-X / col headers /
+    //  data / totais / linha vazia / próximo camião)
+    const groupTransito = result.viagens.filter((v) => v.status === "Em trânsito");
+    const groupEntregue = result.viagens.filter((v) => v.status === "ENTREGUE" || v.status === "Parcial");
+
+    function renderSheet(ws, viagens, title) {
+      const C_HEADER = "FF0F4C75";
+      const C_TOTAL  = "FFE2E8F0";
+      const C_WHITE  = "FFFFFFFF";
+      // Larguras das colunas para não ficar apertado
+      const colWidths = [18, 12, 22, 26, 16, 26, 14, 28, 18, 12, 14, 11, 11, 9, 22];
+      colWidths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+      let r = 1;
+      // Título global
+      ws.getCell(r, 1).value = title;
+      ws.getCell(r, 1).font = { bold: true, size: 14, color: { argb: C_HEADER } };
+      ws.mergeCells(r, 1, r, 4);
+      r++;
+      ws.getCell(r, 1).value = `Total: ${result.summary.total_kg.toLocaleString("pt-PT")} kg (${result.summary.total_ton} t) em ${viagens.length} viagens`;
+      ws.getCell(r, 1).font = { italic: true, color: { argb: "FF64748B" } };
+      r += 2;
+
+      for (const v of viagens) {
+        // Header da viagem: "CAM-XX  Destino  N.NNN T"
+        ws.getCell(r, 1).value = `${v.cam_label}   ${v.destino_distrito}   ${v.total_ton} T`;
+        ws.getCell(r, 1).font = { bold: true, size: 12, color: { argb: C_WHITE } };
+        ws.getCell(r, 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_HEADER } };
+        ws.mergeCells(r, 1, r, 4);
+        // Origem / Transportador no resto da row
+        ws.getCell(r, 5).value = `ORIGEM: ${v.fornecedor} · TRANSPORTADOR: ${v.transportador}`;
+        ws.getCell(r, 5).font = { italic: true, color: { argb: C_WHITE } };
+        ws.getCell(r, 5).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_HEADER } };
+        ws.mergeCells(r, 5, r, 15);
+        r++;
+
+        // Header das colunas
+        const headers = [
+          "MATRICULA", "DATA SAIDA", "Código Serviço", "Nome Extensionista",
+          "Telf Extensionista", "BATEDOR", "Telef Batedor", "Telf Supervisor",
+          "Distrito", "NUIT", "Artigo", "Volumes (un)", "Peso (kg)", "Ton",
+          "Observações/ESTADO",
+        ];
+        headers.forEach((h, i) => {
+          const c = ws.getCell(r, i + 1);
+          c.value = h;
+          c.font = { bold: true, color: { argb: C_WHITE } };
+          c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E6BA8" } };
+          c.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        });
+        r++;
+
+        // Linhas de dados (1 por item)
+        for (const it of v.items) {
+          ws.getCell(r, 1).value  = it.truck_plate;
+          ws.getCell(r, 2).value  = it.create_date ? new Date(it.create_date) : null;
+          if (ws.getCell(r, 2).value) ws.getCell(r, 2).numFmt = "dd/mm/yyyy";
+          ws.getCell(r, 3).value  = it.adsn;
+          ws.getCell(r, 4).value  = it.ext_name;
+          ws.getCell(r, 5).value  = it.ext_contact || "";
+          ws.getCell(r, 6).value  = it.batedor_name || it.batedor_email || "";
+          ws.getCell(r, 7).value  = it.batedor_contact || "";
+          ws.getCell(r, 8).value  = v.supervisor_phone || "";
+          ws.getCell(r, 9).value  = it.district;
+          ws.getCell(r, 10).value = it.ext_nuit || "";
+          ws.getCell(r, 11).value = it.product;
+          ws.getCell(r, 12).value = it.volumes || 0;
+          ws.getCell(r, 13).value = it.weight_kg || 0;
+          ws.getCell(r, 14).value = it.weight_ton || 0;
+          ws.getCell(r, 12).numFmt = "#,##0";
+          ws.getCell(r, 13).numFmt = "#,##0.00";
+          ws.getCell(r, 14).numFmt = "#,##0.000";
+          ws.getCell(r, 15).value = it.status === "FINALIZADO" ? "ENTREGUE" : (it.status === "TRANSITO" ? "Em transito" : it.status);
+          r++;
+        }
+
+        // Total da viagem (col 12-14)
+        ws.getCell(r, 11).value = "TOTAL";
+        ws.getCell(r, 11).font = { bold: true, italic: true };
+        ws.getCell(r, 11).alignment = { horizontal: "right" };
+        ws.getCell(r, 12).value = v.total_volumes;
+        ws.getCell(r, 13).value = v.total_kg;
+        ws.getCell(r, 14).value = v.total_ton;
+        ws.getCell(r, 12).numFmt = "#,##0";
+        ws.getCell(r, 13).numFmt = "#,##0.00";
+        ws.getCell(r, 14).numFmt = "#,##0.000";
+        for (let c = 11; c <= 14; c++) {
+          ws.getCell(r, c).font = { bold: true };
+          ws.getCell(r, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_TOTAL } };
+        }
+        r += 2; // linha em branco entre camiões
+      }
+    }
+
+    if (groupEntregue.length) {
+      renderSheet(wb.addWorksheet("ENTREGUES"), groupEntregue, "ENTREGUES");
+    }
+    if (groupTransito.length) {
+      renderSheet(wb.addWorksheet("TRANSITO"), groupTransito, "TRANSITO");
+    }
+    if (!groupEntregue.length && !groupTransito.length) {
+      const ws = wb.addWorksheet("Vazio");
+      ws.getCell(1, 1).value = "Sem viagens para os filtros aplicados.";
+    }
+
+    const fname = `viagens_${result.period.fromDate}_${result.period.toDate}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/adicional/suppliers[?fromDate=&toDate=&chunkDays=&includeAllStatuses=]
 // Agrega serviços ADICIONAL por fornecedor (canonical key = ShipAcountNumber).
 // Devolve lista de fornecedores ordenada por peso entregue (kg),
