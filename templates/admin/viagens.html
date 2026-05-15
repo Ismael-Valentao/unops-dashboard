@@ -221,6 +221,93 @@
     }
     .sys-pill.both { background: #dcfce7; color: #166534; }
     .sys-pill.only { background: #fef3c7; color: #92400e; }
+    /* ── Modal de anexos (lightbox) ─────────────────────────── */
+    .attach-modal {
+      position: fixed; inset: 0; z-index: 200;
+      display: none; align-items: center; justify-content: center;
+    }
+    .attach-modal.open { display: flex; }
+    .attach-modal-bg {
+      position: absolute; inset: 0;
+      background: rgba(15,23,42,.85);
+      backdrop-filter: blur(4px);
+    }
+    .attach-modal-content {
+      position: relative; z-index: 1;
+      max-width: 95vw; max-height: 95vh;
+      display: flex; flex-direction: column;
+      gap: .5rem;
+    }
+    .attach-modal-img-wrap {
+      position: relative;
+      background: #1e293b; border-radius: 8px;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 200px; max-height: 80vh;
+    }
+    .attach-modal-img {
+      max-width: 100%; max-height: 80vh;
+      object-fit: contain; display: block;
+    }
+    .attach-modal-loading {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: #94a3b8; font-style: italic;
+    }
+    .attach-modal-error {
+      padding: 2rem; text-align: center; color: #fca5a5;
+      background: rgba(127,29,29,.3); border-radius: 6px;
+    }
+    .attach-modal-btn {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      background: rgba(255,255,255,.15); border: 0;
+      width: 44px; height: 44px; border-radius: 50%;
+      color: #fff; cursor: pointer; font-size: 1.4rem;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .12s;
+    }
+    .attach-modal-btn:hover { background: rgba(255,255,255,.3); }
+    .attach-modal-prev { left: .75rem; }
+    .attach-modal-next { right: .75rem; }
+    .attach-modal-close {
+      position: absolute; top: .75rem; right: .75rem;
+      background: rgba(0,0,0,.5); border: 0;
+      width: 36px; height: 36px; border-radius: 50%;
+      color: #fff; cursor: pointer; font-size: 1.4rem; line-height: 1;
+      z-index: 2;
+    }
+    .attach-modal-close:hover { background: rgba(0,0,0,.8); }
+    .attach-modal-counter {
+      position: absolute; top: .75rem; left: .75rem;
+      background: rgba(0,0,0,.5); color: #fff;
+      padding: .3rem .65rem; border-radius: 99px;
+      font-size: .75rem; font-weight: 600;
+      z-index: 2;
+    }
+    .attach-modal-footer {
+      background: #fff; border-radius: 8px;
+      padding: .55rem .9rem;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem;
+    }
+    .attach-modal-label {
+      font-size: .85rem; font-weight: 600; color: #0f172a;
+    }
+    .attach-modal-label .kind-pill {
+      display: inline-block; font-size: .65rem;
+      padding: .1rem .45rem; border-radius: 99px;
+      margin-right: .4rem; font-weight: 700;
+    }
+    .attach-modal-label .kind-pill.guia { background: #dbeafe; color: #1e40af; }
+    .attach-modal-label .kind-pill.sig  { background: #d1fae5; color: #065f46; }
+    .attach-modal-open {
+      font-size: .75rem; color: #0f4c75; text-decoration: none;
+      font-weight: 600;
+      padding: .35rem .75rem; border: 1px solid #cbd5e1; border-radius: 5px;
+      background: #f8fafc;
+    }
+    .attach-modal-open:hover { background: #dbeafe; border-color: #93c5fd; }
+
     /* Ícones de anexos (guias + assinatura) ao lado do estado UNOPS */
     .attach-row {
       display: inline-flex; gap: .25rem; margin-left: .35rem;
@@ -319,6 +406,24 @@
     </section>
   </main>
 
+  <!-- Modal lightbox para anexos UNOPS (imagens) -->
+  <div class="attach-modal" id="attach-modal" role="dialog" aria-modal="true">
+    <div class="attach-modal-bg" id="attach-modal-bg"></div>
+    <div class="attach-modal-content">
+      <div class="attach-modal-img-wrap">
+        <span class="attach-modal-counter" id="attach-modal-counter">1 de 1</span>
+        <button class="attach-modal-close" id="attach-modal-close" title="Fechar (Esc)">×</button>
+        <button class="attach-modal-btn attach-modal-prev" id="attach-modal-prev" title="Anterior (←)">‹</button>
+        <button class="attach-modal-btn attach-modal-next" id="attach-modal-next" title="Próximo (→)">›</button>
+        <img class="attach-modal-img" id="attach-modal-img" alt="Anexo">
+      </div>
+      <div class="attach-modal-footer">
+        <span class="attach-modal-label" id="attach-modal-label"></span>
+        <a class="attach-modal-open" id="attach-modal-open" target="_blank" rel="noopener">Abrir original ↗</a>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/admin.js"></script>
   <script>
     (function () {
@@ -335,6 +440,87 @@
       $("#f-to").value   = ymd(today);
 
       let lastData = null;
+
+      // ── Modal de anexos (lightbox) ─────────────────────────────
+      // Map: adsn → array de { url, label, kind }
+      const attachmentsByAdsn = new Map();
+      let modalCurrentList = [], modalCurrentIdx = 0;
+
+      // Converte URL de Google Drive em URL de imagem embedável.
+      // Aceita formatos:
+      //   https://drive.google.com/open?id=XYZ
+      //   https://drive.google.com/file/d/XYZ/view
+      //   https://docs.google.com/uc?id=XYZ
+      // Se não bater, devolve a URL original (pode já ser uma imagem directa).
+      function imageEmbedUrl(url) {
+        const s = String(url || "");
+        let m = s.match(/\/file\/d\/([^/?#]+)/);
+        if (!m) m = s.match(/[?&]id=([^&]+)/);
+        if (m) return `https://drive.google.com/thumbnail?id=${m[1]}&sz=w2000`;
+        return s;
+      }
+
+      function openAttachmentModal(adsn, idx) {
+        const list = attachmentsByAdsn.get(adsn);
+        if (!list || !list.length) return;
+        modalCurrentList = list;
+        modalCurrentIdx = Math.max(0, Math.min(idx | 0, list.length - 1));
+        renderModalSlide();
+        document.getElementById("attach-modal").classList.add("open");
+        document.body.style.overflow = "hidden";
+      }
+      function closeAttachmentModal() {
+        document.getElementById("attach-modal").classList.remove("open");
+        document.body.style.overflow = "";
+        // Liberta o src para não manter download em background
+        document.getElementById("attach-modal-img").src = "";
+      }
+      function navAttachment(delta) {
+        if (!modalCurrentList.length) return;
+        modalCurrentIdx = (modalCurrentIdx + delta + modalCurrentList.length) % modalCurrentList.length;
+        renderModalSlide();
+      }
+      function renderModalSlide() {
+        const att = modalCurrentList[modalCurrentIdx];
+        const total = modalCurrentList.length;
+        const img = document.getElementById("attach-modal-img");
+        const label = document.getElementById("attach-modal-label");
+        const open = document.getElementById("attach-modal-open");
+        const counter = document.getElementById("attach-modal-counter");
+        const prev = document.getElementById("attach-modal-prev");
+        const next = document.getElementById("attach-modal-next");
+        img.src = imageEmbedUrl(att.url);
+        img.alt = att.label;
+        const kindClass = att.kind === "sig" ? "sig" : "guia";
+        const kindLabel = att.kind === "sig" ? "Assinatura" : "Guia";
+        label.innerHTML = `<span class="kind-pill ${kindClass}">${kindLabel}</span>${esc(att.label)}`;
+        open.href = att.url;
+        counter.textContent = `${modalCurrentIdx + 1} de ${total}`;
+        prev.style.display = total > 1 ? "" : "none";
+        next.style.display = total > 1 ? "" : "none";
+      }
+
+      // Wire-up modal (1 vez)
+      document.getElementById("attach-modal-bg").addEventListener("click", closeAttachmentModal);
+      document.getElementById("attach-modal-close").addEventListener("click", closeAttachmentModal);
+      document.getElementById("attach-modal-prev").addEventListener("click", (e) => { e.stopPropagation(); navAttachment(-1); });
+      document.getElementById("attach-modal-next").addEventListener("click", (e) => { e.stopPropagation(); navAttachment(1); });
+      document.addEventListener("keydown", (e) => {
+        if (!document.getElementById("attach-modal").classList.contains("open")) return;
+        if (e.key === "Escape")     closeAttachmentModal();
+        else if (e.key === "ArrowLeft")  navAttachment(-1);
+        else if (e.key === "ArrowRight") navAttachment(1);
+      });
+      // Delegação: qualquer click em .attach-icon abre o modal
+      document.addEventListener("click", (e) => {
+        const btn = e.target.closest(".attach-icon");
+        if (!btn) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const adsn = btn.dataset.adsn;
+        const idx  = Number(btn.dataset.attachIdx || 0);
+        if (adsn) openAttachmentModal(adsn, idx);
+      }, true);
 
       function statusClass(s) {
         if (s === "ENTREGUE")       return "s-entregue";
@@ -401,21 +587,25 @@
             : (nUnops === 0 ? "Nenhum ADSN lançado no UNOPS" : `${nUnops} de ${nTotal} ADSNs já no UNOPS`);
           const items = v.items.map((it) => {
             // Anexos: guias (📎 1/2/3) + assinatura (✍️) — só quando há match UNOPS
-            // e há pelo menos 1 URL. Stop propagation para não tocar o toggle da viagem.
+            // e há pelo menos 1 URL. Clique abre modal lightbox em vez de nova aba.
             let attachIcons = "";
             if (it.sheet_matched) {
               const links = it.attachments || [];
               const sig   = it.beneficiary_signature || null;
-              const icons = [];
-              links.forEach((url, i) => {
-                icons.push(`<a href="${esc(url)}" target="_blank" rel="noopener" class="attach-icon"
-                  title="Anexo guia #${i+1}" onclick="event.stopPropagation()">📎</a>`);
-              });
-              if (sig) {
-                icons.push(`<a href="${esc(sig)}" target="_blank" rel="noopener" class="attach-icon sig"
-                  title="Assinatura do beneficiário" onclick="event.stopPropagation()">✍</a>`);
+              const list  = [];
+              links.forEach((url, i) => list.push({ url, label: `Guia #${i+1}`, kind: "guia" }));
+              if (sig) list.push({ url: sig, label: "Assinatura beneficiário", kind: "sig" });
+              if (list.length) {
+                attachmentsByAdsn.set(it.adsn, list);
+                const icons = [];
+                list.forEach((att, idx) => {
+                  const isGuia = att.kind === "guia";
+                  icons.push(`<button type="button" class="attach-icon${isGuia ? "" : " sig"}"
+                    data-adsn="${esc(it.adsn)}" data-attach-idx="${idx}"
+                    title="${esc(att.label)} — clique para ver">${isGuia ? "📎" : "✍"}</button>`);
+                });
+                attachIcons = `<span class="attach-row">${icons.join("")}</span>`;
               }
-              if (icons.length) attachIcons = `<span class="attach-row">${icons.join("")}</span>`;
             }
             const sysCell = it.sheet_matched
               ? `<span class="sys-pill both" title="Lançado em ambos os sistemas">UNOPS + ADIC</span>${attachIcons}`
