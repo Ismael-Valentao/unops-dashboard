@@ -174,9 +174,6 @@
       background: #faf5ff;
     }
     .sku-tbl tbody tr.is-saco-row td { color: #5b21b6; }
-    .sku-tbl tbody td .criado-note {
-      display: block; font-size: .65rem; color: #94a3b8; margin-top: .15rem;
-    }
     .pct-bar {
       display: inline-flex; align-items: center; gap: .4rem;
       font-variant-numeric: tabular-nums;
@@ -376,7 +373,8 @@
           return;
         }
         wrap.innerHTML = suppliers.map((s, idx) => {
-          // Tabela por produto
+          // Tabela por produto — CRIADO ignorado nesta página (decisão UNOPS:
+          // só conta o que efectivamente saiu — TRA+FIN).
           const rows = s.by_product.map((p) => {
             const noMeta = !p.has_meta;
             const isOver = p.has_meta && p.meta_pct >= 100;
@@ -388,8 +386,6 @@
             const pend = p.meta_pendente == null
               ? '<span style="color:#94a3b8">—</span>'
               : `${fmtNum(p.meta_pendente)}<span class="unit">${unit}</span>`;
-            const criadoTxt = p.criado_qty > 0
-              ? `<span class="criado-note">+ ${fmtNum(p.criado_qty)} ${unit} em CRIADO</span>` : '';
             let cls = "";
             if (isSaco) cls = "is-saco-row";
             else if (noMeta) cls = "no-meta-row";
@@ -397,10 +393,10 @@
               <tr class="${cls}">
                 <td>${esc(p.product)} ${isSaco ? '<span class="unit">(em un)</span>' : ''}</td>
                 <td class="num qty-meta">${meta}</td>
-                <td class="num ${isOver ? 'qty-over' : 'qty-forn'}">${fmtNum(p.forn_qty)}<span class="unit">${unit}</span>${criadoTxt}</td>
+                <td class="num ${isOver ? 'qty-over' : 'qty-forn'}">${fmtNum(p.forn_qty)}<span class="unit">${unit}</span></td>
                 <td class="num qty-pend">${pend}</td>
                 <td class="num">${pctBar(p.meta_pct)}</td>
-                <td class="num" style="color:#94a3b8">${p.forn_count}${p.criado_count > 0 ? ` (+${p.criado_count} cr.)` : ''}</td>
+                <td class="num" style="color:#94a3b8">${p.forn_count}</td>
               </tr>
             `;
           }).join("");
