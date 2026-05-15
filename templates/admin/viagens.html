@@ -371,6 +371,7 @@
         <div><label>Distrito</label><input type="text" id="f-district" placeholder="Ex: Chibuto"></div>
         <div><label>Fornecedor</label><input type="text" id="f-supplier" placeholder="Ex: SEEDCO"></div>
         <div><label>Batedor</label><input type="text" id="f-batedor" placeholder="Nome ou email"></div>
+        <div><label>Matrícula</label><input type="text" id="f-matricula" placeholder="Ex: AJN734MP"></div>
         <div>
           <label>Produto</label>
           <select id="f-product">
@@ -440,6 +441,10 @@
       $("#f-to").value   = ymd(today);
 
       let lastData = null;
+
+      // ADSEs com card expandido — preservados entre renders (sobretudo
+      // após refresh por ADSE), para que o card permaneça aberto.
+      const expandedAdses = new Set();
 
       // ── Modal de anexos (lightbox) ─────────────────────────────
       // Map: adsn → array de { url, label, kind }
@@ -632,7 +637,7 @@
           ).join("");
           const multiClass = (v.n_products || 0) >= 2 ? " multi-product" : "";
           return `
-            <article class="viagem ${statusClass(v.status)}${multiClass}" data-idx="${idx}">
+            <article class="viagem ${statusClass(v.status)}${multiClass}" data-idx="${idx}" data-adse="${esc(v.adse || '')}">
               <header class="viagem-head" title="Click para expandir">
                 <div>
                   <div class="titulo-main">
@@ -709,11 +714,23 @@
           `;
         }).join("");
 
-        // Wire click handlers — expand/collapse no header
+        // Re-aplica estado expandido preservado entre renders
+        $$("#viagens .viagem").forEach((art) => {
+          const adse = art.dataset.adse;
+          if (adse && expandedAdses.has(adse)) art.classList.add("open");
+        });
+
+        // Wire click handlers — expand/collapse + actualiza Set
         $$("#viagens .viagem-head").forEach((h) => {
           h.addEventListener("click", () => {
             const art = h.closest(".viagem");
-            if (art) art.classList.toggle("open");
+            if (!art) return;
+            art.classList.toggle("open");
+            const adse = art.dataset.adse;
+            if (adse) {
+              if (art.classList.contains("open")) expandedAdses.add(adse);
+              else                                  expandedAdses.delete(adse);
+            }
           });
         });
         // Botão refresh por ADSE
@@ -786,7 +803,7 @@
       // Para o Excel export, mantemos os filtros no URL para reduzir o ficheiro.
       function pickFiltersForExport() {
         const f = pickFilters();
-        ["status","province","district","supplier","batedor"].forEach((k) => {
+        ["status","province","district","supplier","batedor","matricula"].forEach((k) => {
           const v = $("#f-" + k)?.value?.trim();
           if (v) f[k] = v;
         });
@@ -820,13 +837,14 @@
       function rerender() {
         if (!lastData) return;
         const norm = (s) => String(s || "").toLowerCase();
-        const fStatus   = $("#f-status").value;
-        const fProvince = $("#f-province").value.trim();
-        const fDistrict = $("#f-district").value.trim();
-        const fSupplier = $("#f-supplier").value.trim();
-        const fBatedor  = $("#f-batedor").value.trim();
-        const fProduct  = $("#f-product").value;
-        const fUnops    = $("#f-unops").value;
+        const fStatus    = $("#f-status").value;
+        const fProvince  = $("#f-province").value.trim();
+        const fDistrict  = $("#f-district").value.trim();
+        const fSupplier  = $("#f-supplier").value.trim();
+        const fBatedor   = $("#f-batedor").value.trim();
+        const fMatricula = $("#f-matricula").value.trim();
+        const fProduct   = $("#f-product").value;
+        const fUnops     = $("#f-unops").value;
 
         let viagensRender = lastData.viagens;
         if (fStatus)   viagensRender = viagensRender.filter((v) => v.status === fStatus);
@@ -839,6 +857,13 @@
         if (fBatedor)  viagensRender = viagensRender.filter((v) =>
           norm(v.batedor).includes(norm(fBatedor)) ||
           norm(v.batedor_email).includes(norm(fBatedor)));
+        if (fMatricula) {
+          // Match contra matrícula raw + normalizada (sem espaços/traços/slashes)
+          const mNorm = norm(fMatricula).replace(/[\s\-/]/g, "");
+          viagensRender = viagensRender.filter((v) =>
+            norm(v.matricula).includes(norm(fMatricula)) ||
+            norm(v.matricula_norm || "").replace(/[\s\-/]/g, "").includes(mNorm));
+        }
         if (fProduct) {
           // Viagem é incluída se ALGUM ADSN seu carregou o produto seleccionado
           viagensRender = viagensRender.filter((v) =>
@@ -927,7 +952,7 @@
       $("#btn-load").addEventListener("click", () => load(false));
       $("#btn-force").addEventListener("click", () => load(true));
       $("#btn-clear").addEventListener("click", () => {
-        ["status","province","district","supplier","batedor","unops","product"].forEach((k) => { $("#f-"+k).value = ""; });
+        ["status","province","district","supplier","batedor","matricula","unops","product"].forEach((k) => { $("#f-"+k).value = ""; });
         rerender();
       });
 
@@ -945,14 +970,18 @@
         };
       }
       const debouncedRerender = debounce(rerender, 180);
-      ["province","district","supplier","batedor"].forEach((k) => {
+      ["province","district","supplier","batedor","matricula"].forEach((k) => {
         $("#f-" + k).addEventListener("input", debouncedRerender);
       });
 
       $("#btn-expand-all").addEventListener("click", () => {
         const arts = $$("#viagens .viagem");
         const allOpen = arts.every((a) => a.classList.contains("open"));
-        arts.forEach((a) => a.classList.toggle("open", !allOpen));
+        if (allOpen) {
+          arts.forEach((a) => { a.classList.remove("open"); if (a.dataset.adse) expandedAdses.delete(a.dataset.adse); });
+        } else {
+          arts.forEach((a) => { a.classList.add("open"); if (a.dataset.adse) expandedAdses.add(a.dataset.adse); });
+        }
         $("#btn-expand-all").textContent = allOpen ? "Expandir tudo" : "Recolher tudo";
       });
       $("#btn-export").addEventListener("click", () => {

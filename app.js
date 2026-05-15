@@ -980,10 +980,21 @@ app.get("/api/admin/adicional/viagens/refresh", auth.requireRole("admin", "super
       String(x.getMonth() + 1).padStart(2, "0") + "-" +
       String(x.getDate()).padStart(2, "0");
 
-    // noCache: o utilizador clicou refresh — quer dados FRESCOS, ignora o cache.
+    // 1. Refresh do Sheet UNOPS em paralelo com o fetch da API — apanha
+    //    novas GTUs submetidas desde o último refresh do cache.
+    //    Se falhar, continua com o cache actual (não bloqueia o refresh).
+    const sheetPromise = refreshCache().catch((e) => {
+      console.warn("[viagens/refresh] sheet refresh falhou:", e.message);
+    });
+
+    // 2. noCache: o utilizador clicou refresh — quer dados FRESCOS, ignora o cache.
     const apiResult = await adicionalApi.listProjectsChunked({
       fromDate: fmtYmd(fromD), toDate: fmtYmd(toD), chunkDays: 7, noCache: true,
     });
+    // 3. Garante que o sheet UNOPS terminou antes de construir as viagens
+    //    (precisamos do cache.data actualizado para o match GTU).
+    await sheetPromise;
+
     // Filtra para a ADSE pedida (ParentServiceCode)
     const apiRows = apiResult.rows.filter((r) =>
       String(r.ParentServiceCode || "").trim() === adse
