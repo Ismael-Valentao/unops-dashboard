@@ -177,9 +177,13 @@
     .prod-card .supp-row .supp-line3 strong {
       color: #334155; font-weight: 600;
     }
-    /* Quando levantado=0, dimming itálico para deixar claro que é zero */
-    .prod-card .supp-row .supp-line3 strong.zero {
-      color: #94a3b8; font-weight: 500; font-style: italic;
+    /* Quando levantado=0, dimming itálico para deixar claro que é zero.
+       !important para sobrepor qualquer cache CSS antigo do browser. */
+    .prod-card .supp-row .supp-line3 strong.zero,
+    .prod-card .supp-row .supp-line3 .qty-zero {
+      color: #94a3b8 !important;
+      font-weight: 500 !important;
+      font-style: italic !important;
     }
     .prod-card .supp-row .supp-line3 .pend-tag {
       color: #b45309; font-weight: 600;
@@ -512,9 +516,11 @@
               const barW    = sPct == null ? 0 : Math.min(100, sPct);
 
               // Levantado/Meta — só mostra meta se há.
-              // Quando levantado=0, dimming cinza itálico para diferenciar
-              // de fornecedores que entregaram algo.
-              const levZero = s.forn_qty === 0;
+              // Quando levantado=0 (ou null/undefined/string vazia), dimming
+              // cinza itálico. Comparação defensiva via Number() coerce para
+              // apanhar 0, "0", null, undefined, etc.
+              const fornNum = Number(s.forn_qty);
+              const levZero = !s.forn_qty || fornNum === 0 || isNaN(fornNum);
               const levTxt = `<strong class="${levZero ? "zero" : ""}">${fmtNum(s.forn_qty)}</strong> ${unit}` +
                 (s.has_meta && s.meta_qty != null
                   ? ` <span style="opacity:.7">/ ${fmtNum(s.meta_qty)} ${unit}</span>`
