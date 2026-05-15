@@ -1183,6 +1183,71 @@ app.get("/api/admin/adicional/suppliers", auth.requireRole("admin", "superadmin"
   }
 });
 
+// ── Supplier Metas CRUD ───────────────────────────────────────────
+// GET /api/admin/supplier-metas — lista
+app.get("/api/admin/supplier-metas", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const { query } = require("./db/mysql");
+    const rows = await query(
+      `SELECT id, meta_key, product, qty, unit, note, active,
+              created_at, updated_at
+       FROM supplier_metas
+       ORDER BY active DESC, meta_key, product`
+    );
+    res.json({ rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/supplier-metas — upsert (INSERT ... ON DUPLICATE KEY UPDATE)
+// body: { meta_key, product, qty (nullable), unit (kg/un), note? }
+app.post("/api/admin/supplier-metas", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const { query } = require("./db/mysql");
+    const { invalidateMetasCache } = require("./lib/supplier-metas");
+    const meta_key = String(req.body.meta_key || "").trim().toUpperCase();
+    const product = String(req.body.product || "").trim();
+    const qty = req.body.qty == null || req.body.qty === "" ? null : Number(req.body.qty);
+    const unit = String(req.body.unit || "kg").toLowerCase() === "un" ? "un" : "kg";
+    const note = String(req.body.note || "").trim() || null;
+    const active = req.body.active === false ? 0 : 1;
+    if (!meta_key || !product) {
+      return res.status(400).json({ error: "meta_key e product são obrigatórios" });
+    }
+    if (qty != null && (isNaN(qty) || qty < 0)) {
+      return res.status(400).json({ error: "qty deve ser número ≥ 0 ou vazio" });
+    }
+    const userId = req.user?.id || null;
+    await query(
+      `INSERT INTO supplier_metas (meta_key, product, qty, unit, note, active, created_by, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         qty = VALUES(qty), unit = VALUES(unit), note = VALUES(note),
+         active = VALUES(active), updated_by = VALUES(updated_by)`,
+      [meta_key, product, qty, unit, note, active, userId, userId]
+    );
+    invalidateMetasCache();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/admin/supplier-metas/:id — soft delete (active = 0)
+app.delete("/api/admin/supplier-metas/:id", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const { query } = require("./db/mysql");
+    const { invalidateMetasCache } = require("./lib/supplier-metas");
+    await query("UPDATE supplier_metas SET active = 0, updated_by = ? WHERE id = ?",
+      [req.user?.id || null, req.params.id]);
+    invalidateMetasCache();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/adicional/fornecido[?fromDate=&toDate=&chunkDays=]
 // Vista "Fornecido" — junta TRANSITO+FINALIZADO num bucket único + sacos
 // herméticos apresentados em UNIDADES em vez de kg. Status CRIADO é ignorado.
@@ -1195,7 +1260,7 @@ app.get("/api/admin/adicional/fornecido", auth.requireRole("admin", "superadmin"
     const noCache = req.query.noCache === "1" || req.query.fresh === "1";
 
     const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays, noCache });
-    const result = supLib.aggregateFornecido(apiResult.rows);
+    const result = await supLib.aggregateFornecido(apiResult.rows);
 
     res.json({
       period: apiResult.period,

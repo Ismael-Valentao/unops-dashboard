@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Metas de Contratação</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    .ctrl {
+      display: flex; gap: .5rem; flex-wrap: wrap; align-items: end;
+      margin-bottom: 1rem; padding: .85rem 1rem;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+    }
+    .ctrl label {
+      display: block; font-size: .65rem; text-transform: uppercase;
+      letter-spacing: .04em; color: #64748b; font-weight: 700; margin-bottom: .25rem;
+    }
+    .ctrl input, .ctrl select {
+      padding: .45rem .6rem; border: 1px solid #cbd5e1; border-radius: 6px;
+      font-size: .85rem; background: #fff;
+    }
+    .ctrl .btn {
+      padding: .5rem 1rem; background: #0f4c75; color: #fff; border: 0;
+      border-radius: 6px; cursor: pointer; font-size: .85rem; font-weight: 600;
+    }
+    .ctrl .btn:hover { background: #1e6ba8; }
+    .ctrl .btn-secondary { background: #fff; color: #0f4c75; border: 1px solid #cbd5e1; }
+    .ctrl .btn-secondary:hover { background: #f1f5f9; }
+    .ctrl .btn-add { background: #15803d; }
+    .ctrl .btn-add:hover { background: #166534; }
+
+    .metas-tbl {
+      width: 100%; border-collapse: collapse; font-size: .88rem;
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      overflow: hidden;
+    }
+    .metas-tbl thead { background: #0f4c75; color: #fff; }
+    .metas-tbl thead th {
+      padding: .65rem .8rem; text-align: left; font-weight: 600;
+      font-size: .75rem; text-transform: uppercase; letter-spacing: .03em;
+    }
+    .metas-tbl thead th.num { text-align: right; }
+    .metas-tbl tbody td {
+      padding: .55rem .8rem; border-bottom: 1px solid #f1f5f9;
+    }
+    .metas-tbl tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .metas-tbl tbody tr:hover { background: #f8fafc; }
+    .metas-tbl tbody tr.inactive { opacity: .5; background: #fafafa; }
+    .metas-tbl .key {
+      font-family: ui-monospace, monospace; font-size: .8rem;
+      color: #075985; background: #e0f2fe; padding: .1rem .4rem; border-radius: 4px;
+    }
+    .metas-tbl .actions { white-space: nowrap; }
+    .metas-tbl .btn-sm {
+      padding: .25rem .55rem; font-size: .7rem; border-radius: 4px;
+      border: 1px solid #cbd5e1; background: #fff; cursor: pointer;
+      margin-right: .25rem; font-weight: 600;
+    }
+    .metas-tbl .btn-sm.edit { color: #0f4c75; }
+    .metas-tbl .btn-sm.edit:hover { background: #dbeafe; }
+    .metas-tbl .btn-sm.del  { color: #b91c1c; }
+    .metas-tbl .btn-sm.del:hover  { background: #fee2e2; }
+
+    /* Modal */
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(15,23,42,.55);
+      display: none; align-items: center; justify-content: center;
+      z-index: 100;
+    }
+    .modal-bg.open { display: flex; }
+    .modal {
+      background: #fff; border-radius: 12px;
+      padding: 1.5rem; width: 92%; max-width: 480px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.3);
+    }
+    .modal h2 {
+      margin: 0 0 1rem; font-size: 1.1rem; color: #0f172a;
+    }
+    .modal .field { margin-bottom: .85rem; }
+    .modal label {
+      display: block; font-size: .68rem; text-transform: uppercase;
+      letter-spacing: .04em; color: #64748b; font-weight: 700; margin-bottom: .25rem;
+    }
+    .modal input, .modal select, .modal textarea {
+      width: 100%; box-sizing: border-box;
+      padding: .5rem .65rem; border: 1px solid #cbd5e1; border-radius: 6px;
+      font-size: .9rem; background: #fff; font-family: inherit;
+    }
+    .modal textarea { min-height: 60px; resize: vertical; }
+    .modal .hint {
+      font-size: .7rem; color: #94a3b8; margin-top: .25rem;
+    }
+    .modal .row2 { display: grid; grid-template-columns: 1fr 100px; gap: .65rem; }
+    .modal .footer {
+      display: flex; gap: .5rem; justify-content: flex-end;
+      margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0;
+    }
+    .modal .btn {
+      padding: .5rem 1.1rem; border-radius: 6px; cursor: pointer;
+      font-size: .85rem; font-weight: 600; border: 0;
+    }
+    .modal .btn-primary { background: #0f4c75; color: #fff; }
+    .modal .btn-primary:hover { background: #1e6ba8; }
+    .modal .btn-secondary { background: #f1f5f9; color: #475569; }
+    .modal .btn-secondary:hover { background: #e2e8f0; }
+
+    .loading { padding: 2rem; text-align: center; color: #94a3b8; font-style: italic; }
+    .error { padding: 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #b91c1c; }
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Metas de Contratação</h1>
+      <span class="admin-sub">Quanto cada fornecedor se comprometeu a entregar · usado por /admin/fornecido</span>
+    </header>
+
+    <section class="admin-section">
+      <div class="ctrl">
+        <div style="margin-left:auto;display:flex;gap:.5rem">
+          <button class="btn btn-add" id="btn-new">+ Nova meta</button>
+          <button class="btn btn-secondary" id="btn-reload">↻ Recarregar</button>
+        </div>
+      </div>
+
+      <div id="tbl-wrap">
+        <table class="metas-tbl" id="tbl">
+          <thead>
+            <tr>
+              <th>Meta Key</th>
+              <th>Produto</th>
+              <th class="num">Quantidade</th>
+              <th>Unidade</th>
+              <th>Nota</th>
+              <th>Status</th>
+              <th class="actions">Acções</th>
+            </tr>
+          </thead>
+          <tbody id="tbl-body">
+            <tr><td colspan="7" class="loading">A carregar…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal -->
+  <div class="modal-bg" id="modal-bg">
+    <div class="modal">
+      <h2 id="modal-title">Nova meta</h2>
+      <input type="hidden" id="f-id">
+      <div class="field">
+        <label>Meta Key <span style="color:#dc2626">*</span></label>
+        <input type="text" id="f-meta-key" placeholder="Ex: SEEDCO, BAYER, GLOBAL AGRIBUSINESS">
+        <div class="hint">Token usado para fuzzy match contra o nome do fornecedor na API. Uppercase recomendado.</div>
+      </div>
+      <div class="field">
+        <label>Produto <span style="color:#dc2626">*</span></label>
+        <select id="f-product">
+          <option value="Milho">Milho</option>
+          <option value="Feijão">Feijão</option>
+          <option value="Arroz">Arroz</option>
+          <option value="Sacos Hermét.">Sacos Hermét.</option>
+          <option value="Emamectim">Emamectim</option>
+          <option value="Imidacloprid">Imidacloprid</option>
+          <option value="MCPA">MCPA</option>
+          <option value="__other__">— Outro (escrever) —</option>
+        </select>
+        <input type="text" id="f-product-other" placeholder="Nome do produto" style="display:none;margin-top:.4rem">
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Quantidade</label>
+          <input type="number" id="f-qty" placeholder="Ex: 488272" min="0" step="any">
+          <div class="hint">Deixe vazio para "por definir"</div>
+        </div>
+        <div class="field">
+          <label>Unidade</label>
+          <select id="f-unit">
+            <option value="kg">kg</option>
+            <option value="un">un (sacos)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Nota (opcional)</label>
+        <textarea id="f-note" placeholder="Observação interna"></textarea>
+      </div>
+      <div class="footer">
+        <button class="btn btn-secondary" id="btn-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="btn-save">Gravar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, esc, toast } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+      const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+      function fmtNum(n) { return n == null ? "—" : Number(n).toLocaleString("pt-PT"); }
+      function fmtDate(s) { return s ? String(s).slice(0,16).replace("T"," ") : "—"; }
+
+      let lastRows = [];
+
+      async function load() {
+        $("#tbl-body").innerHTML = `<tr><td colspan="7" class="loading">A carregar…</td></tr>`;
+        try {
+          const { rows } = await fetchJSON("/api/admin/supplier-metas");
+          lastRows = rows;
+          render(rows);
+        } catch (e) {
+          $("#tbl-body").innerHTML = `<tr><td colspan="7"><div class="error">Erro: ${esc(e.message)}</div></td></tr>`;
+        }
+      }
+
+      function render(rows) {
+        if (!rows.length) {
+          $("#tbl-body").innerHTML = `<tr><td colspan="7" class="loading">Sem metas. Clique "+ Nova meta".</td></tr>`;
+          return;
+        }
+        $("#tbl-body").innerHTML = rows.map((r) => `
+          <tr class="${r.active ? "" : "inactive"}" data-id="${r.id}">
+            <td><span class="key">${esc(r.meta_key)}</span></td>
+            <td>${esc(r.product)}</td>
+            <td class="num"><strong>${fmtNum(r.qty)}</strong></td>
+            <td>${esc(r.unit)}</td>
+            <td style="font-size:.75rem;color:#94a3b8">${esc(r.note || "")}</td>
+            <td>${r.active ? '<span style="color:#15803d;font-weight:600">Activa</span>' : '<span style="color:#94a3b8">Inactiva</span>'}</td>
+            <td class="actions">
+              <button class="btn-sm edit" data-act="edit" data-id="${r.id}">Editar</button>
+              ${r.active ? `<button class="btn-sm del" data-act="del" data-id="${r.id}">Desactivar</button>` : ""}
+            </td>
+          </tr>
+        `).join("");
+        $$("#tbl-body button[data-act]").forEach((b) => {
+          b.addEventListener("click", () => {
+            const id = b.dataset.id;
+            const row = lastRows.find((x) => String(x.id) === String(id));
+            if (b.dataset.act === "edit") openModal(row);
+            else if (b.dataset.act === "del") deactivate(row);
+          });
+        });
+      }
+
+      function openModal(row) {
+        const isEdit = !!row;
+        $("#modal-title").textContent = isEdit ? `Editar: ${row.meta_key} / ${row.product}` : "Nova meta";
+        $("#f-id").value = row ? row.id : "";
+        $("#f-meta-key").value = row ? row.meta_key : "";
+        $("#f-meta-key").disabled = isEdit;
+        const stdProducts = ["Milho","Feijão","Arroz","Sacos Hermét.","Emamectim","Imidacloprid","MCPA"];
+        if (row && !stdProducts.includes(row.product)) {
+          $("#f-product").value = "__other__";
+          $("#f-product-other").style.display = "block";
+          $("#f-product-other").value = row.product;
+        } else {
+          $("#f-product").value = row ? row.product : "Milho";
+          $("#f-product-other").style.display = "none";
+          $("#f-product-other").value = "";
+        }
+        $("#f-product").disabled = isEdit;
+        $("#f-product-other").disabled = isEdit;
+        $("#f-qty").value = row && row.qty != null ? row.qty : "";
+        $("#f-unit").value = row ? row.unit : "kg";
+        $("#f-note").value = row && row.note ? row.note : "";
+        $("#modal-bg").classList.add("open");
+      }
+      function closeModal() {
+        $("#modal-bg").classList.remove("open");
+      }
+
+      $("#btn-new").addEventListener("click", () => openModal(null));
+      $("#btn-reload").addEventListener("click", load);
+      $("#btn-cancel").addEventListener("click", closeModal);
+      $("#modal-bg").addEventListener("click", (e) => {
+        if (e.target.id === "modal-bg") closeModal();
+      });
+      $("#f-product").addEventListener("change", () => {
+        const isOther = $("#f-product").value === "__other__";
+        $("#f-product-other").style.display = isOther ? "block" : "none";
+      });
+
+      async function deactivate(row) {
+        if (!confirm(`Desactivar meta "${row.meta_key} / ${row.product}"?`)) return;
+        try {
+          await fetchJSON(`/api/admin/supplier-metas/${row.id}`, { method: "DELETE" });
+          if (toast) toast("Meta desactivada", { kind: "ok" });
+          load();
+        } catch (e) {
+          if (toast) toast("Erro: " + e.message, { kind: "err" });
+        }
+      }
+
+      $("#btn-save").addEventListener("click", async () => {
+        const meta_key = $("#f-meta-key").value.trim().toUpperCase();
+        let product;
+        if ($("#f-product").value === "__other__") {
+          product = $("#f-product-other").value.trim();
+        } else {
+          product = $("#f-product").value;
+        }
+        const qtyStr = $("#f-qty").value.trim();
+        const qty = qtyStr === "" ? null : Number(qtyStr);
+        const unit = $("#f-unit").value;
+        const note = $("#f-note").value.trim();
+        if (!meta_key || !product) {
+          if (toast) toast("Meta Key e Produto são obrigatórios", { kind: "err" });
+          return;
+        }
+        if (qty != null && (isNaN(qty) || qty < 0)) {
+          if (toast) toast("Quantidade inválida", { kind: "err" });
+          return;
+        }
+        try {
+          await fetchJSON("/api/admin/supplier-metas", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ meta_key, product, qty, unit, note }),
+          });
+          if (toast) toast("Meta gravada", { kind: "ok" });
+          closeModal();
+          load();
+        } catch (e) {
+          if (toast) toast("Erro: " + e.message, { kind: "err" });
+        }
+      });
+
+      AdminUI.renderLayout("supplier-metas");
+      load();
+    })();
+  </script>
+</body>
+</html>

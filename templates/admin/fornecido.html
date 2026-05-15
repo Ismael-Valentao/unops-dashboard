@@ -102,47 +102,66 @@
       font-size: .58rem; text-transform: uppercase; letter-spacing: .04em;
       color: #94a3b8; font-weight: 700; margin-bottom: .3rem;
     }
+    /* Cada fornecedor = mini-card com 3 linhas: header / barra / rodapé */
     .prod-card .supp-row {
-      display: grid; grid-template-columns: 1fr auto auto auto;
-      gap: .5rem; align-items: center;
-      font-size: .72rem; padding: .2rem 0;
+      display: flex; flex-direction: column;
+      gap: .25rem;
+      padding: .55rem .55rem .5rem; margin: 0 -.55rem;
+      border-radius: 6px;
+      transition: background .15s ease;
+    }
+    .prod-card .supp-row + .supp-row {
+      border-top: 1px solid #f1f5f9;
+    }
+    .prod-card .supp-row:hover { background: #f8fafc; }
+
+    .prod-card .supp-row .supp-line1 {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: .5rem;
     }
     .prod-card .supp-row .sname {
-      color: #334155; font-weight: 600;
+      color: #0f172a; font-weight: 700; font-size: .8rem;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      min-width: 0; flex: 1;
     }
-    .prod-card .supp-row .sname.ghost { color: #94a3b8; font-style: italic; }
-    .prod-card .supp-row .sqty {
-      color: #64748b; font-variant-numeric: tabular-nums; font-weight: 500;
-      font-size: .68rem;
-    }
-    .prod-card .supp-row .spend {
-      color: #b45309; font-variant-numeric: tabular-nums; font-weight: 600;
-      font-size: .68rem; text-align: right; min-width: 60px;
-    }
-    .prod-card .supp-row .spend.done {
-      color: #94a3b8; font-weight: 400;
-    }
+    .prod-card .supp-row .sname.ghost { color: #94a3b8; font-style: italic; font-weight: 500; }
     .prod-card .supp-row .spct {
-      font-size: .72rem; font-weight: 700;
+      font-size: .95rem; font-weight: 800;
       font-variant-numeric: tabular-nums; text-align: right;
-      min-width: 38px;
+      flex-shrink: 0;
     }
     .prod-card .supp-row .spct.over     { color: #16a34a; }
     .prod-card .supp-row .spct.complete { color: #15803d; }
     .prod-card .supp-row .spct.high     { color: #84cc16; }
     .prod-card .supp-row .spct.mid      { color: #d97706; }
     .prod-card .supp-row .spct.low      { color: #dc2626; }
-    .prod-card .supp-head {
-      display: grid; grid-template-columns: 1fr auto auto auto;
-      gap: .5rem; align-items: center;
-      font-size: .55rem; text-transform: uppercase; letter-spacing: .04em;
-      color: #94a3b8; font-weight: 700;
-      padding-bottom: .25rem; border-bottom: 1px solid #f1f5f9;
-      margin-bottom: .15rem;
+
+    .prod-card .supp-row .supp-bar {
+      height: 5px; background: #f1f5f9; border-radius: 3px; overflow: hidden;
     }
-    .prod-card .supp-head > span { text-align: right; }
-    .prod-card .supp-head > span:first-child { text-align: left; }
+    .prod-card .supp-row .supp-bar > div {
+      height: 100%; transition: width .3s ease;
+    }
+    .prod-card .supp-row .supp-bar > div.over     { background: #16a34a; }
+    .prod-card .supp-row .supp-bar > div.complete { background: #15803d; }
+    .prod-card .supp-row .supp-bar > div.high     { background: #84cc16; }
+    .prod-card .supp-row .supp-bar > div.mid      { background: #d97706; }
+    .prod-card .supp-row .supp-bar > div.low      { background: #dc2626; }
+
+    .prod-card .supp-row .supp-line3 {
+      display: flex; justify-content: space-between; gap: .5rem;
+      font-size: .68rem; color: #94a3b8;
+      font-variant-numeric: tabular-nums;
+    }
+    .prod-card .supp-row .supp-line3 strong {
+      color: #334155; font-weight: 600;
+    }
+    .prod-card .supp-row .supp-line3 .pend-tag {
+      color: #b45309; font-weight: 600;
+    }
+    .prod-card .supp-row .supp-line3 .pend-tag.done {
+      color: #15803d; font-weight: 500;
+    }
     .kpi-card {
       background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
       padding: .85rem 1rem; border-left: 4px solid #0f4c75;
@@ -436,36 +455,48 @@
           const metaDisplay = hasMeta ? fmtNum(p.meta_qty) : "—";
           const pendDisplay = hasMeta ? fmtNum(p.meta_pendente) : "—";
 
-          // Fornecedores deste produto — só mostra se há pendente real
+          // Fornecedores deste produto — só mostra se há pendente real.
+          // Cada fornecedor renderiza como mini-card de 3 linhas:
+          //   header (nome + %), barra de progresso, rodapé (levantado / falta)
           let suppsHtml = "";
           if (hasMeta && p.meta_pendente > 0 && p.suppliers && p.suppliers.length > 0) {
             const rows = p.suppliers.map((s) => {
               const sPct = s.meta_pct;
-              const sQty = `${fmtNum(s.forn_qty)}<span class="unit" style="font-size:.6rem;color:#94a3b8;margin-left:2px">${unit}</span>`;
-              const sMeta = s.has_meta && s.meta_qty != null
-                ? ` <span style="color:#94a3b8">/ ${fmtNum(s.meta_qty)}${unit}</span>` : "";
-              // Pendente numérico: max(0, meta-forn) se tem meta, senão "—"
-              const pend = s.has_meta && s.meta_pendente != null
-                ? fmtNum(s.meta_pendente)
-                : "—";
-              const pendCls = s.has_meta && s.meta_pendente === 0 ? "done" : "";
-              const pendHtml = `<span class="spend ${pendCls}">${pend}${s.has_meta && s.meta_pendente != null ? `<span class="unit" style="font-size:.6rem;color:#94a3b8;margin-left:2px">${unit}</span>` : ""}</span>`;
+              const pctTxt  = sPct == null ? "—" : sPct + "%";
+              const barCls  = pctBarClass(sPct);
+              const barW    = sPct == null ? 0 : Math.min(100, sPct);
+
+              // Levantado/Meta — só mostra meta se há
+              const levTxt = `<strong>${fmtNum(s.forn_qty)}</strong> ${unit}` +
+                (s.has_meta && s.meta_qty != null
+                  ? ` <span style="opacity:.7">/ ${fmtNum(s.meta_qty)} ${unit}</span>`
+                  : "");
+
+              // Pendente: se 0 → "completo", senão "Falta X kg"
+              let pendTxt;
+              if (!s.has_meta || s.meta_pendente == null) {
+                pendTxt = `<span style="opacity:.5">sem meta</span>`;
+              } else if (s.meta_pendente === 0) {
+                pendTxt = `<span class="pend-tag done">✓ completo</span>`;
+              } else {
+                pendTxt = `<span class="pend-tag">Falta <strong>${fmtNum(s.meta_pendente)}</strong> ${unit}</span>`;
+              }
+
               return `<div class="supp-row">
-                <span class="sname ${s.is_ghost ? "ghost" : ""}">${esc(s.name)}</span>
-                <span class="sqty">${sQty}${sMeta}</span>
-                ${pendHtml}
-                <span class="spct ${pctTextClass(sPct)}">${sPct == null ? "—" : sPct + "%"}</span>
+                <div class="supp-line1">
+                  <span class="sname ${s.is_ghost ? "ghost" : ""}" title="${esc(s.name)}">${esc(s.name)}</span>
+                  <span class="spct ${pctTextClass(sPct)}">${pctTxt}</span>
+                </div>
+                <div class="supp-bar"><div class="${barCls}" style="width:${barW}%"></div></div>
+                <div class="supp-line3">
+                  <span>${levTxt}</span>
+                  ${pendTxt}
+                </div>
               </div>`;
             }).join("");
             suppsHtml = `
               <div class="supps-block">
                 <div class="supps-title">Fornecedores</div>
-                <div class="supp-head">
-                  <span>Nome</span>
-                  <span>Levantado / Meta</span>
-                  <span>Pendente</span>
-                  <span>%</span>
-                </div>
                 ${rows}
               </div>
             `;

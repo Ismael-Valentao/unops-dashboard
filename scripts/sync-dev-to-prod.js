@@ -101,6 +101,7 @@ const TABLES = [
   { name: "requisitions",        createIfMissing: true,  batchSize: 200 },
   { name: "adsn_services",       createIfMissing: true,  batchSize: 200 },
   { name: "reminders",           createIfMissing: true,  batchSize: 200 },
+  { name: "supplier_metas",      createIfMissing: true,  batchSize: 200 },
 ];
 
 // Tabelas que NUNCA sincronizamos (explicit deny-list — defensivo).

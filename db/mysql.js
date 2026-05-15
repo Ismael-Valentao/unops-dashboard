@@ -482,6 +482,59 @@ async function migrate() {
       FOREIGN KEY (done_by)    REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
   );
+
+  // ── Supplier Metas ────────────────────────────────────────────
+  // Metas de fornecimento por fornecedor + produto (editáveis via
+  // /admin/supplier-metas). Substitui o hardcoded em lib/supplier-metas.js.
+  //   - meta_key   : token de match fuzzy (ex: "SEEDCO", "MH-TENDERS")
+  //   - product    : produto canónico (ex: "Milho", "Feijão", "Arroz",
+  //                  "Sacos Hermét.", "Emamectim", ...)
+  //   - qty        : kg para granéis, un para sacos. NULL = "por definir"
+  //   - unit       : 'kg' ou 'un'
+  //   - active     : 0 = soft-disable sem apagar
+  await getPool().query(
+    `CREATE TABLE IF NOT EXISTS supplier_metas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      meta_key VARCHAR(64) NOT NULL,
+      product VARCHAR(64) NOT NULL,
+      qty DECIMAL(14,2) NULL,
+      unit VARCHAR(8) NOT NULL DEFAULT 'kg',
+      note TEXT NULL,
+      active TINYINT NOT NULL DEFAULT 1,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      created_by INT NULL,
+      updated_by INT NULL,
+      UNIQUE KEY uq_supplier_meta (meta_key, product),
+      INDEX idx_meta_active (active),
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+  // Seed inicial: insere as metas do ficheiro hardcoded se a tabela
+  // estiver vazia. Idempotente (só seed na primeira vez).
+  const [[seedCheck]] = await getPool().query("SELECT COUNT(*) AS n FROM supplier_metas");
+  if (Number(seedCheck.n) === 0) {
+    try {
+      const { METAS: HARDCODED } = require("../lib/supplier-metas-seed");
+      const rows = [];
+      for (const [metaKey, products] of Object.entries(HARDCODED)) {
+        for (const [product, qty] of Object.entries(products)) {
+          const isSaco = /sacos?\s*hermet|hermét/i.test(product);
+          rows.push([metaKey, product, qty == null ? null : Number(qty), isSaco ? "un" : "kg"]);
+        }
+      }
+      if (rows.length) {
+        await getPool().query(
+          "INSERT INTO supplier_metas (meta_key, product, qty, unit) VALUES ?",
+          [rows]
+        );
+        console.log(`[DB] seeded ${rows.length} supplier_metas`);
+      }
+    } catch (e) {
+      console.warn("[DB] supplier_metas seed falhou:", e.message);
+    }
+  }
 }
 
 async function init() {
