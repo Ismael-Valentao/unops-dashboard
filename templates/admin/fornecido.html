@@ -99,6 +99,14 @@
       margin-left: .35rem; font-weight: 600; text-transform: uppercase;
       letter-spacing: .03em;
     }
+    .sup-head .name .ghost-tag {
+      display: inline-block; background: #fef3c7; color: #92400e;
+      font-size: .58rem; padding: .05rem .35rem; border-radius: 99px;
+      margin-left: .35rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+    .sup-card.ghost { opacity: .85; background: #fffbeb; }
+    .sup-card.ghost .sup-head::before { background: #fde68a; }
     .sup-head .metric {
       display: flex; flex-direction: column; align-items: flex-end;
       min-width: 110px;
@@ -274,6 +282,8 @@
       function renderKpis(t) {
         const pct = t.meta_pct_global;
         const pctClz = pct == null ? "" : (pct >= 100 ? "green" : (pct >= 70 ? "amber" : "red"));
+        const pctSacos = t.meta_pct_sacos;
+        const pctSacosClz = pctSacos == null ? "" : (pctSacos >= 100 ? "green" : (pctSacos >= 70 ? "amber" : "red"));
         $("#kpis").innerHTML = `
           <div class="kpi-card">
             <div class="lbl">Fornecedores</div>
@@ -281,30 +291,43 @@
             <div class="sub">distintos</div>
           </div>
           <div class="kpi-card">
-            <div class="lbl">Meta Total</div>
+            <div class="lbl">Meta Granéis</div>
             <div class="val">${fmtTon(t.meta_total_kg)}<span style="font-size:.85rem;color:#64748b"> t</span></div>
-            <div class="sub">${fmtNum(t.meta_total_kg)} kg comprometidos</div>
+            <div class="sub">${fmtNum(t.meta_total_kg)} kg</div>
           </div>
           <div class="kpi-card green">
-            <div class="lbl">Recebido</div>
+            <div class="lbl">Granéis Recebidos</div>
             <div class="val">${fmtTon(t.forn_kg)}<span style="font-size:.85rem;color:#64748b"> t</span></div>
-            <div class="sub">${fmtNum(t.forn_kg)} kg · ${fmt(t.services_forn)} ADSNs</div>
+            <div class="sub">${fmt(t.services_forn)} ADSNs · ${fmtNum(t.forn_kg)} kg</div>
           </div>
           <div class="kpi-card amber">
-            <div class="lbl">Pendente (vs Meta)</div>
+            <div class="lbl">Granéis Pendentes</div>
             <div class="val">${fmtTon(t.meta_pendente_kg)}<span style="font-size:.85rem;color:#64748b"> t</span></div>
             <div class="sub">${fmtNum(t.meta_pendente_kg)} kg em falta</div>
           </div>
           <div class="kpi-card ${pctClz}">
-            <div class="lbl">% Recebido</div>
+            <div class="lbl">% Granéis</div>
             <div class="val">${pct == null ? "—" : pct + "%"}</div>
-            <div class="sub">do compromisso global</div>
+            <div class="sub">vs meta granéis</div>
           </div>
+          ${t.meta_total_un > 0 ? `
           <div class="kpi-card purple">
-            <div class="lbl">Sacos Herm. (recebidos)</div>
+            <div class="lbl">Meta Sacos</div>
+            <div class="val">${fmtNum(t.meta_total_un)}<span style="font-size:.85rem;color:#64748b"> un</span></div>
+            <div class="sub">comprometidos</div>
+          </div>
+          <div class="kpi-card ${pctSacosClz}">
+            <div class="lbl">Sacos Recebidos</div>
+            <div class="val">${fmtNum(t.forn_qty_un)}<span style="font-size:.85rem;color:#64748b"> un</span></div>
+            <div class="sub">${pctSacos == null ? "" : pctSacos + "% · "}${fmtNum(t.meta_pendente_un)} un pendentes</div>
+          </div>
+          ` : `
+          <div class="kpi-card purple">
+            <div class="lbl">Sacos Recebidos</div>
             <div class="val">${fmtNum(t.forn_qty_un)}<span style="font-size:.85rem;color:#64748b"> un</span></div>
             <div class="sub">sem meta definida</div>
           </div>
+          `}
         `;
       }
 
@@ -384,7 +407,8 @@
 
           // Classe do card baseada na % global
           let cardCls = "";
-          if (!s.has_meta) cardCls = "no-meta";
+          if (s.is_ghost) cardCls = "ghost";
+          else if (!s.has_meta) cardCls = "no-meta";
           else if (s.meta_pct >= 100) cardCls = "over";
           else if (s.meta_pct >= 95)  cardCls = "complete";
           else if (s.meta_pct >= 70)  cardCls = "high";
@@ -393,34 +417,48 @@
 
           const acctChip = s.account_number ? `<span class="acct">#${esc(s.account_number)}</span>` : "";
           const noMetaTag = !s.has_meta ? `<span class="no-meta-tag">sem meta</span>` : "";
+          const ghostTag  = s.is_ghost  ? `<span class="ghost-tag">ainda sem entregas</span>` : "";
           const origin = (s.origins[0] || "").trim();
 
-          // Display: para fornecedores sem meta, mostra Meta/Pendente como "—"
-          const metaTxt = s.has_meta ? fmtNum(s.meta_total_kg) : "—";
-          const pendTxt = s.has_meta ? fmtNum(s.meta_pendente_total_kg) : "—";
-          const pctTxt  = s.has_meta ? `${s.meta_pct}% recebido` : "sem meta";
+          // Meta header — se for saco-only mostra em un, senão em kg
+          let metaTxt, recbTxt, pendTxt, metaUnitLbl;
+          const isSacoOnly = s.has_meta && s.meta_total_kg === 0 && (s.meta_total_un || 0) > 0;
+          if (isSacoOnly) {
+            metaTxt = fmtNum(s.meta_total_un);
+            recbTxt = fmtNum(s.forn_qty_un);
+            pendTxt = fmtNum(s.meta_pendente_total_un || 0);
+            metaUnitLbl = "un";
+          } else if (s.has_meta) {
+            metaTxt = fmtNum(s.meta_total_kg);
+            recbTxt = fmtNum(s.forn_kg);
+            pendTxt = fmtNum(s.meta_pendente_total_kg);
+            metaUnitLbl = "kg";
+          } else {
+            metaTxt = "—"; recbTxt = fmtNum(s.forn_kg); pendTxt = "—"; metaUnitLbl = "kg";
+          }
+          const pctTxt = s.has_meta ? `${s.meta_pct}% recebido` : "sem meta";
 
           return `
             <article class="sup-card ${cardCls}" data-idx="${idx}">
               <header class="sup-head">
                 <div class="name">
-                  ${esc(s.canonical_name)}${acctChip}${noMetaTag}
+                  ${esc(s.canonical_name)}${acctChip}${noMetaTag}${ghostTag}
                   ${origin ? `<span class="origin">${esc(origin)}</span>` : ""}
                 </div>
                 <div class="metric meta">
                   <div class="lbl">Meta</div>
-                  <div class="qty">${metaTxt}<span class="unit" style="font-size:.7rem;font-weight:500;color:#94a3b8"> kg</span></div>
+                  <div class="qty">${metaTxt}<span class="unit" style="font-size:.7rem;font-weight:500;color:#94a3b8"> ${metaUnitLbl}</span></div>
                   <div class="sub">${s.meta_match_key ? '['+esc(s.meta_match_key)+']' : '—'}</div>
                 </div>
                 <div class="metric forn">
                   <div class="lbl">Recebido</div>
-                  <div class="qty">${fmtNum(s.forn_kg)}<span class="unit" style="font-size:.7rem;font-weight:500;color:#94a3b8"> kg</span></div>
-                  <div class="sub">${s.count_forn} svc${s.forn_qty_un>0 ? ' · '+fmtNum(s.forn_qty_un)+' un' : ''}</div>
+                  <div class="qty">${recbTxt}<span class="unit" style="font-size:.7rem;font-weight:500;color:#94a3b8"> ${metaUnitLbl}</span></div>
+                  <div class="sub">${s.count_forn} svc${!isSacoOnly && s.forn_qty_un>0 ? ' · '+fmtNum(s.forn_qty_un)+' un' : ''}</div>
                 </div>
                 <div>
                   <div class="metric pend" style="margin-bottom:.2rem">
                     <div class="lbl">Pendente</div>
-                    <div class="qty">${pendTxt}<span class="unit" style="font-size:.7rem;font-weight:500;color:#94a3b8"> kg</span></div>
+                    <div class="qty">${pendTxt}<span class="unit" style="font-size:.7rem;font-weight:500;color:#94a3b8"> ${metaUnitLbl}</span></div>
                   </div>
                   ${s.has_meta ? `<div class="progress"><div class="${pctClass(s.meta_pct)}" style="width:${Math.min(100, s.meta_pct)}%"></div></div>` : ''}
                   <div class="pct">${pctTxt}</div>
