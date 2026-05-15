@@ -22,6 +22,9 @@ app.py
 requirements.txt
 .env
 .env.local
+.env.prod
+.env.production
+.env.*
 # Logs locais de execução / serviços Windows
 server.log
 daemon/
