@@ -745,8 +745,21 @@ app.get("/api/admin/adicional/entregas", auth.requireRole("admin", "superadmin")
       }
     } catch (_) { /* idem */ }
 
-    // 5. Build entregas
-    let entregas = entLib.buildEntregas({ apiRows, sheetRows, batedoresMap, beneficiariesMap });
+    // 5. Anexos a partir do cache.data (links + assinatura por GTU normalizada)
+    const { normGtu: _normGtu } = require("./lib/adicional-match");
+    const _attachmentsByGtu = new Map();
+    for (const r of (cache.data || [])) {
+      const _gtu = _normGtu(r.delivery_note_number);
+      if (!_gtu) continue;
+      const _links = [r.delivery_note_link, r.delivery_note_link2, r.delivery_note_link3]
+        .map((s) => String(s || "").trim())
+        .filter(Boolean);
+      const _sig = String(r.beneficiary_signature || "").trim() || null;
+      if (_links.length || _sig) _attachmentsByGtu.set(_gtu, { links: _links, signature: _sig });
+    }
+
+    // 6. Build entregas
+    let entregas = entLib.buildEntregas({ apiRows, sheetRows, batedoresMap, beneficiariesMap, attachmentsByGtu: _attachmentsByGtu });
 
     // 6. Filtros server-side (string match case-insensitive)
     const norm = (s) => String(s || "").toLowerCase();
@@ -810,27 +823,18 @@ app.get("/api/admin/adicional/entregas", auth.requireRole("admin", "superadmin")
   }
 });
 
-// ── Viagens (agrupado por matrícula+data+batedor — vista tipo Excel) ──
-// Helper partilhado: monta entregas + supervisorMap para o pipeline /viagens
-async function buildViagensDataset(req) {
-  const entLib = require("./lib/adicional-entregas");
-  const viaLib = require("./lib/adicional-viagens");
+// ── Viagens (agrupado por ADSE — vista tipo Excel) ──
+//
+// Pipeline partilhado entre /viagens (full load) e /viagens/refresh
+// (recarrega 1 ADSE):
+//   1. apiRows (da API ADICIONAL) → filtragem por status relevante
+//   2. enrichment (sheet_audit + batedores + beneficiários + supervisores + anexos)
+//   3. buildEntregas (1 row por ADSN) → groupByViagem (1 row por ADSE)
+
+// Carrega maps de enriquecimento a partir da DB + cache.data.
+// Usado pelo full load e pelo refresh single-ADSE.
+async function loadEnrichmentMaps() {
   const { query } = require("./db/mysql");
-
-  const fromDate = req.query.fromDate || undefined;
-  const toDate   = req.query.toDate   || undefined;
-  const chunkDays = req.query.chunkDays ? Number(req.query.chunkDays) : undefined;
-  const includeAll = req.query.includeAllStatuses === "1";
-
-  // 1. API (chunked)
-  const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays });
-  let apiRows = apiResult.rows;
-  if (!includeAll) {
-    const RELEVANT = new Set(["TRANSITO", "FINALIZADO"]);
-    apiRows = apiRows.filter((r) => RELEVANT.has(String(r.StatusName || "").toUpperCase()));
-  }
-
-  // 2. Sheet + batedores + beneficiarios + supervisores
   const sheetRows = await query(
     `SELECT gtu, beneficiary_name, delivered_qty, unit, product, submitted_by,
             delivery_date_iso, district, province
@@ -846,8 +850,6 @@ async function buildViagensDataset(req) {
     const bens = await query("SELECT nuit, name, contact FROM beneficiaries WHERE nuit IS NOT NULL AND nuit <> ''");
     for (const b of bens) beneficiariesMap.set(String(b.nuit).trim(), { name: b.name, contact: b.contact });
   } catch (_) {}
-  // Supervisor: NUIT do extensionista → "Nome / Telefone" (vem do MAAP)
-  // NUIT vive em beneficiaries.nuit (não em delivery_balances)
   const supervisorMap = new Map();
   try {
     const sups = await query(
@@ -863,12 +865,58 @@ async function buildViagensDataset(req) {
       supervisorMap.set(String(s.nuit).trim(), label);
     }
   } catch (_) {}
+  // Anexos (delivery_note_link* + beneficiary_signature) — só existem no
+  // cache.data parseado do Google Sheet UNOPS (delivery_audit não os persiste).
+  const { normGtu } = require("./lib/adicional-match");
+  const attachmentsByGtu = new Map();
+  for (const r of (cache.data || [])) {
+    const gtu = normGtu(r.delivery_note_number);
+    if (!gtu) continue;
+    const links = [r.delivery_note_link, r.delivery_note_link2, r.delivery_note_link3]
+      .map((s) => String(s || "").trim())
+      .filter(Boolean);
+    const sig = String(r.beneficiary_signature || "").trim() || null;
+    if (links.length || sig) attachmentsByGtu.set(gtu, { links, signature: sig });
+  }
+  return { sheetRows, batedoresMap, beneficiariesMap, supervisorMap, attachmentsByGtu };
+}
 
-  // 3. Build entregas + agrupa em viagens
-  const entregas = entLib.buildEntregas({ apiRows, sheetRows, batedoresMap, beneficiariesMap });
-  let result = viaLib.groupByViagem(entregas, supervisorMap);
+// Aplica buildEntregas + groupByViagem a um conjunto de apiRows.
+// Filtra estatutos relevantes (excepto se includeAll). NÃO aplica filtros
+// adicionais (province/district/supplier/etc.) — esses são feitos
+// client-side ou no caller.
+async function buildViagensFromApiRows(apiRows, opts = {}) {
+  const entLib = require("./lib/adicional-entregas");
+  const viaLib = require("./lib/adicional-viagens");
+  const includeAll = opts.includeAllStatuses === true;
+  if (!includeAll) {
+    const RELEVANT = new Set(["TRANSITO", "FINALIZADO"]);
+    apiRows = apiRows.filter((r) => RELEVANT.has(String(r.StatusName || "").toUpperCase()));
+  }
+  const { sheetRows, batedoresMap, beneficiariesMap, supervisorMap, attachmentsByGtu } = await loadEnrichmentMaps();
+  const entregas = entLib.buildEntregas({ apiRows, sheetRows, batedoresMap, beneficiariesMap, attachmentsByGtu });
+  return viaLib.groupByViagem(entregas, supervisorMap);
+}
 
-  // 4. Filtros server-side (apply ao viagens)
+// Helper para /viagens — fetch full + groupByViagem + filtros legacy server-side.
+// Os filtros foram movidos para client-side (rerender no browser); mantidos
+// aqui para compatibilidade caso algum chamador antigo ainda envie query params.
+async function buildViagensDataset(req) {
+  const fromDate = req.query.fromDate || undefined;
+  const toDate   = req.query.toDate   || undefined;
+  const chunkDays = req.query.chunkDays ? Number(req.query.chunkDays) : undefined;
+  const includeAll = req.query.includeAllStatuses === "1";
+  const noCache  = req.query.noCache === "1" || req.query.fresh === "1";
+
+  const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays, noCache });
+  const result = await buildViagensFromApiRows(apiResult.rows, { includeAllStatuses: includeAll });
+  // Expõe estado do cache para o frontend mostrar "Cache 2min" / "Fresh"
+  result._cache = {
+    from_cache: !!apiResult.from_cache,
+    age_seconds: apiResult.cache_age_seconds || 0,
+  };
+
+  // Filtros server-side legacy (a UI moderna filtra client-side em rerender())
   const norm = (s) => String(s || "").toLowerCase();
   let viagens = result.viagens;
   if (req.query.province) {
@@ -902,9 +950,58 @@ app.get("/api/admin/adicional/viagens", auth.requireRole("admin", "superadmin"),
     const result = await buildViagensDataset(req);
     res.json({
       period: result.period,
+      cache: result._cache,
       summary: { ...result.summary, viagens: result.viagens.length },
       viagens: result.viagens,
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/adicional/viagens/refresh?adse=ADSE...&date=YYYY-MM-DD
+// Recarrega APENAS 1 ADSE — fetch limitado a ±1 dia da data, depois filtra
+// para a ADSE específica. Usado pelo botão 🔄 em cada card de viagem (UI).
+// Resposta: { viagem: {...} } (mesma shape dos items de /viagens).
+app.get("/api/admin/adicional/viagens/refresh", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const adse = String(req.query.adse || "").trim();
+    const dateStr = String(req.query.date || "").trim();
+    const includeAll = req.query.includeAllStatuses === "1";
+    if (!adse) return res.status(400).json({ error: "Parâmetro 'adse' obrigatório" });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return res.status(400).json({ error: "Parâmetro 'date' obrigatório (YYYY-MM-DD)" });
+    }
+    // Janela ±2 dias da data — cobre ADSEs cuja CreateDate caia perto do limite
+    const d = new Date(dateStr + "T00:00:00");
+    const fromD = new Date(d); fromD.setDate(fromD.getDate() - 2);
+    const toD   = new Date(d); toD.setDate(toD.getDate() + 2);
+    const fmtYmd = (x) => x.getFullYear() + "-" +
+      String(x.getMonth() + 1).padStart(2, "0") + "-" +
+      String(x.getDate()).padStart(2, "0");
+
+    // noCache: o utilizador clicou refresh — quer dados FRESCOS, ignora o cache.
+    const apiResult = await adicionalApi.listProjectsChunked({
+      fromDate: fmtYmd(fromD), toDate: fmtYmd(toD), chunkDays: 7, noCache: true,
+    });
+    // Filtra para a ADSE pedida (ParentServiceCode)
+    const apiRows = apiResult.rows.filter((r) =>
+      String(r.ParentServiceCode || "").trim() === adse
+    );
+    if (!apiRows.length) {
+      return res.status(404).json({
+        error: `ADSE '${adse}' não encontrada na janela ${fmtYmd(fromD)}…${fmtYmd(toD)}`,
+      });
+    }
+    // Propaga rows frescas para o cache principal — assim um reload completo
+    // posterior (dentro do TTL) já mostra a versão actualizada desta ADSE.
+    const touched = adicionalApi.updateCacheRows(apiRows);
+    const result = await buildViagensFromApiRows(apiRows, { includeAllStatuses: includeAll });
+    const viagem = result.viagens[0];
+    if (!viagem) {
+      return res.status(404).json({ error: `ADSE '${adse}' sem viagens após filtro de status.` });
+    }
+    res.json({ viagem, cache_rows_updated: touched });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -932,39 +1029,50 @@ app.get("/api/admin/adicional/viagens/export.xlsx", auth.requireRole("admin", "s
       const C_HEADER = "FF0F4C75";
       const C_TOTAL  = "FFE2E8F0";
       const C_WHITE  = "FFFFFFFF";
-      // Larguras das colunas para não ficar apertado
-      const colWidths = [18, 12, 22, 26, 16, 26, 14, 28, 18, 12, 14, 11, 11, 9, 22];
+      const C_OK     = "FFDCFCE7";
+      const C_MISS   = "FFFEF3C7";
+      // Larguras das colunas (col 4 = GTU/GTS, col 5 = Sistema)
+      const colWidths = [18, 12, 22, 22, 14, 26, 16, 26, 14, 28, 18, 12, 14, 11, 11, 9, 22];
       colWidths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
       let r = 1;
       // Título global
       ws.getCell(r, 1).value = title;
       ws.getCell(r, 1).font = { bold: true, size: 14, color: { argb: C_HEADER } };
-      ws.mergeCells(r, 1, r, 4);
+      ws.mergeCells(r, 1, r, 6);
       r++;
       ws.getCell(r, 1).value = `Total: ${result.summary.total_kg.toLocaleString("pt-PT")} kg (${result.summary.total_ton} t) em ${viagens.length} viagens`;
       ws.getCell(r, 1).font = { italic: true, color: { argb: "FF64748B" } };
       r += 2;
 
       for (const v of viagens) {
-        // Header da viagem: "CAM-XX  Destino  N.NNN T"
-        ws.getCell(r, 1).value = `${v.cam_label}   ${v.destino_distrito}   ${v.total_ton} T`;
+        // Header da viagem: "CAM-XX  Destino  N.NNN T  · Produtos · UNOPS"
+        const nUnops = v.items.filter((it) => it.sheet_matched).length;
+        const nTotal = v.items.length;
+        // Produtos carregados (pode haver mais de um): "Milho 18.5t · Feijão 4t"
+        const produtosStr = (v.products || [])
+          .map((p) => `${p.product} ${p.ton}t`)
+          .join(" · ");
+        ws.getCell(r, 1).value =
+          `${v.cam_label}   ${v.destino_distrito}   ${v.total_ton} T` +
+          (produtosStr ? `   ·   ${produtosStr}` : "") +
+          `   ·   UNOPS ${nUnops}/${nTotal}`;
         ws.getCell(r, 1).font = { bold: true, size: 12, color: { argb: C_WHITE } };
         ws.getCell(r, 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_HEADER } };
-        ws.mergeCells(r, 1, r, 4);
+        ws.mergeCells(r, 1, r, 6);
         // Origem / Transportador no resto da row
-        ws.getCell(r, 5).value = `ORIGEM: ${v.fornecedor} · TRANSPORTADOR: ${v.transportador}`;
-        ws.getCell(r, 5).font = { italic: true, color: { argb: C_WHITE } };
-        ws.getCell(r, 5).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_HEADER } };
-        ws.mergeCells(r, 5, r, 15);
+        ws.getCell(r, 7).value = `ORIGEM: ${v.fornecedor} · TRANSPORTADOR: ${v.transportador}`;
+        ws.getCell(r, 7).font = { italic: true, color: { argb: C_WHITE } };
+        ws.getCell(r, 7).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_HEADER } };
+        ws.mergeCells(r, 7, r, 17);
         r++;
 
         // Header das colunas
         const headers = [
-          "MATRICULA", "DATA SAIDA", "Código Serviço", "Nome Extensionista",
-          "Telf Extensionista", "BATEDOR", "Telef Batedor", "Telf Supervisor",
-          "Distrito", "NUIT", "Artigo", "Volumes (un)", "Peso (kg)", "Ton",
-          "Observações/ESTADO",
+          "MATRICULA", "DATA SAIDA", "Código Serviço", "GTU/GTS", "Sistema",
+          "Nome Extensionista", "Telf Extensionista", "BATEDOR", "Telef Batedor",
+          "Telf Supervisor", "Distrito", "NUIT", "Artigo", "Volumes (un)",
+          "Peso (kg)", "Ton", "Observações/ESTADO",
         ];
         headers.forEach((h, i) => {
           const c = ws.getCell(r, i + 1);
@@ -981,35 +1089,45 @@ app.get("/api/admin/adicional/viagens/export.xlsx", auth.requireRole("admin", "s
           ws.getCell(r, 2).value  = it.create_date ? new Date(it.create_date) : null;
           if (ws.getCell(r, 2).value) ws.getCell(r, 2).numFmt = "dd/mm/yyyy";
           ws.getCell(r, 3).value  = it.adsn;
-          ws.getCell(r, 4).value  = it.ext_name;
-          ws.getCell(r, 5).value  = it.ext_contact || "";
-          ws.getCell(r, 6).value  = it.batedor_name || it.batedor_email || "";
-          ws.getCell(r, 7).value  = it.batedor_contact || "";
-          ws.getCell(r, 8).value  = v.supervisor_phone || "";
-          ws.getCell(r, 9).value  = it.district;
-          ws.getCell(r, 10).value = it.ext_nuit || "";
-          ws.getCell(r, 11).value = it.product;
-          ws.getCell(r, 12).value = it.volumes || 0;
-          ws.getCell(r, 13).value = it.weight_kg || 0;
-          ws.getCell(r, 14).value = it.weight_ton || 0;
-          ws.getCell(r, 12).numFmt = "#,##0";
-          ws.getCell(r, 13).numFmt = "#,##0.00";
-          ws.getCell(r, 14).numFmt = "#,##0.000";
-          ws.getCell(r, 15).value = it.status === "FINALIZADO" ? "ENTREGUE" : (it.status === "TRANSITO" ? "Em transito" : it.status);
+          ws.getCell(r, 4).value  = it.gtu || "";
+          // Sistema: UNOPS+ADIC (matched) ou Só ADIC (não matched)
+          const sysCell = ws.getCell(r, 5);
+          sysCell.value = it.sheet_matched ? "UNOPS + ADIC" : "Só ADIC";
+          sysCell.fill = {
+            type: "pattern", pattern: "solid",
+            fgColor: { argb: it.sheet_matched ? C_OK : C_MISS },
+          };
+          sysCell.font = { bold: true, color: { argb: it.sheet_matched ? "FF166534" : "FF92400E" } };
+          sysCell.alignment = { horizontal: "center" };
+          ws.getCell(r, 6).value  = it.ext_name;
+          ws.getCell(r, 7).value  = it.ext_contact || "";
+          ws.getCell(r, 8).value  = it.batedor_name || it.batedor_email || "";
+          ws.getCell(r, 9).value  = it.batedor_contact || "";
+          ws.getCell(r, 10).value = v.supervisor_phone || "";
+          ws.getCell(r, 11).value = it.district;
+          ws.getCell(r, 12).value = it.ext_nuit || "";
+          ws.getCell(r, 13).value = it.product;
+          ws.getCell(r, 14).value = it.volumes || 0;
+          ws.getCell(r, 15).value = it.weight_kg || 0;
+          ws.getCell(r, 16).value = it.weight_ton || 0;
+          ws.getCell(r, 14).numFmt = "#,##0";
+          ws.getCell(r, 15).numFmt = "#,##0.00";
+          ws.getCell(r, 16).numFmt = "#,##0.000";
+          ws.getCell(r, 17).value = it.status === "FINALIZADO" ? "ENTREGUE" : (it.status === "TRANSITO" ? "Em transito" : it.status);
           r++;
         }
 
-        // Total da viagem (col 12-14)
-        ws.getCell(r, 11).value = "TOTAL";
-        ws.getCell(r, 11).font = { bold: true, italic: true };
-        ws.getCell(r, 11).alignment = { horizontal: "right" };
-        ws.getCell(r, 12).value = v.total_volumes;
-        ws.getCell(r, 13).value = v.total_kg;
-        ws.getCell(r, 14).value = v.total_ton;
-        ws.getCell(r, 12).numFmt = "#,##0";
-        ws.getCell(r, 13).numFmt = "#,##0.00";
-        ws.getCell(r, 14).numFmt = "#,##0.000";
-        for (let c = 11; c <= 14; c++) {
+        // Total da viagem (col 14-16)
+        ws.getCell(r, 13).value = "TOTAL";
+        ws.getCell(r, 13).font = { bold: true, italic: true };
+        ws.getCell(r, 13).alignment = { horizontal: "right" };
+        ws.getCell(r, 14).value = v.total_volumes;
+        ws.getCell(r, 15).value = v.total_kg;
+        ws.getCell(r, 16).value = v.total_ton;
+        ws.getCell(r, 14).numFmt = "#,##0";
+        ws.getCell(r, 15).numFmt = "#,##0.00";
+        ws.getCell(r, 16).numFmt = "#,##0.000";
+        for (let c = 13; c <= 16; c++) {
           ws.getCell(r, c).font = { bold: true };
           ws.getCell(r, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: C_TOTAL } };
         }

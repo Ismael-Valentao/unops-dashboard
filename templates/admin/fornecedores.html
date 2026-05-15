@@ -46,6 +46,34 @@
     .kpi-card.green .val { color: #15803d; }
     .kpi-card.amber { border-left-color: #d97706; }
     .kpi-card.amber .val { color: #b45309; }
+    /* Cores específicas para sementes/produtos principais */
+    .kpi-card.seed-milho   { border-left-color: #ca8a04; }
+    .kpi-card.seed-milho   .val { color: #854d0e; }
+    .kpi-card.seed-feijao  { border-left-color: #be185d; }
+    .kpi-card.seed-feijao  .val { color: #831843; }
+    .kpi-card.seed-arroz   { border-left-color: #0891b2; }
+    .kpi-card.seed-arroz   .val { color: #155e75; }
+    .kpi-card.seed-other   { border-left-color: #475569; }
+    .kpi-card.seed-other   .val { color: #334155; }
+
+    /* Secção "Totais por Produto" */
+    .prod-section {
+      margin-bottom: 1rem;
+    }
+    .prod-section h3 {
+      font-size: .75rem; text-transform: uppercase; letter-spacing: .06em;
+      color: #64748b; font-weight: 700; margin: 0 0 .5rem; padding-left: .15rem;
+    }
+    .prod-section .forn-kpis {
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: .5rem;
+    }
+    .prod-section .kpi-card {
+      padding: .65rem .8rem;
+    }
+    .prod-section .kpi-card .lbl { font-size: .62rem; }
+    .prod-section .kpi-card .val { font-size: 1.25rem; }
+    .prod-section .kpi-card .sub { font-size: .65rem; }
 
     /* Tabela */
     .forn-tbl {
@@ -165,6 +193,12 @@
       <!-- KPIs -->
       <div class="forn-kpis" id="kpis"></div>
 
+      <!-- KPIs por Produto -->
+      <div class="prod-section" id="prod-section" style="display:none">
+        <h3>Totais por Produto</h3>
+        <div class="forn-kpis" id="prod-kpis"></div>
+      </div>
+
       <!-- Tabela -->
       <div id="tbl-wrap">
         <table class="forn-tbl" id="tbl">
@@ -269,6 +303,62 @@
             <div class="sub">${fmt(totals.in_transit_kg)} kg</div>
           </div>
         `;
+      }
+
+      // Agrupa variantes do mesmo produto sob o mesmo label canónico.
+      // Ex: MXIXMILHOKG + MSEEDOPVZM523 → "Milho" (com sub = "MXIXMILHOKG + MSEEDOPVZM523")
+      function canonicalProduct(skuLbl) {
+        const m = /^(.*?)\s*\(/.exec(skuLbl);
+        return (m ? m[1] : skuLbl).trim();
+      }
+
+      function renderProductKpis(by_sku) {
+        const section = $("#prod-section");
+        const target  = $("#prod-kpis");
+        if (!by_sku || !by_sku.length) {
+          section.style.display = "none";
+          target.innerHTML = "";
+          return;
+        }
+        // Agrupa por nome canónico (ex: "Milho" agrega MXIXMILHOKG + MSEEDOPVZM523)
+        const byCanon = new Map();
+        for (const item of by_sku) {
+          const lbl = skuLabel(item.sku);
+          const canon = canonicalProduct(lbl);
+          if (!byCanon.has(canon)) {
+            byCanon.set(canon, { name: canon, kg: 0, count: 0, skus: [] });
+          }
+          const x = byCanon.get(canon);
+          x.kg    += item.weight;
+          x.count += item.count;
+          x.skus.push(lbl);
+        }
+        const products = [...byCanon.values()].sort((a, b) => b.kg - a.kg);
+
+        // Classes específicas para sementes principais
+        const seedClass = (name) => {
+          const n = name.toLowerCase();
+          if (n.includes("milho"))  return "seed-milho";
+          if (n.includes("feijão") || n.includes("feijao")) return "seed-feijao";
+          if (n.includes("arroz"))  return "seed-arroz";
+          return "seed-other";
+        };
+
+        section.style.display = "block";
+        target.innerHTML = products.map((p) => {
+          const ton = p.kg / 1000;
+          const tonStr = ton >= 100 ? fmt(Math.round(ton)) : (ton >= 10 ? ton.toFixed(1) : ton.toFixed(2));
+          const variants = p.skus.length > 1
+            ? `<div class="sub" title="${esc(p.skus.join(' · '))}">${p.skus.length} variantes · ${fmt(p.count)} ADSNs</div>`
+            : `<div class="sub">${fmt(p.count)} ADSNs</div>`;
+          return `
+            <div class="kpi-card ${seedClass(p.name)}">
+              <div class="lbl">${esc(p.name)}</div>
+              <div class="val">${tonStr}<span style="font-size:.75rem;color:#64748b"> t</span></div>
+              ${variants}
+            </div>
+          `;
+        }).join("");
       }
 
       function renderTable(data) {
@@ -381,6 +471,7 @@
           const data = await fetchJSON(`/api/admin/adicional/suppliers?${params}`);
           lastData = data;
           renderKpis(data.totals);
+          renderProductKpis(data.totals.by_sku || []);
           renderTable(data);
           if (toast) toast(`${data.suppliers.length} fornecedores, ${fmt(data.totals.services)} serviços`, { kind: "ok" });
         } catch (e) {

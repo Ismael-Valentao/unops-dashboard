@@ -31,6 +31,14 @@
     .via-ctrl .btn-sec:hover { background: #f1f5f9; }
     .via-ctrl .btn-ex { background: #15803d; }
     .via-ctrl .btn-ex:hover { background: #166534; }
+    /* Indicador de cache no painel de controlo */
+    .cache-info {
+      font-size: .68rem; color: #94a3b8; align-self: center;
+      padding: 0 .35rem; font-variant-numeric: tabular-nums;
+    }
+    .cache-info.fresh  { color: #15803d; }
+    .cache-info.stale  { color: #b45309; }
+    .cache-info.loading { color: #2563eb; }
 
     /* KPIs */
     .via-kpis {
@@ -48,6 +56,7 @@
     .kpi .sub { font-size: .65rem; color: #94a3b8; margin-top: .15rem; }
     .kpi.green { border-left-color: #16a34a; } .kpi.green .val { color: #15803d; }
     .kpi.amber { border-left-color: #d97706; } .kpi.amber .val { color: #b45309; }
+    .kpi.red   { border-left-color: #dc2626; } .kpi.red   .val { color: #b91c1c; }
 
     /* Lista de viagens */
     .viagens-wrap {
@@ -67,9 +76,9 @@
     /* Header CALMO — fundo branco, hierarquia clara, ponto colorido para status */
     .viagem-head {
       display: grid;
-      grid-template-columns: 56px 1fr auto;
+      grid-template-columns: 1fr auto;
       gap: .9rem; align-items: center;
-      padding: .8rem 1rem; cursor: pointer; user-select: none;
+      padding: .8rem 1rem 0.8rem 1.15rem; cursor: pointer; user-select: none;
       position: relative;
     }
     /* Faixa colorida fina à esquerda indica status */
@@ -81,22 +90,59 @@
     .viagem.s-parcial  .viagem-head::before { background: #8b5cf6; }
     .viagem.s-criado   .viagem-head::before { background: #94a3b8; }
 
-    .viagem-head .cam {
-      font-weight: 700; font-size: .8rem; letter-spacing: .04em;
-      color: #64748b; text-align: center;
-      background: #f1f5f9; padding: .4rem 0; border-radius: 6px;
-    }
-    .viagem.open .viagem-head .cam { background: #dbeafe; color: #1e40af; }
-
     .viagem-head .titulo-main {
       font-size: 1rem; font-weight: 700; color: #0f172a; letter-spacing: -.01em;
+      display: flex; align-items: baseline; flex-wrap: wrap; gap: .35rem;
+    }
+    .viagem-head .titulo-main .origem-name {
+      font-size: .85rem; color: #64748b; font-weight: 500;
+    }
+    .viagem-head .titulo-main .arrow {
+      color: #cbd5e1; font-weight: 400;
     }
     .viagem-head .titulo-sub {
       font-size: .78rem; color: #64748b; margin-top: .15rem;
       font-variant-numeric: tabular-nums;
     }
+    /* Pills com produtos carregados (ex: Milho 18.5t · Feijão 4t) */
+    .viagem-head .produtos {
+      display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .25rem;
+    }
+    .viagem-head .produtos .prod-pill {
+      display: inline-flex; align-items: baseline; gap: .25rem;
+      font-size: .68rem; padding: .12rem .42rem; border-radius: 99px;
+      background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0;
+      font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .viagem-head .produtos .prod-pill strong {
+      font-weight: 700; color: #0f172a;
+    }
+    .viagem-head .produtos .prod-pill .qty {
+      color: #64748b; font-weight: 500;
+    }
+    /* Quando viagem mistura ≥2 produtos, destaca discretamente */
+    .viagem.multi-product .viagem-head .produtos .prod-pill {
+      background: #fef3c7; border-color: #fde68a;
+    }
     .viagem-head .ton-wrap {
       display: flex; align-items: center; gap: .65rem;
+    }
+    /* Botão refresh por ADSE (ícone discreto canto top-right) */
+    .viagem-head .btn-refresh {
+      background: transparent; border: 1px solid #e2e8f0; border-radius: 6px;
+      width: 28px; height: 28px; display: flex; align-items: center;
+      justify-content: center; cursor: pointer; color: #64748b;
+      transition: background .12s, color .12s, border-color .12s;
+      flex-shrink: 0; font-size: .9rem; padding: 0;
+    }
+    .viagem-head .btn-refresh:hover { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+    .viagem-head .btn-refresh.spinning { pointer-events: none; opacity: .7; }
+    .viagem-head .btn-refresh.spinning svg { animation: spin 1s linear infinite; }
+    .viagem.flash-updated { animation: flash 1.4s ease-out; }
+    @keyframes spin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes flash {
+      0%   { box-shadow: 0 0 0 0 rgba(34,197,94,.5); background: #f0fdf4; }
+      100% { box-shadow: 0 0 0 8px rgba(34,197,94,0); background: #fff; }
     }
     .viagem-head .ton {
       font-size: 1.2rem; font-weight: 700; color: #0f172a;
@@ -167,6 +213,40 @@
     .status-pill.TRANSITO   { background: #fef9c3; color: #854d0e; }
     .status-pill.CRIADO     { background: #f1f5f9; color: #475569; }
 
+    /* Indicador "Sistema" (ADICIONAL vs UNOPS+ADICIONAL) */
+    .sys-pill {
+      display: inline-block; padding: .05rem .4rem; border-radius: 99px;
+      font-size: .62rem; font-weight: 700; letter-spacing: .03em;
+      white-space: nowrap;
+    }
+    .sys-pill.both { background: #dcfce7; color: #166534; }
+    .sys-pill.only { background: #fef3c7; color: #92400e; }
+    /* Ícones de anexos (guias + assinatura) ao lado do estado UNOPS */
+    .attach-row {
+      display: inline-flex; gap: .25rem; margin-left: .35rem;
+      vertical-align: middle;
+    }
+    .attach-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 4px;
+      background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;
+      font-size: .78rem; text-decoration: none; cursor: pointer;
+      transition: background .12s, color .12s, transform .08s;
+    }
+    .attach-icon:hover { background: #dbeafe; color: #1e40af; transform: translateY(-1px); }
+    .attach-icon.sig    { background: #ecfdf5; color: #047857; border-color: #d1fae5; }
+    .attach-icon.sig:hover { background: #d1fae5; color: #065f46; }
+    /* Mini-resumo no cabeçalho da viagem: ex "3/4 UNOPS" */
+    .unops-mini {
+      display: inline-flex; align-items: center; gap: .25rem;
+      font-size: .68rem; font-weight: 600;
+      padding: .12rem .4rem; border-radius: 4px;
+      margin-left: .35rem; vertical-align: middle;
+    }
+    .unops-mini.full { background: #dcfce7; color: #166534; }
+    .unops-mini.part { background: #fef3c7; color: #92400e; }
+    .unops-mini.none { background: #fee2e2; color: #991b1b; }
+
     .loading { padding: 2.5rem; text-align: center; color: #94a3b8; font-style: italic; }
     .error { padding: 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #b91c1c; }
 
@@ -204,11 +284,28 @@
         <div><label>Distrito</label><input type="text" id="f-district" placeholder="Ex: Chibuto"></div>
         <div><label>Fornecedor</label><input type="text" id="f-supplier" placeholder="Ex: SEEDCO"></div>
         <div><label>Batedor</label><input type="text" id="f-batedor" placeholder="Nome ou email"></div>
+        <div>
+          <label>Produto</label>
+          <select id="f-product">
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <div>
+          <label>UNOPS</label>
+          <select id="f-unops">
+            <option value="">Todos</option>
+            <option value="missing">Só com ADSNs fora do UNOPS</option>
+            <option value="none">Sem nenhum no UNOPS</option>
+            <option value="full">100% no UNOPS</option>
+          </select>
+        </div>
         <div class="btn-group">
           <button class="btn" id="btn-load">Carregar</button>
+          <button class="btn btn-sec" id="btn-force" title="Forçar refresh (ignora cache 5min)">↻ Fresh</button>
           <button class="btn btn-sec" id="btn-clear">Limpar</button>
           <button class="btn btn-sec" id="btn-expand-all">Expandir tudo</button>
           <button class="btn btn-ex" id="btn-export" disabled>Excel (mapa)</button>
+          <span id="cache-info" class="cache-info"></span>
         </div>
       </div>
 
@@ -257,6 +354,10 @@
         const entregue  = (summary.by_status?.ENTREGUE) || 0;
         const transito  = (summary.by_status?.["Em trânsito"]) || 0;
         const parcial   = (summary.by_status?.Parcial) || 0;
+        const unopsIn    = summary.unops_in || 0;
+        const unopsTotal = summary.unops_total || 0;
+        const unopsPct  = unopsTotal ? Math.round((unopsIn / unopsTotal) * 100) : 0;
+        const unopsClass = unopsPct === 100 ? "green" : (unopsPct === 0 ? "red" : "amber");
         $("#kpis").innerHTML = `
           <div class="kpi">
             <div class="lbl">Viagens</div>
@@ -278,6 +379,11 @@
             <div class="val">${fmt(transito + parcial)}</div>
             <div class="sub">${transito} trânsito · ${parcial} parcial</div>
           </div>
+          <div class="kpi ${unopsClass}">
+            <div class="lbl">Lançados no UNOPS</div>
+            <div class="val">${fmt(unopsIn)}<span style="font-size:.75rem;color:#64748b"> / ${fmt(unopsTotal)}</span></div>
+            <div class="sub">${unopsPct}% no sistema UNOPS</div>
+          </div>
         `;
       }
 
@@ -287,9 +393,38 @@
           return;
         }
         $("#viagens").innerHTML = viagens.map((v, idx) => {
-          const items = v.items.map((it) => `
+          const nUnops = v.items.filter((it) => it.sheet_matched).length;
+          const nTotal = v.items.length;
+          const unopsClass = nUnops === nTotal ? "full" : (nUnops === 0 ? "none" : "part");
+          const unopsTitle = nUnops === nTotal
+            ? "Todos os ADSNs já lançados no UNOPS"
+            : (nUnops === 0 ? "Nenhum ADSN lançado no UNOPS" : `${nUnops} de ${nTotal} ADSNs já no UNOPS`);
+          const items = v.items.map((it) => {
+            // Anexos: guias (📎 1/2/3) + assinatura (✍️) — só quando há match UNOPS
+            // e há pelo menos 1 URL. Stop propagation para não tocar o toggle da viagem.
+            let attachIcons = "";
+            if (it.sheet_matched) {
+              const links = it.attachments || [];
+              const sig   = it.beneficiary_signature || null;
+              const icons = [];
+              links.forEach((url, i) => {
+                icons.push(`<a href="${esc(url)}" target="_blank" rel="noopener" class="attach-icon"
+                  title="Anexo guia #${i+1}" onclick="event.stopPropagation()">📎</a>`);
+              });
+              if (sig) {
+                icons.push(`<a href="${esc(sig)}" target="_blank" rel="noopener" class="attach-icon sig"
+                  title="Assinatura do beneficiário" onclick="event.stopPropagation()">✍</a>`);
+              }
+              if (icons.length) attachIcons = `<span class="attach-row">${icons.join("")}</span>`;
+            }
+            const sysCell = it.sheet_matched
+              ? `<span class="sys-pill both" title="Lançado em ambos os sistemas">UNOPS + ADIC</span>${attachIcons}`
+              : `<span class="sys-pill only" title="Falta lançar no sistema UNOPS">Só ADIC</span>`;
+            return `
             <tr>
               <td class="mono">${esc(it.adsn || "")}</td>
+              <td class="mono">${esc(it.gtu || "")}</td>
+              <td>${sysCell}</td>
               <td>${esc(it.ext_name || "")}</td>
               <td>${esc(it.ext_contact || "")}</td>
               <td class="mono">${esc(it.ext_nuit || "")}</td>
@@ -299,14 +434,26 @@
               <td class="num"><strong>${fmt(it.weight_ton)}</strong></td>
               <td><span class="status-pill ${esc(it.status)}">${esc(it.status)}</span></td>
             </tr>
-          `).join("");
+          `;
+          }).join("");
+          // Pills de produtos carregados — sempre visíveis (chama atenção para viagens mistas)
+          const productsPills = (v.products || []).map((p) =>
+            `<span class="prod-pill"><strong>${esc(p.product)}</strong> <span class="qty">${fmt(p.ton)}t</span></span>`
+          ).join("");
+          const multiClass = (v.n_products || 0) >= 2 ? " multi-product" : "";
           return `
-            <article class="viagem ${statusClass(v.status)}" data-idx="${idx}">
+            <article class="viagem ${statusClass(v.status)}${multiClass}" data-idx="${idx}">
               <header class="viagem-head" title="Click para expandir">
-                <div class="cam">${esc(v.cam_label)}</div>
                 <div>
-                  <div class="titulo-main">${esc(v.destino_distrito || "—")}</div>
-                  <div class="titulo-sub">${esc(v.matricula || "—")}  ·  ${esc(fmtDateShort(v.data_saida))}  ·  ${fmt(v.n_extensionistas)} ext.</div>
+                  <div class="titulo-main">
+                    ${v.fornecedor ? `<span class="origem-name">${esc(v.fornecedor)}</span><span class="arrow">→</span>` : ""}
+                    <span>${esc(v.destino_distrito || "—")}</span>
+                  </div>
+                  ${productsPills ? `<div class="produtos">${productsPills}</div>` : ""}
+                  <div class="titulo-sub">
+                    ${esc(v.matricula || "—")}  ·  ${esc(fmtDateShort(v.data_saida))}  ·  ${fmt(v.n_extensionistas)} ext.
+                    <span class="unops-mini ${unopsClass}" title="${esc(unopsTitle)}">${nUnops}/${nTotal} UNOPS</span>
+                  </div>
                 </div>
                 <div class="ton-wrap">
                   <div>
@@ -314,6 +461,11 @@
                     <div class="ton-sub">${esc(v.status)}</div>
                   </div>
                   <div class="status-dot" title="${esc(v.status)}"></div>
+                  <button class="btn-refresh" data-adse="${esc(v.adse || '')}" data-date="${esc(v.data_saida || '')}"
+                    title="Actualizar apenas esta ADSE (rápido — só procura nesta data)"
+                    onclick="event.stopPropagation()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                  </button>
                 </div>
               </header>
               <div class="viagem-meta">
@@ -342,6 +494,8 @@
                 <table class="items-tbl">
                   <thead><tr>
                     <th>Código Serviço</th>
+                    <th>GTU/GTS</th>
+                    <th>Sistema</th>
                     <th>Nome Extensionista</th>
                     <th>Telf Ext.</th>
                     <th>NUIT</th>
@@ -353,7 +507,7 @@
                   </tr></thead>
                   <tbody>${items}</tbody>
                   <tfoot><tr>
-                    <td colspan="5" style="text-align:right">TOTAL</td>
+                    <td colspan="7" style="text-align:right">TOTAL</td>
                     <td class="num">${fmt(v.total_volumes)}</td>
                     <td class="num">${fmt(Math.round(v.total_kg))}</td>
                     <td class="num">${fmt(v.total_ton)}</td>
@@ -365,22 +519,83 @@
           `;
         }).join("");
 
-        // Wire click handlers
+        // Wire click handlers — expand/collapse no header
         $$("#viagens .viagem-head").forEach((h) => {
           h.addEventListener("click", () => {
-            const idx = h.dataset.toggle;
             const art = h.closest(".viagem");
             if (art) art.classList.toggle("open");
           });
         });
+        // Botão refresh por ADSE
+        $$("#viagens .btn-refresh").forEach((btn) => {
+          btn.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            refreshADSE(btn);
+          });
+        });
+      }
+
+      // Refresh: re-fetch APENAS 1 ADSE da API (janela ±2 dias da data da viagem)
+      // e substitui in-place em lastData.viagens, depois re-renderiza.
+      async function refreshADSE(btn) {
+        const adse = btn.dataset.adse;
+        const date = btn.dataset.date;
+        if (!adse || !date) {
+          if (toast) toast("ADSE ou data em falta — refresh impossível", { kind: "err" });
+          return;
+        }
+        btn.classList.add("spinning");
+        try {
+          const params = new URLSearchParams({ adse, date });
+          if ($("#f-status").value === "Em trânsito" || $("#f-status").value === "ENTREGUE") {
+            // já filtramos client-side; mas para o refresh, queremos sempre incluir tudo
+          }
+          const data = await fetchJSON("/api/admin/adicional/viagens/refresh?" + params);
+          const fresh = data.viagem;
+          // Preserva cam_label/cam_number originais (numeração depende do dataset completo)
+          const idx = lastData.viagens.findIndex((v) =>
+            String(v.adse || "").trim() === adse
+          );
+          if (idx >= 0) {
+            const prev = lastData.viagens[idx];
+            fresh.cam_label  = prev.cam_label;
+            fresh.cam_number = prev.cam_number;
+            lastData.viagens[idx] = fresh;
+          } else {
+            // ADSE nova (raríssimo) — apenda
+            lastData.viagens.unshift(fresh);
+          }
+          rerender();
+          // Flash visual no card actualizado
+          requestAnimationFrame(() => {
+            const art = document.querySelector(`#viagens .viagem .btn-refresh[data-adse="${adse}"]`)?.closest(".viagem");
+            if (art) {
+              art.classList.add("flash-updated");
+              setTimeout(() => art.classList.remove("flash-updated"), 1500);
+            }
+          });
+          if (toast) toast(`ADSE ${adse} actualizada (${fresh.status} · ${fresh.total_ton}t)`, { kind: "ok" });
+        } catch (e) {
+          btn.classList.remove("spinning");
+          if (toast) toast("Erro refresh: " + e.message, { kind: "err" });
+        }
       }
 
       function pickFilters() {
+        // Server-side: APENAS as datas determinam o universo carregado.
+        // Tudo o resto (status, província, distrito, etc.) é filtro client-side
+        // em rerender() — instant, sem nova chamada à API.
         const f = {};
         const from = $("#f-from").value;
         const to   = $("#f-to").value;
         if (from) f.fromDate = from;
         if (to)   f.toDate   = to;
+        return f;
+      }
+
+      // Para o Excel export, mantemos os filtros no URL para reduzir o ficheiro.
+      function pickFiltersForExport() {
+        const f = pickFilters();
         ["status","province","district","supplier","batedor"].forEach((k) => {
           const v = $("#f-" + k)?.value?.trim();
           if (v) f[k] = v;
@@ -388,29 +603,162 @@
         return f;
       }
 
-      async function load() {
+      // Popula o dropdown de produtos com os produtos distintos da data.
+      // Mantém a selecção anterior se ainda válida.
+      function populateProductFilter() {
+        if (!lastData) return;
+        const prev = $("#f-product").value;
+        const totals = new Map(); // produto → kg total (para ordenar)
+        for (const v of lastData.viagens) {
+          for (const p of (v.products || [])) {
+            totals.set(p.product, (totals.get(p.product) || 0) + p.kg);
+          }
+        }
+        const opts = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+        const sel = $("#f-product");
+        sel.innerHTML =
+          '<option value="">Todos</option>' +
+          opts.map(([p, kg]) =>
+            `<option value="${esc(p)}">${esc(p)} (${fmt(Math.round(kg/1000))}t)</option>`
+          ).join("");
+        // Mantém selecção anterior se ainda existe
+        if (prev && opts.some(([p]) => p === prev)) sel.value = prev;
+      }
+
+      // Re-renderiza a partir de lastData sem voltar a chamar a API.
+      // Aplica TODOS os filtros client-side (instant) + recomputa KPIs.
+      function rerender() {
+        if (!lastData) return;
+        const norm = (s) => String(s || "").toLowerCase();
+        const fStatus   = $("#f-status").value;
+        const fProvince = $("#f-province").value.trim();
+        const fDistrict = $("#f-district").value.trim();
+        const fSupplier = $("#f-supplier").value.trim();
+        const fBatedor  = $("#f-batedor").value.trim();
+        const fProduct  = $("#f-product").value;
+        const fUnops    = $("#f-unops").value;
+
+        let viagensRender = lastData.viagens;
+        if (fStatus)   viagensRender = viagensRender.filter((v) => v.status === fStatus);
+        if (fProvince) viagensRender = viagensRender.filter((v) =>
+          norm(v.destino_provincia).includes(norm(fProvince)));
+        if (fDistrict) viagensRender = viagensRender.filter((v) =>
+          norm(v.destino_distrito).includes(norm(fDistrict)));
+        if (fSupplier) viagensRender = viagensRender.filter((v) =>
+          norm(v.fornecedor).includes(norm(fSupplier)));
+        if (fBatedor)  viagensRender = viagensRender.filter((v) =>
+          norm(v.batedor).includes(norm(fBatedor)) ||
+          norm(v.batedor_email).includes(norm(fBatedor)));
+        if (fProduct) {
+          // Viagem é incluída se ALGUM ADSN seu carregou o produto seleccionado
+          viagensRender = viagensRender.filter((v) =>
+            (v.products || []).some((p) => p.product === fProduct));
+        }
+        if (fUnops === "missing") {
+          viagensRender = viagensRender.filter((v) =>
+            v.items.some((it) => !it.sheet_matched));
+        } else if (fUnops === "none") {
+          viagensRender = viagensRender.filter((v) =>
+            v.items.every((it) => !it.sheet_matched));
+        } else if (fUnops === "full") {
+          viagensRender = viagensRender.filter((v) =>
+            v.items.every((it) => it.sheet_matched));
+        }
+        // KPIs sobre o subset visível
+        let unopsIn = 0, unopsTotal = 0;
+        for (const v of viagensRender) {
+          for (const it of v.items) {
+            unopsTotal++;
+            if (it.sheet_matched) unopsIn++;
+          }
+        }
+        // Recomputa by_status sobre o subset
+        const by_status = {};
+        let total_kg = 0;
+        for (const v of viagensRender) {
+          by_status[v.status] = (by_status[v.status] || 0) + 1;
+          total_kg += v.total_kg;
+        }
+        renderKpis({
+          ...lastData.summary,
+          viagens: viagensRender.length,
+          by_status,
+          total_kg: Math.round(total_kg),
+          total_ton: Number((total_kg / 1000).toFixed(2)),
+          total_items: viagensRender.reduce((s, v) => s + v.items.length, 0),
+          unops_in: unopsIn,
+          unops_total: unopsTotal,
+        });
+        renderViagens(viagensRender);
+      }
+
+      function setCacheInfo(cache) {
+        const el = $("#cache-info");
+        if (!cache) { el.textContent = ""; el.className = "cache-info"; return; }
+        if (cache.from_cache) {
+          const age = cache.age_seconds;
+          const min = Math.floor(age / 60);
+          const txt = min > 0 ? `Cache ${min}min` : `Cache ${age}s`;
+          el.textContent = `· ${txt}`;
+          el.className = "cache-info " + (age > 240 ? "stale" : "fresh");
+        } else {
+          el.textContent = "· Fresh";
+          el.className = "cache-info fresh";
+        }
+      }
+
+      async function load(forceFresh = false) {
         const f = pickFilters();
         const params = new URLSearchParams(f);
-        $("#viagens").innerHTML = `<div class="loading">A carregar (~30-60s)…</div>`;
+        if (forceFresh) params.set("noCache", "1");
+        $("#viagens").innerHTML = `<div class="loading">${forceFresh ? "A buscar dados frescos (~30-60s)…" : "A carregar…"}</div>`;
         $("#kpis").innerHTML = "";
         $("#btn-export").disabled = true;
+        $("#cache-info").textContent = "· a carregar…";
+        $("#cache-info").className = "cache-info loading";
+        const t0 = Date.now();
         try {
           const data = await fetchJSON("/api/admin/adicional/viagens?" + params);
           lastData = data;
-          renderKpis({ ...data.summary, viagens: data.viagens.length });
-          renderViagens(data.viagens);
+          setCacheInfo(data.cache);
+          populateProductFilter();
+          rerender();
           $("#btn-export").disabled = false;
-          if (toast) toast(`${fmt(data.viagens.length)} viagens (${fmt(data.summary.total_ton)} t)`, { kind: "ok" });
+          const dt = ((Date.now() - t0) / 1000).toFixed(1);
+          const src = data.cache?.from_cache ? "(cache)" : "(fresh)";
+          if (toast) toast(`${fmt(data.viagens.length)} viagens (${fmt(data.summary.total_ton)} t) ${src} ${dt}s`, { kind: "ok" });
         } catch (e) {
           $("#viagens").innerHTML = `<div class="error">Erro: ${esc(e.message)}</div>`;
+          $("#cache-info").textContent = "";
           if (toast) toast("Erro: " + e.message, { kind: "err" });
         }
       }
 
-      $("#btn-load").addEventListener("click", load);
+      $("#btn-load").addEventListener("click", () => load(false));
+      $("#btn-force").addEventListener("click", () => load(true));
       $("#btn-clear").addEventListener("click", () => {
-        ["status","province","district","supplier","batedor"].forEach((k) => { $("#f-"+k).value = ""; });
+        ["status","province","district","supplier","batedor","unops","product"].forEach((k) => { $("#f-"+k).value = ""; });
+        rerender();
       });
+
+      // Filtros instant — selects mudam imediatamente
+      ["status","unops","product"].forEach((k) => {
+        $("#f-" + k).addEventListener("change", rerender);
+      });
+
+      // Filtros de texto — debounce para não re-renderizar a cada keystroke
+      function debounce(fn, ms) {
+        let t = null;
+        return (...args) => {
+          clearTimeout(t);
+          t = setTimeout(() => fn(...args), ms);
+        };
+      }
+      const debouncedRerender = debounce(rerender, 180);
+      ["province","district","supplier","batedor"].forEach((k) => {
+        $("#f-" + k).addEventListener("input", debouncedRerender);
+      });
+
       $("#btn-expand-all").addEventListener("click", () => {
         const arts = $$("#viagens .viagem");
         const allOpen = arts.every((a) => a.classList.contains("open"));
@@ -418,7 +766,7 @@
         $("#btn-expand-all").textContent = allOpen ? "Expandir tudo" : "Recolher tudo";
       });
       $("#btn-export").addEventListener("click", () => {
-        const params = new URLSearchParams(pickFilters());
+        const params = new URLSearchParams(pickFiltersForExport());
         window.location.href = "/api/admin/adicional/viagens/export.xlsx?" + params;
         if (toast) toast("A gerar Excel…", { kind: "ok" });
       });
