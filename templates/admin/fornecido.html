@@ -177,6 +177,10 @@
     .prod-card .supp-row .supp-line3 strong {
       color: #334155; font-weight: 600;
     }
+    /* Quando levantado=0, dimming itálico para deixar claro que é zero */
+    .prod-card .supp-row .supp-line3 strong.zero {
+      color: #94a3b8; font-weight: 500; font-style: italic;
+    }
     .prod-card .supp-row .supp-line3 .pend-tag {
       color: #b45309; font-weight: 600;
     }
@@ -507,8 +511,11 @@
               const barCls  = pctBarClass(sPct);
               const barW    = sPct == null ? 0 : Math.min(100, sPct);
 
-              // Levantado/Meta — só mostra meta se há
-              const levTxt = `<strong>${fmtNum(s.forn_qty)}</strong> ${unit}` +
+              // Levantado/Meta — só mostra meta se há.
+              // Quando levantado=0, dimming cinza itálico para diferenciar
+              // de fornecedores que entregaram algo.
+              const levZero = s.forn_qty === 0;
+              const levTxt = `<strong class="${levZero ? "zero" : ""}">${fmtNum(s.forn_qty)}</strong> ${unit}` +
                 (s.has_meta && s.meta_qty != null
                   ? ` <span style="opacity:.7">/ ${fmtNum(s.meta_qty)} ${unit}</span>`
                   : "");
