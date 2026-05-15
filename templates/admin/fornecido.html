@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AQI — Fornecido vs Meta</title>
+  <title>AQI — Fornecido vs Contratado</title>
   <link rel="stylesheet" href="/static/admin.css">
   <style>
     .forn-ctrl {
@@ -37,6 +37,27 @@
     .forn-kpis {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: .75rem; margin-bottom: 1rem;
+    }
+
+    /* Secções da página (Produtos / Fornecedores) */
+    .section-block { margin-bottom: 1rem; }
+    .section-header {
+      margin-bottom: .9rem;
+      padding-bottom: .65rem;
+      border-bottom: 2px solid #0f4c75;
+      display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap;
+    }
+    .section-header h2 {
+      font-size: 1.15rem; font-weight: 800; color: #0f172a;
+      margin: 0; letter-spacing: -.01em;
+    }
+    .section-header .section-sub {
+      font-size: .72rem; color: #94a3b8; font-weight: 500;
+    }
+    .section-divider {
+      height: 1.5rem;
+      background: linear-gradient(180deg, transparent 0%, #f1f5f9 50%, transparent 100%);
+      margin: .5rem 0;
     }
     /* Cards de Produto vs Contratado — minmax aumentado em 50% (260→390) */
     .prod-cards {
@@ -322,7 +343,7 @@
   <div id="layout"></div>
   <main class="admin-main">
     <header class="admin-header">
-      <h1>Fornecido vs Meta</h1>
+      <h1>Fornecido vs Contratado</h1>
       <span class="admin-sub">
         <span style="color:#15803d;font-weight:600">LEVANTADO</span> = TRA + FIN ·
         <span style="color:#b45309;font-weight:600">PENDENTE</span> = <strong>Meta − Levantado</strong> (falta para meta) ·
@@ -345,13 +366,27 @@
         </div>
       </div>
 
-      <div id="prod-section" style="display:none;margin-bottom:1rem">
-        <h3 style="font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:700;margin:0 0 .6rem">Total Fornecido por Produto vs. Contratado</h3>
+      <!-- Secção 1: Cards de Produto -->
+      <div id="prod-section" class="section-block" style="display:none">
+        <div class="section-header">
+          <h2>Total Fornecido por Produto vs. Contratado</h2>
+          <div class="section-sub">Quanto cada produto tem entregue vs comprometido — clique para ver fornecedores</div>
+        </div>
         <div id="prod-kpis"></div>
       </div>
 
-      <div id="suppliers-wrap" class="supplier-grid">
-        <div class="loading">Carregue para começar.</div>
+      <!-- Separador entre secções -->
+      <div class="section-divider" id="section-divider" style="display:none"></div>
+
+      <!-- Secção 2: Fornecedores -->
+      <div class="section-block">
+        <div class="section-header">
+          <h2>Fornecedores</h2>
+          <div class="section-sub">Resumo por fornecedor — clique num card para ver detalhe por produto</div>
+        </div>
+        <div id="suppliers-wrap" class="supplier-grid">
+          <div class="loading">Carregue para começar.</div>
+        </div>
       </div>
     </section>
   </main>
@@ -425,8 +460,14 @@
 
       function renderProductKpis(by_product) {
         const section = $("#prod-section"), target = $("#prod-kpis");
-        if (!by_product || !by_product.length) { section.style.display = "none"; target.innerHTML = ""; return; }
+        const divider = $("#section-divider");
+        if (!by_product || !by_product.length) {
+          section.style.display = "none";
+          if (divider) divider.style.display = "none";
+          target.innerHTML = ""; return;
+        }
         section.style.display = "block";
+        if (divider) divider.style.display = "block";
         target.classList.add("prod-cards");
         target.classList.remove("forn-kpis");
         // Ordena: SEMENTES primeiro (Milho/Feijão/Arroz e variantes),
@@ -654,6 +695,7 @@
         if (forceFresh) params.set("noCache", "1");
         $("#suppliers-wrap").innerHTML = `<div class="loading">${forceFresh ? "A buscar dados frescos (~30-60s)…" : "A carregar…"}</div>`;
         $("#prod-section").style.display = "none";
+        $("#section-divider").style.display = "none";
         $("#cache-info").textContent = "· a carregar…";
         $("#cache-info").className = "cache-info loading";
         const t0 = Date.now();
