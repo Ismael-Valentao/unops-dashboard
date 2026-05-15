@@ -103,9 +103,9 @@
       color: #94a3b8; font-weight: 700; margin-bottom: .3rem;
     }
     .prod-card .supp-row {
-      display: grid; grid-template-columns: 1fr auto 30px;
+      display: grid; grid-template-columns: 1fr auto auto auto;
       gap: .5rem; align-items: center;
-      font-size: .72rem; padding: .15rem 0;
+      font-size: .72rem; padding: .2rem 0;
     }
     .prod-card .supp-row .sname {
       color: #334155; font-weight: 600;
@@ -116,15 +116,33 @@
       color: #64748b; font-variant-numeric: tabular-nums; font-weight: 500;
       font-size: .68rem;
     }
+    .prod-card .supp-row .spend {
+      color: #b45309; font-variant-numeric: tabular-nums; font-weight: 600;
+      font-size: .68rem; text-align: right; min-width: 60px;
+    }
+    .prod-card .supp-row .spend.done {
+      color: #94a3b8; font-weight: 400;
+    }
     .prod-card .supp-row .spct {
-      font-size: .68rem; font-weight: 700;
+      font-size: .72rem; font-weight: 700;
       font-variant-numeric: tabular-nums; text-align: right;
+      min-width: 38px;
     }
     .prod-card .supp-row .spct.over     { color: #16a34a; }
     .prod-card .supp-row .spct.complete { color: #15803d; }
     .prod-card .supp-row .spct.high     { color: #84cc16; }
     .prod-card .supp-row .spct.mid      { color: #d97706; }
     .prod-card .supp-row .spct.low      { color: #dc2626; }
+    .prod-card .supp-head {
+      display: grid; grid-template-columns: 1fr auto auto auto;
+      gap: .5rem; align-items: center;
+      font-size: .55rem; text-transform: uppercase; letter-spacing: .04em;
+      color: #94a3b8; font-weight: 700;
+      padding-bottom: .25rem; border-bottom: 1px solid #f1f5f9;
+      margin-bottom: .15rem;
+    }
+    .prod-card .supp-head > span { text-align: right; }
+    .prod-card .supp-head > span:first-child { text-align: left; }
     .kpi-card {
       background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
       padding: .85rem 1rem; border-left: 4px solid #0f4c75;
@@ -250,6 +268,7 @@
     .sku-tbl tbody td.qty-forn  { color: #15803d; font-weight: 600; }
     .sku-tbl tbody td.qty-pend  { color: #b45309; font-weight: 500; }
     .sku-tbl tbody td.qty-over  { color: #16a34a; font-weight: 700; }
+    .sku-tbl tbody td.qty-zero  { color: #94a3b8; font-weight: 400; font-style: italic; }
     .sku-tbl .unit {
       font-size: .65rem; color: #94a3b8; font-weight: 500; margin-left: 2px;
     }
@@ -286,8 +305,8 @@
     <header class="admin-header">
       <h1>Fornecido vs Meta</h1>
       <span class="admin-sub">
-        <span style="color:#15803d;font-weight:600">RECEBIDO</span> = TRA + FIN ·
-        <span style="color:#b45309;font-weight:600">PENDENTE</span> = <strong>Meta − Recebido</strong> (falta para meta) ·
+        <span style="color:#15803d;font-weight:600">LEVANTADO</span> = TRA + FIN ·
+        <span style="color:#b45309;font-weight:600">PENDENTE</span> = <strong>Meta − Levantado</strong> (falta para meta) ·
         sacos herméticos em <strong>un</strong>
       </span>
     </header>
@@ -425,15 +444,28 @@
               const sQty = `${fmtNum(s.forn_qty)}<span class="unit" style="font-size:.6rem;color:#94a3b8;margin-left:2px">${unit}</span>`;
               const sMeta = s.has_meta && s.meta_qty != null
                 ? ` <span style="color:#94a3b8">/ ${fmtNum(s.meta_qty)}${unit}</span>` : "";
+              // Pendente numérico: max(0, meta-forn) se tem meta, senão "—"
+              const pend = s.has_meta && s.meta_pendente != null
+                ? fmtNum(s.meta_pendente)
+                : "—";
+              const pendCls = s.has_meta && s.meta_pendente === 0 ? "done" : "";
+              const pendHtml = `<span class="spend ${pendCls}">${pend}${s.has_meta && s.meta_pendente != null ? `<span class="unit" style="font-size:.6rem;color:#94a3b8;margin-left:2px">${unit}</span>` : ""}</span>`;
               return `<div class="supp-row">
                 <span class="sname ${s.is_ghost ? "ghost" : ""}">${esc(s.name)}</span>
                 <span class="sqty">${sQty}${sMeta}</span>
+                ${pendHtml}
                 <span class="spct ${pctTextClass(sPct)}">${sPct == null ? "—" : sPct + "%"}</span>
               </div>`;
             }).join("");
             suppsHtml = `
               <div class="supps-block">
                 <div class="supps-title">Fornecedores</div>
+                <div class="supp-head">
+                  <span>Nome</span>
+                  <span>Levantado / Meta</span>
+                  <span>Pendente</span>
+                  <span>%</span>
+                </div>
                 ${rows}
               </div>
             `;
@@ -444,7 +476,7 @@
               <div class="name">${esc(p.product)}${isSaco ? '<span style="font-size:.7rem;font-weight:500;color:#94a3b8"> (em un)</span>' : ''}</div>
               <div class="nums">
                 <div><span class="lbl">Meta</span><span class="v">${metaDisplay}</span></div>
-                <div><span class="lbl">Recebido</span><span class="v forn">${fornDisplay}</span></div>
+                <div><span class="lbl">Levantado</span><span class="v forn">${fornDisplay}</span></div>
                 <div><span class="lbl">Pendente</span><span class="v pend">${pendDisplay}</span></div>
               </div>
               <div class="progress-wrap"><div class="${barCls}" style="width:${barWidth}%"></div></div>
@@ -487,6 +519,9 @@
             const pend = p.meta_pendente == null
               ? '<span style="color:#94a3b8">—</span>'
               : `${fmtNum(p.meta_pendente)}<span class="unit">${unit}</span>`;
+            // Recebido (Levantado): se forn_qty === 0, mostra em cinzento itálico
+            // para não dar a impressão de que foi entregue.
+            const fornCls = p.forn_qty === 0 ? "qty-zero" : (isOver ? "qty-over" : "qty-forn");
             let cls = "";
             if (isSaco) cls = "is-saco-row";
             else if (noMeta) cls = "no-meta-row";
@@ -494,7 +529,7 @@
               <tr class="${cls}">
                 <td>${esc(p.product)} ${isSaco ? '<span class="unit">(em un)</span>' : ''}</td>
                 <td class="num qty-meta">${meta}</td>
-                <td class="num ${isOver ? 'qty-over' : 'qty-forn'}">${fmtNum(p.forn_qty)}<span class="unit">${unit}</span></td>
+                <td class="num ${fornCls}">${fmtNum(p.forn_qty)}<span class="unit">${unit}</span></td>
                 <td class="num qty-pend">${pend}</td>
                 <td class="num">${pctBar(p.meta_pct)}</td>
                 <td class="num" style="color:#94a3b8">${p.forn_count}</td>
@@ -533,7 +568,7 @@
           } else {
             metaTxt = "—"; recbTxt = fmtNum(s.forn_kg); pendTxt = "—"; metaUnitLbl = "kg";
           }
-          const pctTxt = s.has_meta ? `${s.meta_pct}% recebido` : "sem meta";
+          const pctTxt = s.has_meta ? `${s.meta_pct}% levantado` : "sem meta";
 
           return `
             <article class="sup-card ${cardCls}" data-idx="${idx}">
@@ -548,7 +583,7 @@
                   <div class="sub">${s.meta_match_key ? '['+esc(s.meta_match_key)+']' : '—'}</div>
                 </div>
                 <div class="metric forn">
-                  <div class="lbl">Recebido</div>
+                  <div class="lbl">Levantado</div>
                   <div class="qty">${recbTxt}<span class="unit" style="font-size:.7rem;font-weight:500;color:#94a3b8"> ${metaUnitLbl}</span></div>
                   <div class="sub">${s.count_forn} svc${!isSacoOnly && s.forn_qty_un>0 ? ' · '+fmtNum(s.forn_qty_un)+' un' : ''}</div>
                 </div>
@@ -566,9 +601,9 @@
                   <thead><tr>
                     <th>Produto</th>
                     <th class="num">Meta</th>
-                    <th class="num">Recebido</th>
+                    <th class="num">Levantado</th>
                     <th class="num">Pendente (vs meta)</th>
-                    <th class="num">% Recebido</th>
+                    <th class="num">% Levantado</th>
                     <th class="num">ADSNs</th>
                   </tr></thead>
                   <tbody>${rows}</tbody>
