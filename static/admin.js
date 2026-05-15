@@ -39,6 +39,7 @@ window.AdminUI = (function () {
     { key: "reconciliacao",   label: "Reconciliação",     icon: ICO.clipboard,  href: "/admin/reconciliacao" },
     { key: "relatorio-provincias", label: "Relatório por Província", icon: ICO.map, href: "/admin/relatorio-provincias" },
     { key: "origens",         label: "Origens (API DMS)", icon: ICO.factory, href: "/admin/origens" },
+    { key: "fornecido",       label: "Fornecido (TRA+FIN)", icon: ICO.factory, href: "/admin/fornecido" },
     { key: "entregas",        label: "Entregas (Live)",   icon: ICO.list,    href: "/admin/entregas" },
     { key: "viagens",         label: "Viagens (Mapa)",    icon: ICO.truck,   href: "/admin/viagens" },
     { section: "Compras" },

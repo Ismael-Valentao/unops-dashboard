@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AQI — Fornecido</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <style>
+    .forn-ctrl {
+      display: flex; gap: .75rem; flex-wrap: wrap; align-items: end;
+      margin-bottom: 1rem; padding: .85rem 1rem;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+    }
+    .forn-ctrl label {
+      display: block; font-size: .68rem; text-transform: uppercase;
+      letter-spacing: .04em; color: #64748b; font-weight: 700; margin-bottom: .3rem;
+    }
+    .forn-ctrl input, .forn-ctrl select {
+      padding: .45rem .6rem; border: 1px solid #cbd5e1; border-radius: 6px;
+      font-size: .85rem; background: #fff;
+    }
+    .forn-ctrl .btn {
+      padding: .5rem 1rem; background: #0f4c75; color: #fff; border: 0;
+      border-radius: 6px; cursor: pointer; font-size: .85rem; font-weight: 600;
+    }
+    .forn-ctrl .btn:hover { background: #1e6ba8; }
+    .forn-ctrl .btn-sec { background: #fff; color: #0f4c75; border: 1px solid #cbd5e1; }
+    .forn-ctrl .btn-sec:hover { background: #f1f5f9; }
+    .cache-info {
+      font-size: .68rem; color: #94a3b8; align-self: center;
+      padding: 0 .35rem; font-variant-numeric: tabular-nums;
+    }
+    .cache-info.fresh { color: #15803d; }
+    .cache-info.stale { color: #b45309; }
+    .cache-info.loading { color: #2563eb; }
+
+    /* KPI cards */
+    .forn-kpis {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: .75rem; margin-bottom: 1rem;
+    }
+    .kpi-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      padding: .85rem 1rem; border-left: 4px solid #0f4c75;
+    }
+    .kpi-card .lbl { font-size: .65rem; text-transform: uppercase;
+      letter-spacing: .05em; color: #64748b; font-weight: 700; }
+    .kpi-card .val { font-size: 1.6rem; font-weight: 800; color: #0f172a;
+      line-height: 1.1; margin-top: .25rem; font-variant-numeric: tabular-nums; }
+    .kpi-card .sub { font-size: .7rem; color: #94a3b8; margin-top: .2rem; }
+    .kpi-card.green { border-left-color: #16a34a; }
+    .kpi-card.green .val { color: #15803d; }
+    .kpi-card.seed-milho   { border-left-color: #ca8a04; }
+    .kpi-card.seed-milho   .val { color: #854d0e; }
+    .kpi-card.seed-feijao  { border-left-color: #be185d; }
+    .kpi-card.seed-feijao  .val { color: #831843; }
+    .kpi-card.seed-arroz   { border-left-color: #0891b2; }
+    .kpi-card.seed-arroz   .val { color: #155e75; }
+    .kpi-card.seed-saco    { border-left-color: #7c3aed; }
+    .kpi-card.seed-saco    .val { color: #5b21b6; }
+    .kpi-card.seed-other   { border-left-color: #475569; }
+    .kpi-card.seed-other   .val { color: #334155; }
+
+    .prod-section { margin-bottom: 1rem; }
+    .prod-section h3 {
+      font-size: .75rem; text-transform: uppercase; letter-spacing: .06em;
+      color: #64748b; font-weight: 700; margin: 0 0 .5rem; padding-left: .15rem;
+    }
+    .prod-section .forn-kpis {
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: .5rem;
+    }
+    .prod-section .kpi-card { padding: .65rem .8rem; }
+    .prod-section .kpi-card .lbl { font-size: .62rem; }
+    .prod-section .kpi-card .val { font-size: 1.25rem; }
+    .prod-section .kpi-card .sub { font-size: .65rem; }
+
+    /* Tabela */
+    .forn-tbl {
+      width: 100%; border-collapse: collapse; font-size: .85rem;
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      overflow: hidden;
+    }
+    .forn-tbl thead { background: #15803d; color: #fff; }
+    .forn-tbl thead th {
+      padding: .65rem .8rem; text-align: left; font-weight: 600;
+      font-size: .78rem; text-transform: uppercase; letter-spacing: .03em;
+    }
+    .forn-tbl thead th.num { text-align: right; }
+    .forn-tbl tbody td {
+      padding: .65rem .8rem; border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+    .forn-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .forn-tbl td.name {
+      font-weight: 700; color: #0f172a; min-width: 200px;
+    }
+    .forn-tbl td.name .aliases {
+      display: block; font-size: .7rem; color: #94a3b8;
+      font-weight: 400; margin-top: .15rem;
+    }
+    .forn-tbl td.name .acct {
+      display: inline-block; background: #e0f2fe; color: #075985;
+      font-size: .65rem; padding: .05rem .4rem; border-radius: 99px;
+      margin-left: .35rem; font-weight: 600;
+    }
+    .forn-tbl tbody tr:hover { background: #f0fdf4; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: .25rem; }
+    .chip {
+      background: #f1f5f9; color: #475569; padding: .1rem .45rem;
+      border-radius: 99px; font-size: .68rem; font-weight: 600;
+    }
+    .chip.green { background: #dcfce7; color: #166534; }
+    .chip.blue  { background: #dbeafe; color: #1e40af; }
+    .chip.purple{ background: #ede9fe; color: #5b21b6; }
+    .chip .qty  { color: #94a3b8; font-weight: 500; margin-left: .25rem; }
+
+    .loading { padding: 2rem; text-align: center; color: #94a3b8; font-style: italic; }
+    .error { padding: 1rem; background: #fef2f2; border: 1px solid #fecaca;
+      border-radius: 6px; color: #b91c1c; }
+  </style>
+</head>
+<body class="admin-body">
+  <div id="layout"></div>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>Fornecido</h1>
+      <span class="admin-sub">TRANSITO + FINALIZADO juntos · sacos herméticos em <strong>un</strong> · CRIADO ignorado</span>
+    </header>
+
+    <section class="admin-section">
+
+      <!-- Controlos -->
+      <div class="forn-ctrl">
+        <div><label>De</label><input type="date" id="f-from"></div>
+        <div><label>Até</label><input type="date" id="f-to"></div>
+        <div style="margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn" id="btn-load">Carregar</button>
+          <button class="btn btn-sec" id="btn-force" title="Forçar refresh (ignora cache 5min)">↻ Fresh</button>
+          <button class="btn btn-sec" id="btn-preset-30">30d</button>
+          <button class="btn btn-sec" id="btn-preset-60">60d</button>
+          <span id="cache-info" class="cache-info"></span>
+        </div>
+      </div>
+
+      <!-- KPIs gerais -->
+      <div class="forn-kpis" id="kpis"></div>
+
+      <!-- KPIs por Produto -->
+      <div class="prod-section" id="prod-section" style="display:none">
+        <h3>Total Fornecido por Produto</h3>
+        <div class="forn-kpis" id="prod-kpis"></div>
+      </div>
+
+      <!-- Tabela -->
+      <div id="tbl-wrap">
+        <table class="forn-tbl" id="tbl">
+          <thead>
+            <tr>
+              <th>Fornecedor</th>
+              <th>Origem</th>
+              <th class="num">Serviços</th>
+              <th class="num">Fornecido (kg)</th>
+              <th>Produtos (com qty)</th>
+              <th>Destinos</th>
+            </tr>
+          </thead>
+          <tbody id="tbl-body">
+            <tr><td colspan="6" class="loading">Carregue para começar.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+  <script>
+    (function () {
+      const { fetchJSON, fmt, esc, toast } = window.AdminUI;
+      const $ = (s) => document.querySelector(s);
+
+      function ymd(d) {
+        return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      }
+      const today = new Date(); today.setHours(0,0,0,0);
+      const d60 = new Date(today); d60.setDate(d60.getDate() - 60);
+      $("#f-from").value = ymd(d60);
+      $("#f-to").value   = ymd(today);
+
+      const SKU_LABEL = {
+        MXIXMILHOKG: "Milho",
+        MXIXFEIJAOKG: "Feijão",
+        MXIXARROZKG: "Arroz",
+        AGRIFEMMA0125L: "Emamectim",
+        AGRIFEMTINL: "Emamectim",
+        AGRIFEMMA01L: "Emamectim",
+        SEEDARROZM50KG: "Arroz (saco 50kg)",
+        MSEEDFJNHB5KG: "Feijão (saco 5kg)",
+        MSEEDOPVZM523: "Milho (OPV)",
+        AGRIMIDACLORIPLT: "Imidacloprid",
+        AGRIMIDACLORP1L: "Imidacloprid",
+        AGRIMHMCPALT: "MCPA",
+        AGRIMHMCPA1L: "MCPA",
+        MMRMINTER25: "Stocofer",
+        SUSSACO: "Sacos Hermét.",
+      };
+      function skuLabel(sku) { return SKU_LABEL[sku] || sku; }
+      function canonicalProduct(skuLbl) {
+        const m = /^(.*?)\s*\(/.exec(skuLbl);
+        return (m ? m[1] : skuLbl).trim();
+      }
+      function fmtNum(n) {
+        const v = Number(n) || 0;
+        return v.toLocaleString("pt-PT");
+      }
+      function seedClass(name) {
+        const n = name.toLowerCase();
+        if (n.includes("milho"))  return "seed-milho";
+        if (n.includes("feijão") || n.includes("feijao")) return "seed-feijao";
+        if (n.includes("arroz"))  return "seed-arroz";
+        if (n.includes("saco") || n.includes("hermét") || n.includes("hermet")) return "seed-saco";
+        return "seed-other";
+      }
+
+      function setCacheInfo(cache) {
+        const el = $("#cache-info");
+        if (!cache) { el.textContent = ""; el.className = "cache-info"; return; }
+        if (cache.from_cache) {
+          const age = cache.age_seconds, min = Math.floor(age / 60);
+          el.textContent = "· " + (min > 0 ? `Cache ${min}min` : `Cache ${age}s`);
+          el.className = "cache-info " + (age > 240 ? "stale" : "fresh");
+        } else {
+          el.textContent = "· Fresh";
+          el.className = "cache-info fresh";
+        }
+      }
+
+      function renderKpis(totals) {
+        $("#kpis").innerHTML = `
+          <div class="kpi-card">
+            <div class="lbl">Fornecedores</div>
+            <div class="val">${fmt(totals.suppliers)}</div>
+            <div class="sub">distintos</div>
+          </div>
+          <div class="kpi-card">
+            <div class="lbl">Serviços</div>
+            <div class="val">${fmt(totals.services)}</div>
+            <div class="sub">ADSNs (TRA + FIN)</div>
+          </div>
+          <div class="kpi-card green">
+            <div class="lbl">Fornecido (kg)</div>
+            <div class="val">${fmt(Math.round(totals.fornecido_kg / 1000))}<span style="font-size:.85rem;color:#64748b"> t</span></div>
+            <div class="sub">${fmtNum(totals.fornecido_kg)} kg · produtos a granel</div>
+          </div>
+          <div class="kpi-card green">
+            <div class="lbl">Sacos Hermét.</div>
+            <div class="val">${fmtNum(totals.fornecido_qty_un)}<span style="font-size:.85rem;color:#64748b"> un</span></div>
+            <div class="sub">unidades de saco hermético</div>
+          </div>
+        `;
+      }
+
+      // Agrupa por nome canónico do produto (Milho, Feijão, Arroz, Sacos Hermét.…)
+      function renderProductKpis(by_sku) {
+        const section = $("#prod-section"), target = $("#prod-kpis");
+        if (!by_sku || !by_sku.length) {
+          section.style.display = "none"; target.innerHTML = ""; return;
+        }
+        const byCanon = new Map();
+        for (const item of by_sku) {
+          const lbl = skuLabel(item.sku);
+          const canon = canonicalProduct(lbl);
+          if (!byCanon.has(canon)) byCanon.set(canon, { name: canon, weight_kg: 0, volumes: 0, count: 0, skus: [], is_saco: item.is_saco });
+          const x = byCanon.get(canon);
+          x.weight_kg += item.weight_kg;
+          x.volumes   += item.volumes;
+          x.count     += item.count;
+          x.skus.push(lbl);
+          x.is_saco = x.is_saco || item.is_saco;
+        }
+        // Sort: sacos primeiro (importante para UNOPS) ou produto com mais qty?
+        // Vamos pela qty efectiva (un para saco, kg para o resto).
+        const products = [...byCanon.values()].sort((a, b) => {
+          const aq = a.is_saco ? a.volumes : a.weight_kg;
+          const bq = b.is_saco ? b.volumes : b.weight_kg;
+          return bq - aq;
+        });
+        section.style.display = "block";
+        target.innerHTML = products.map((p) => {
+          const variants = p.skus.length > 1
+            ? `<div class="sub" title="${esc(p.skus.join(' · '))}">${p.skus.length} variantes · ${fmt(p.count)} ADSNs</div>`
+            : `<div class="sub">${fmt(p.count)} ADSNs</div>`;
+          let qtyStr;
+          if (p.is_saco) {
+            qtyStr = `${fmtNum(p.volumes)}<span style="font-size:.75rem;color:#64748b"> un</span>`;
+          } else {
+            const ton = p.weight_kg / 1000;
+            const formatted = ton >= 100 ? fmt(Math.round(ton)) : (ton >= 10 ? ton.toFixed(1) : ton.toFixed(2));
+            qtyStr = `${formatted}<span style="font-size:.75rem;color:#64748b"> t</span>`;
+          }
+          return `
+            <div class="kpi-card ${seedClass(p.name)}">
+              <div class="lbl">${esc(p.name)}</div>
+              <div class="val">${qtyStr}</div>
+              ${variants}
+            </div>
+          `;
+        }).join("");
+      }
+
+      function renderTable(data) {
+        const body = $("#tbl-body");
+        if (!data.suppliers.length) {
+          body.innerHTML = `<tr><td colspan="6" class="loading">Sem fornecedores no período (TRA+FIN).</td></tr>`;
+          return;
+        }
+        body.innerHTML = data.suppliers.map((s) => {
+          const aliasLine = s.aliases.length > 1
+            ? `<span class="aliases">aliases: ${s.aliases.slice(0, 3).map(esc).join(" · ")}</span>` : "";
+          const acctChip = s.account_number ? `<span class="acct">#${esc(s.account_number)}</span>` : "";
+          // Produtos: pill por SKU com qty + unidade
+          const prodChips = s.by_sku.slice(0, 6).map((x) => {
+            const cls = x.is_saco ? "purple" : "blue";
+            const lbl = skuLabel(x.sku);
+            const qty = fmtNum(x.display_qty);
+            return `<span class="chip ${cls}">${esc(lbl)}<span class="qty">${qty} ${x.display_unit}</span></span>`;
+          }).join("");
+          const topProv = s.by_province.slice(0, 3).map((x) =>
+            `<span class="chip">${esc(x.province)}</span>`).join("");
+          const origin = (s.origins[0] || "").trim();
+          // "Fornecido (kg)" — soma de kg dos não-sacos + kg físico dos sacos. Mostramos kg total
+          // como número primário e, se há sacos, indicação "+ Xun sacos" em pequeno.
+          const kgTotal = fmtNum(s.fornecido_kg);
+          const sacosLine = s.fornecido_qty_un > 0
+            ? `<div style="font-size:.7rem;color:#94a3b8;margin-top:.15rem">+ ${fmtNum(s.fornecido_qty_un)} un sacos</div>` : "";
+          return `
+            <tr data-key="${esc(s.key)}">
+              <td class="name">${esc(s.canonical_name)}${acctChip}${aliasLine}</td>
+              <td><span class="chip">${esc(origin)}</span></td>
+              <td class="num">${fmt(s.count_services)}</td>
+              <td class="num"><strong>${kgTotal}</strong>${sacosLine}</td>
+              <td><div class="chips">${prodChips}</div></td>
+              <td><div class="chips">${topProv}</div></td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      async function load(forceFresh = false) {
+        const from = $("#f-from").value, to = $("#f-to").value;
+        const params = new URLSearchParams({ fromDate: from, toDate: to });
+        if (forceFresh) params.set("noCache", "1");
+        $("#tbl-body").innerHTML = `<tr><td colspan="6" class="loading">${forceFresh ? "A buscar dados frescos (~30-60s)…" : "A carregar…"}</td></tr>`;
+        $("#kpis").innerHTML = "";
+        $("#prod-section").style.display = "none";
+        $("#cache-info").textContent = "· a carregar…";
+        $("#cache-info").className = "cache-info loading";
+        const t0 = Date.now();
+        try {
+          const data = await fetchJSON(`/api/admin/adicional/fornecido?${params}`);
+          setCacheInfo(data.cache);
+          renderKpis(data.totals);
+          renderProductKpis(data.totals.by_sku || []);
+          renderTable(data);
+          const dt = ((Date.now() - t0) / 1000).toFixed(1);
+          const src = data.cache?.from_cache ? "(cache)" : "(fresh)";
+          if (toast) toast(`${data.suppliers.length} fornecedores · ${fmt(data.totals.services)} serviços ${src} ${dt}s`, { kind: "ok" });
+        } catch (e) {
+          $("#tbl-body").innerHTML = `<tr><td colspan="6"><div class="error">Erro: ${esc(e.message)}</div></td></tr>`;
+          $("#cache-info").textContent = "";
+          if (toast) toast("Erro: " + e.message, { kind: "err" });
+        }
+      }
+
+      $("#btn-load").addEventListener("click", () => load(false));
+      $("#btn-force").addEventListener("click", () => load(true));
+      $("#btn-preset-30").addEventListener("click", () => {
+        const d = new Date(today); d.setDate(d.getDate() - 30);
+        $("#f-from").value = ymd(d);
+        load();
+      });
+      $("#btn-preset-60").addEventListener("click", () => {
+        const d = new Date(today); d.setDate(d.getDate() - 60);
+        $("#f-from").value = ymd(d);
+        load();
+      });
+
+      AdminUI.renderLayout("fornecido");
+      load();
+    })();
+  </script>
+</body>
+</html>

@@ -1183,6 +1183,35 @@ app.get("/api/admin/adicional/suppliers", auth.requireRole("admin", "superadmin"
   }
 });
 
+// GET /api/admin/adicional/fornecido[?fromDate=&toDate=&chunkDays=]
+// Vista "Fornecido" — junta TRANSITO+FINALIZADO num bucket único + sacos
+// herméticos apresentados em UNIDADES em vez de kg. Status CRIADO é ignorado.
+app.get("/api/admin/adicional/fornecido", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const supLib = require("./lib/adicional-suppliers");
+    const fromDate = req.query.fromDate || undefined;
+    const toDate   = req.query.toDate   || undefined;
+    const chunkDays = req.query.chunkDays ? Number(req.query.chunkDays) : undefined;
+    const noCache = req.query.noCache === "1" || req.query.fresh === "1";
+
+    const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays, noCache });
+    const result = supLib.aggregateFornecido(apiResult.rows);
+
+    res.json({
+      period: apiResult.period,
+      cache: {
+        from_cache: !!apiResult.from_cache,
+        age_seconds: apiResult.cache_age_seconds || 0,
+      },
+      api: { total: apiResult.rows.length, chunks: apiResult.chunks_total, chunks_failed: apiResult.chunks_failed },
+      totals: result.totals,
+      suppliers: result.suppliers,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/adicional/suppliers/:key/services[?fromDate=&toDate=&chunkDays=&includeAllStatuses=]
 // Drill-down: serviços individuais de 1 fornecedor (lista de ADSNs).
 // key = "acct:53" ou "name:NORMALIZED" (devolvido por /suppliers).
