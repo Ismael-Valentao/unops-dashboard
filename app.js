@@ -1234,6 +1234,66 @@ app.post("/api/admin/supplier-metas", auth.requireRole("admin", "superadmin"), a
   }
 });
 
+// POST /api/admin/supplier-metas/batch — substitui TODAS as metas de 1 supplier
+// Body: { meta_key, products: [{ product, qty (nullable), unit?, note? }] }
+// - Upsert (INSERT...ON DUPLICATE KEY UPDATE) cada produto na lista
+// - Soft-delete (active=0) os produtos que existiam mas não estão na lista nova
+// Útil para o modal de edição multi-produto em /admin/supplier-metas.
+app.post("/api/admin/supplier-metas/batch", auth.requireRole("admin", "superadmin"), async (req, res) => {
+  try {
+    const { query } = require("./db/mysql");
+    const { invalidateMetasCache } = require("./lib/supplier-metas");
+    const meta_key = String(req.body.meta_key || "").trim().toUpperCase();
+    const products = Array.isArray(req.body.products) ? req.body.products : null;
+    if (!meta_key || !products) {
+      return res.status(400).json({ error: "meta_key + products[] obrigatórios" });
+    }
+    const userId = req.user?.id || null;
+    const keptProducts = new Set();
+    let inserted = 0, updated = 0;
+
+    for (const p of products) {
+      const product = String(p.product || "").trim();
+      if (!product) continue;
+      const qty = p.qty == null || p.qty === "" ? null : Number(p.qty);
+      const unit = String(p.unit || "kg").toLowerCase() === "un" ? "un" : "kg";
+      const note = String(p.note || "").trim() || null;
+      if (qty != null && (isNaN(qty) || qty < 0)) {
+        return res.status(400).json({ error: `qty inválida para ${product}` });
+      }
+      const result = await query(
+        `INSERT INTO supplier_metas (meta_key, product, qty, unit, note, active, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           qty = VALUES(qty), unit = VALUES(unit), note = VALUES(note),
+           active = 1, updated_by = VALUES(updated_by)`,
+        [meta_key, product, qty, unit, note, userId, userId]
+      );
+      if (result.affectedRows === 1) inserted++;
+      else updated++;
+      keptProducts.add(product);
+    }
+    // Soft-delete: produtos que existiam para esta meta_key mas não estão
+    // na lista nova ficam active=0
+    const existing = await query(
+      "SELECT id, product FROM supplier_metas WHERE meta_key = ? AND active = 1",
+      [meta_key]
+    );
+    let deactivated = 0;
+    for (const row of existing) {
+      if (!keptProducts.has(row.product)) {
+        await query("UPDATE supplier_metas SET active = 0, updated_by = ? WHERE id = ?",
+          [userId, row.id]);
+        deactivated++;
+      }
+    }
+    invalidateMetasCache();
+    res.json({ ok: true, inserted, updated, deactivated });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // DELETE /api/admin/supplier-metas/:id — soft delete (active = 0)
 app.delete("/api/admin/supplier-metas/:id", auth.requireRole("admin", "superadmin"), async (req, res) => {
   try {

@@ -7,21 +7,20 @@
   <link rel="stylesheet" href="/static/admin.css">
   <style>
     .ctrl {
-      display: flex; gap: .5rem; flex-wrap: wrap; align-items: end;
+      display: flex; gap: .5rem; flex-wrap: wrap; align-items: center;
       margin-bottom: 1rem; padding: .85rem 1rem;
       background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
     }
-    .ctrl label {
-      display: block; font-size: .65rem; text-transform: uppercase;
-      letter-spacing: .04em; color: #64748b; font-weight: 700; margin-bottom: .25rem;
-    }
-    .ctrl input, .ctrl select {
-      padding: .45rem .6rem; border: 1px solid #cbd5e1; border-radius: 6px;
-      font-size: .85rem; background: #fff;
+    .ctrl .search-wrap { flex: 1; min-width: 200px; }
+    .ctrl input[type="text"] {
+      width: 100%; padding: .5rem .75rem;
+      border: 1px solid #cbd5e1; border-radius: 6px;
+      font-size: .9rem; background: #fff;
     }
     .ctrl .btn {
-      padding: .5rem 1rem; background: #0f4c75; color: #fff; border: 0;
+      padding: .55rem 1.1rem; background: #0f4c75; color: #fff; border: 0;
       border-radius: 6px; cursor: pointer; font-size: .85rem; font-weight: 600;
+      white-space: nowrap;
     }
     .ctrl .btn:hover { background: #1e6ba8; }
     .ctrl .btn-secondary { background: #fff; color: #0f4c75; border: 1px solid #cbd5e1; }
@@ -29,54 +28,96 @@
     .ctrl .btn-add { background: #15803d; }
     .ctrl .btn-add:hover { background: #166534; }
 
-    .metas-tbl {
-      width: 100%; border-collapse: collapse; font-size: .88rem;
-      background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
-      overflow: hidden;
+    /* Cards de fornecedor */
+    .suppliers-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 1rem;
     }
-    .metas-tbl thead { background: #0f4c75; color: #fff; }
-    .metas-tbl thead th {
-      padding: .65rem .8rem; text-align: left; font-weight: 600;
-      font-size: .75rem; text-transform: uppercase; letter-spacing: .03em;
+    .sup-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+      padding: 1rem 1.1rem;
+      display: flex; flex-direction: column; gap: .55rem;
+      transition: box-shadow .15s, border-color .15s;
     }
-    .metas-tbl thead th.num { text-align: right; }
-    .metas-tbl tbody td {
-      padding: .55rem .8rem; border-bottom: 1px solid #f1f5f9;
+    .sup-card:hover {
+      box-shadow: 0 4px 12px rgba(15,23,42,.08);
+      border-color: #93c5fd;
     }
-    .metas-tbl tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
-    .metas-tbl tbody tr:hover { background: #f8fafc; }
-    .metas-tbl tbody tr.inactive { opacity: .5; background: #fafafa; }
-    .metas-tbl .key {
-      font-family: ui-monospace, monospace; font-size: .8rem;
-      color: #075985; background: #e0f2fe; padding: .1rem .4rem; border-radius: 4px;
+    .sup-card.inactive { opacity: .5; }
+    .sup-card .sup-head {
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: .5rem;
+      padding-bottom: .55rem;
+      border-bottom: 1px solid #f1f5f9;
     }
-    .metas-tbl .actions { white-space: nowrap; }
-    .metas-tbl .btn-sm {
-      padding: .25rem .55rem; font-size: .7rem; border-radius: 4px;
+    .sup-card .sup-head .meta-key {
+      font-family: ui-monospace, monospace; font-size: 1rem;
+      color: #075985; font-weight: 700;
+    }
+    .sup-card .sup-head .count {
+      font-size: .7rem; color: #94a3b8; font-weight: 500;
+    }
+    .sup-card .product-list {
+      display: flex; flex-direction: column; gap: .25rem;
+    }
+    .sup-card .product-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: .5rem; padding: .3rem .55rem;
+      font-size: .82rem;
+      border-radius: 4px;
+      background: #f8fafc;
+    }
+    .sup-card .product-row .pname {
+      color: #334155; font-weight: 600;
+    }
+    .sup-card .product-row .pqty {
+      color: #0f172a; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .sup-card .product-row .pqty .unit {
+      font-size: .68rem; color: #94a3b8; font-weight: 500; margin-left: 2px;
+    }
+    .sup-card .product-row .pqty.tbd {
+      color: #94a3b8; font-style: italic; font-weight: 500;
+    }
+    .sup-card .actions {
+      display: flex; gap: .4rem; margin-top: .15rem;
+      padding-top: .55rem; border-top: 1px solid #f1f5f9;
+    }
+    .sup-card .btn-sm {
+      padding: .35rem .8rem; font-size: .75rem; border-radius: 5px;
       border: 1px solid #cbd5e1; background: #fff; cursor: pointer;
-      margin-right: .25rem; font-weight: 600;
+      font-weight: 600; flex: 1;
     }
-    .metas-tbl .btn-sm.edit { color: #0f4c75; }
-    .metas-tbl .btn-sm.edit:hover { background: #dbeafe; }
-    .metas-tbl .btn-sm.del  { color: #b91c1c; }
-    .metas-tbl .btn-sm.del:hover  { background: #fee2e2; }
+    .sup-card .btn-sm.edit { color: #0f4c75; }
+    .sup-card .btn-sm.edit:hover { background: #dbeafe; border-color: #93c5fd; }
+    .sup-card .btn-sm.del { color: #b91c1c; flex: 0 0 auto; }
+    .sup-card .btn-sm.del:hover { background: #fee2e2; border-color: #fca5a5; }
 
     /* Modal */
     .modal-bg {
       position: fixed; inset: 0; background: rgba(15,23,42,.55);
       display: none; align-items: center; justify-content: center;
-      z-index: 100;
+      z-index: 100; padding: 1rem;
     }
     .modal-bg.open { display: flex; }
     .modal {
       background: #fff; border-radius: 12px;
-      padding: 1.5rem; width: 92%; max-width: 480px;
+      padding: 1.5rem; width: 100%; max-width: 620px;
       box-shadow: 0 20px 50px rgba(0,0,0,.3);
+      max-height: 90vh; overflow-y: auto;
     }
     .modal h2 {
-      margin: 0 0 1rem; font-size: 1.1rem; color: #0f172a;
+      margin: 0 0 1rem; font-size: 1.15rem; color: #0f172a;
+      display: flex; align-items: baseline; gap: .5rem;
     }
-    .modal .field { margin-bottom: .85rem; }
+    .modal h2 .key-pill {
+      font-family: ui-monospace, monospace; font-size: .85rem;
+      background: #e0f2fe; color: #075985;
+      padding: .15rem .55rem; border-radius: 99px;
+      font-weight: 700;
+    }
+    .modal .field { margin-bottom: .9rem; }
     .modal label {
       display: block; font-size: .68rem; text-transform: uppercase;
       letter-spacing: .04em; color: #64748b; font-weight: 700; margin-bottom: .25rem;
@@ -86,23 +127,59 @@
       padding: .5rem .65rem; border: 1px solid #cbd5e1; border-radius: 6px;
       font-size: .9rem; background: #fff; font-family: inherit;
     }
-    .modal textarea { min-height: 60px; resize: vertical; }
-    .modal .hint {
-      font-size: .7rem; color: #94a3b8; margin-top: .25rem;
+    .modal input:disabled { background: #f1f5f9; color: #64748b; }
+
+    /* Lista de produtos dentro do modal */
+    .modal .products-section h3 {
+      font-size: .75rem; text-transform: uppercase; letter-spacing: .04em;
+      color: #64748b; font-weight: 700; margin: 1rem 0 .55rem;
     }
-    .modal .row2 { display: grid; grid-template-columns: 1fr 100px; gap: .65rem; }
+    .modal .products-list {
+      display: flex; flex-direction: column; gap: .5rem;
+      margin-bottom: .65rem;
+    }
+    .modal .prod-line {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr 70px 32px;
+      gap: .4rem; align-items: center;
+      padding: .4rem; border: 1px solid #e2e8f0; border-radius: 6px;
+      background: #f8fafc;
+    }
+    .modal .prod-line input,
+    .modal .prod-line select {
+      padding: .35rem .45rem; font-size: .82rem;
+    }
+    .modal .prod-line .btn-del-prod {
+      background: #fff; color: #b91c1c; border: 1px solid #fca5a5;
+      border-radius: 5px; cursor: pointer;
+      width: 32px; height: 32px; padding: 0;
+      font-size: 1rem; font-weight: 700;
+    }
+    .modal .prod-line .btn-del-prod:hover { background: #fee2e2; }
+    .modal .btn-add-prod {
+      padding: .4rem .8rem; background: #f0fdf4; color: #15803d;
+      border: 1px dashed #86efac; border-radius: 6px; cursor: pointer;
+      font-size: .8rem; font-weight: 600; width: 100%;
+    }
+    .modal .btn-add-prod:hover { background: #dcfce7; }
+    .modal .empty {
+      padding: 1rem; text-align: center; color: #94a3b8;
+      background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px;
+      font-style: italic; font-size: .82rem;
+    }
+
     .modal .footer {
       display: flex; gap: .5rem; justify-content: flex-end;
-      margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0;
+      margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #e2e8f0;
     }
-    .modal .btn {
-      padding: .5rem 1.1rem; border-radius: 6px; cursor: pointer;
+    .modal .footer .btn {
+      padding: .55rem 1.25rem; border-radius: 6px; cursor: pointer;
       font-size: .85rem; font-weight: 600; border: 0;
     }
-    .modal .btn-primary { background: #0f4c75; color: #fff; }
-    .modal .btn-primary:hover { background: #1e6ba8; }
-    .modal .btn-secondary { background: #f1f5f9; color: #475569; }
-    .modal .btn-secondary:hover { background: #e2e8f0; }
+    .modal .footer .btn-primary { background: #0f4c75; color: #fff; }
+    .modal .footer .btn-primary:hover { background: #1e6ba8; }
+    .modal .footer .btn-secondary { background: #f1f5f9; color: #475569; }
+    .modal .footer .btn-secondary:hover { background: #e2e8f0; }
 
     .loading { padding: 2rem; text-align: center; color: #94a3b8; font-style: italic; }
     .error { padding: 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #b91c1c; }
@@ -118,78 +195,44 @@
 
     <section class="admin-section">
       <div class="ctrl">
-        <div style="margin-left:auto;display:flex;gap:.5rem">
-          <button class="btn btn-add" id="btn-new">+ Nova meta</button>
-          <button class="btn btn-secondary" id="btn-reload">↻ Recarregar</button>
+        <div class="search-wrap">
+          <input type="text" id="f-search" placeholder="Pesquisar fornecedor ou produto…">
         </div>
+        <button class="btn btn-add" id="btn-new">+ Novo fornecedor</button>
+        <button class="btn btn-secondary" id="btn-reload">↻ Recarregar</button>
       </div>
 
-      <div id="tbl-wrap">
-        <table class="metas-tbl" id="tbl">
-          <thead>
-            <tr>
-              <th>Meta Key</th>
-              <th>Produto</th>
-              <th class="num">Quantidade</th>
-              <th>Unidade</th>
-              <th>Nota</th>
-              <th>Status</th>
-              <th class="actions">Acções</th>
-            </tr>
-          </thead>
-          <tbody id="tbl-body">
-            <tr><td colspan="7" class="loading">A carregar…</td></tr>
-          </tbody>
-        </table>
+      <div id="grid-wrap" class="suppliers-grid">
+        <div class="loading">A carregar…</div>
       </div>
     </section>
   </main>
 
-  <!-- Modal -->
+  <!-- Modal multi-produto -->
   <div class="modal-bg" id="modal-bg">
     <div class="modal">
-      <h2 id="modal-title">Nova meta</h2>
-      <input type="hidden" id="f-id">
+      <h2 id="modal-title">
+        <span>Editar metas:</span>
+        <span class="key-pill" id="modal-key">SEEDCO</span>
+      </h2>
+
       <div class="field">
-        <label>Meta Key <span style="color:#dc2626">*</span></label>
+        <label>Meta Key (token de match fuzzy)</label>
         <input type="text" id="f-meta-key" placeholder="Ex: SEEDCO, BAYER, GLOBAL AGRIBUSINESS">
-        <div class="hint">Token usado para fuzzy match contra o nome do fornecedor na API. Uppercase recomendado.</div>
-      </div>
-      <div class="field">
-        <label>Produto <span style="color:#dc2626">*</span></label>
-        <select id="f-product">
-          <option value="Milho">Milho</option>
-          <option value="Feijão">Feijão</option>
-          <option value="Arroz">Arroz</option>
-          <option value="Sacos Hermét.">Sacos Hermét.</option>
-          <option value="Emamectim">Emamectim</option>
-          <option value="Imidacloprid">Imidacloprid</option>
-          <option value="MCPA">MCPA</option>
-          <option value="__other__">— Outro (escrever) —</option>
-        </select>
-        <input type="text" id="f-product-other" placeholder="Nome do produto" style="display:none;margin-top:.4rem">
-      </div>
-      <div class="row2">
-        <div class="field">
-          <label>Quantidade</label>
-          <input type="number" id="f-qty" placeholder="Ex: 488272" min="0" step="any">
-          <div class="hint">Deixe vazio para "por definir"</div>
-        </div>
-        <div class="field">
-          <label>Unidade</label>
-          <select id="f-unit">
-            <option value="kg">kg</option>
-            <option value="un">un (sacos)</option>
-          </select>
+        <div style="font-size:.7rem;color:#94a3b8;margin-top:.25rem">
+          Match contra o nome do fornecedor na API ADICIONAL. Uppercase recomendado.
         </div>
       </div>
-      <div class="field">
-        <label>Nota (opcional)</label>
-        <textarea id="f-note" placeholder="Observação interna"></textarea>
+
+      <div class="products-section">
+        <h3>Produtos contratados</h3>
+        <div class="products-list" id="products-list"></div>
+        <button class="btn-add-prod" id="btn-add-prod">+ Adicionar produto</button>
       </div>
+
       <div class="footer">
         <button class="btn btn-secondary" id="btn-cancel">Cancelar</button>
-        <button class="btn btn-primary" id="btn-save">Gravar</button>
+        <button class="btn btn-primary" id="btn-save">Gravar tudo</button>
       </div>
     </div>
   </div>
@@ -201,132 +244,252 @@
       const $ = (s) => document.querySelector(s);
       const $$ = (s) => Array.from(document.querySelectorAll(s));
 
+      const PRODUCT_OPTIONS = [
+        "Milho", "Feijão", "Arroz",
+        "Sacos Hermét.",
+        "Emamectim", "Imidacloprid", "MCPA",
+      ];
+
       function fmtNum(n) { return n == null ? "—" : Number(n).toLocaleString("pt-PT"); }
-      function fmtDate(s) { return s ? String(s).slice(0,16).replace("T"," ") : "—"; }
 
-      let lastRows = [];
+      let lastBySupplier = new Map(); // meta_key → { meta_key, products: [...] }
 
+      // ── Carrega + agrupa por meta_key ──────────────────────────
       async function load() {
-        $("#tbl-body").innerHTML = `<tr><td colspan="7" class="loading">A carregar…</td></tr>`;
+        $("#grid-wrap").innerHTML = `<div class="loading">A carregar…</div>`;
         try {
           const { rows } = await fetchJSON("/api/admin/supplier-metas");
-          lastRows = rows;
-          render(rows);
+          // Agrupa por meta_key, só activos
+          const map = new Map();
+          for (const r of rows) {
+            if (!r.active) continue;
+            if (!map.has(r.meta_key)) map.set(r.meta_key, { meta_key: r.meta_key, products: [] });
+            map.get(r.meta_key).products.push({
+              id: r.id, product: r.product,
+              qty: r.qty == null ? null : Number(r.qty),
+              unit: r.unit, note: r.note,
+            });
+          }
+          // Ordena produtos dentro de cada supplier por nome
+          for (const s of map.values()) {
+            s.products.sort((a, b) => a.product.localeCompare(b.product));
+          }
+          lastBySupplier = map;
+          renderGrid();
         } catch (e) {
-          $("#tbl-body").innerHTML = `<tr><td colspan="7"><div class="error">Erro: ${esc(e.message)}</div></td></tr>`;
+          $("#grid-wrap").innerHTML = `<div class="error">Erro: ${esc(e.message)}</div>`;
         }
       }
 
-      function render(rows) {
-        if (!rows.length) {
-          $("#tbl-body").innerHTML = `<tr><td colspan="7" class="loading">Sem metas. Clique "+ Nova meta".</td></tr>`;
+      function renderGrid() {
+        const filter = $("#f-search").value.trim().toLowerCase();
+        const list = [...lastBySupplier.values()]
+          .filter((s) => {
+            if (!filter) return true;
+            if (s.meta_key.toLowerCase().includes(filter)) return true;
+            return s.products.some((p) => p.product.toLowerCase().includes(filter));
+          })
+          .sort((a, b) => a.meta_key.localeCompare(b.meta_key));
+
+        if (!list.length) {
+          $("#grid-wrap").innerHTML = `<div class="loading">Sem fornecedores. Clique "+ Novo fornecedor".</div>`;
           return;
         }
-        $("#tbl-body").innerHTML = rows.map((r) => `
-          <tr class="${r.active ? "" : "inactive"}" data-id="${r.id}">
-            <td><span class="key">${esc(r.meta_key)}</span></td>
-            <td>${esc(r.product)}</td>
-            <td class="num"><strong>${fmtNum(r.qty)}</strong></td>
-            <td>${esc(r.unit)}</td>
-            <td style="font-size:.75rem;color:#94a3b8">${esc(r.note || "")}</td>
-            <td>${r.active ? '<span style="color:#15803d;font-weight:600">Activa</span>' : '<span style="color:#94a3b8">Inactiva</span>'}</td>
-            <td class="actions">
-              <button class="btn-sm edit" data-act="edit" data-id="${r.id}">Editar</button>
-              ${r.active ? `<button class="btn-sm del" data-act="del" data-id="${r.id}">Desactivar</button>` : ""}
-            </td>
-          </tr>
-        `).join("");
-        $$("#tbl-body button[data-act]").forEach((b) => {
-          b.addEventListener("click", () => {
-            const id = b.dataset.id;
-            const row = lastRows.find((x) => String(x.id) === String(id));
-            if (b.dataset.act === "edit") openModal(row);
-            else if (b.dataset.act === "del") deactivate(row);
-          });
+
+        $("#grid-wrap").innerHTML = list.map((s) => {
+          const prodHtml = s.products.map((p) => `
+            <div class="product-row">
+              <span class="pname">${esc(p.product)}</span>
+              <span class="pqty ${p.qty == null ? "tbd" : ""}">
+                ${p.qty == null ? "por definir" : fmtNum(p.qty)}
+                <span class="unit">${esc(p.unit)}</span>
+              </span>
+            </div>
+          `).join("");
+          return `
+            <div class="sup-card" data-key="${esc(s.meta_key)}">
+              <div class="sup-head">
+                <span class="meta-key">${esc(s.meta_key)}</span>
+                <span class="count">${s.products.length} produto${s.products.length === 1 ? "" : "s"}</span>
+              </div>
+              <div class="product-list">${prodHtml}</div>
+              <div class="actions">
+                <button class="btn-sm edit" data-key="${esc(s.meta_key)}">Editar</button>
+                <button class="btn-sm del" data-key="${esc(s.meta_key)}" title="Desactivar todos">×</button>
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        $$("#grid-wrap .btn-sm.edit").forEach((b) => {
+          b.addEventListener("click", () => openModal(lastBySupplier.get(b.dataset.key)));
+        });
+        $$("#grid-wrap .btn-sm.del").forEach((b) => {
+          b.addEventListener("click", () => deactivateSupplier(b.dataset.key));
         });
       }
 
-      function openModal(row) {
-        const isEdit = !!row;
-        $("#modal-title").textContent = isEdit ? `Editar: ${row.meta_key} / ${row.product}` : "Nova meta";
-        $("#f-id").value = row ? row.id : "";
-        $("#f-meta-key").value = row ? row.meta_key : "";
-        $("#f-meta-key").disabled = isEdit;
-        const stdProducts = ["Milho","Feijão","Arroz","Sacos Hermét.","Emamectim","Imidacloprid","MCPA"];
-        if (row && !stdProducts.includes(row.product)) {
-          $("#f-product").value = "__other__";
-          $("#f-product-other").style.display = "block";
-          $("#f-product-other").value = row.product;
-        } else {
-          $("#f-product").value = row ? row.product : "Milho";
-          $("#f-product-other").style.display = "none";
-          $("#f-product-other").value = "";
-        }
-        $("#f-product").disabled = isEdit;
-        $("#f-product-other").disabled = isEdit;
-        $("#f-qty").value = row && row.qty != null ? row.qty : "";
-        $("#f-unit").value = row ? row.unit : "kg";
-        $("#f-note").value = row && row.note ? row.note : "";
+      // ── Modal ──────────────────────────────────────────────────
+      function openModal(supplier) {
+        const isNew = !supplier;
+        const data = supplier || { meta_key: "", products: [] };
+        $("#modal-title").firstElementChild.textContent = isNew ? "Novo fornecedor:" : "Editar metas:";
+        $("#modal-key").textContent = data.meta_key || "(novo)";
+        $("#f-meta-key").value = data.meta_key;
+        $("#f-meta-key").disabled = !isNew; // imutável depois de criado
+        renderProductsList(data.products);
         $("#modal-bg").classList.add("open");
       }
       function closeModal() {
         $("#modal-bg").classList.remove("open");
       }
 
-      $("#btn-new").addEventListener("click", () => openModal(null));
-      $("#btn-reload").addEventListener("click", load);
-      $("#btn-cancel").addEventListener("click", closeModal);
-      $("#modal-bg").addEventListener("click", (e) => {
-        if (e.target.id === "modal-bg") closeModal();
-      });
-      $("#f-product").addEventListener("change", () => {
-        const isOther = $("#f-product").value === "__other__";
-        $("#f-product-other").style.display = isOther ? "block" : "none";
+      function renderProductsList(products) {
+        const wrap = $("#products-list");
+        if (!products.length) {
+          wrap.innerHTML = `<div class="empty">Sem produtos. Clique "+ Adicionar produto" abaixo.</div>`;
+          return;
+        }
+        wrap.innerHTML = products.map((p, i) => productLineHtml(p, i)).join("");
+        bindProductLines();
+      }
+
+      function productLineHtml(p, idx) {
+        const isCustom = !PRODUCT_OPTIONS.includes(p.product);
+        const options = PRODUCT_OPTIONS.map((o) =>
+          `<option value="${esc(o)}" ${o === p.product ? "selected" : ""}>${esc(o)}</option>`
+        ).join("");
+        return `
+          <div class="prod-line" data-idx="${idx}">
+            <div>
+              <select class="f-prod">
+                ${options}
+                <option value="__other__" ${isCustom ? "selected" : ""}>— Outro (escrever) —</option>
+              </select>
+              <input type="text" class="f-prod-other" placeholder="Nome do produto"
+                value="${esc(isCustom ? p.product : '')}"
+                style="display:${isCustom ? 'block' : 'none'};margin-top:.25rem">
+            </div>
+            <input type="number" class="f-qty" placeholder="Quantidade" min="0" step="any"
+              value="${p.qty == null ? '' : p.qty}">
+            <select class="f-unit">
+              <option value="kg" ${p.unit === "kg" ? "selected" : ""}>kg</option>
+              <option value="un" ${p.unit === "un" ? "selected" : ""}>un</option>
+            </select>
+            <button class="btn-del-prod" title="Remover">×</button>
+          </div>
+        `;
+      }
+
+      function bindProductLines() {
+        $$("#products-list .prod-line").forEach((line) => {
+          line.querySelector(".f-prod").addEventListener("change", (e) => {
+            const isOther = e.target.value === "__other__";
+            line.querySelector(".f-prod-other").style.display = isOther ? "block" : "none";
+          });
+          line.querySelector(".btn-del-prod").addEventListener("click", () => {
+            line.remove();
+            if (!$$("#products-list .prod-line").length) {
+              $("#products-list").innerHTML = `<div class="empty">Sem produtos. Clique "+ Adicionar produto" abaixo.</div>`;
+            }
+          });
+        });
+      }
+
+      $("#btn-add-prod").addEventListener("click", () => {
+        // Se está em "empty", limpa e cria primeira linha
+        const wrap = $("#products-list");
+        if (wrap.querySelector(".empty")) wrap.innerHTML = "";
+        const idx = $$("#products-list .prod-line").length;
+        wrap.insertAdjacentHTML("beforeend", productLineHtml({ product: "Milho", qty: null, unit: "kg" }, idx));
+        bindProductLines();
+        // Foca o input qty da nova linha
+        const newLine = wrap.lastElementChild;
+        newLine.querySelector(".f-qty").focus();
       });
 
-      async function deactivate(row) {
-        if (!confirm(`Desactivar meta "${row.meta_key} / ${row.product}"?`)) return;
+      $("#btn-save").addEventListener("click", async () => {
+        const meta_key = $("#f-meta-key").value.trim().toUpperCase();
+        if (!meta_key) {
+          if (toast) toast("Meta Key é obrigatória", { kind: "err" });
+          return;
+        }
+        // Recolhe produtos das linhas do modal
+        const products = [];
+        let errors = [];
+        $$("#products-list .prod-line").forEach((line) => {
+          let product = line.querySelector(".f-prod").value;
+          if (product === "__other__") {
+            product = line.querySelector(".f-prod-other").value.trim();
+          }
+          if (!product) return;
+          const qtyStr = line.querySelector(".f-qty").value.trim();
+          const qty = qtyStr === "" ? null : Number(qtyStr);
+          const unit = line.querySelector(".f-unit").value;
+          if (qty != null && (isNaN(qty) || qty < 0)) {
+            errors.push(`Qty inválida para ${product}`);
+            return;
+          }
+          products.push({ product, qty, unit });
+        });
+        if (errors.length) {
+          if (toast) toast(errors.join(" · "), { kind: "err" });
+          return;
+        }
+        // Detecta duplicados de produto
+        const seen = new Set();
+        for (const p of products) {
+          if (seen.has(p.product)) {
+            if (toast) toast(`Produto "${p.product}" duplicado`, { kind: "err" });
+            return;
+          }
+          seen.add(p.product);
+        }
         try {
-          await fetchJSON(`/api/admin/supplier-metas/${row.id}`, { method: "DELETE" });
-          if (toast) toast("Meta desactivada", { kind: "ok" });
+          const r = await fetchJSON("/api/admin/supplier-metas/batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ meta_key, products }),
+          });
+          const msg = `${r.inserted ? r.inserted + ' criados · ' : ''}${r.updated ? r.updated + ' actualizados · ' : ''}${r.deactivated ? r.deactivated + ' removidos' : ''}`.replace(/·\s*$/, '').trim() || 'OK';
+          if (toast) toast(`✓ ${meta_key}: ${msg}`, { kind: "ok" });
+          closeModal();
+          load();
+        } catch (e) {
+          if (toast) toast("Erro: " + e.message, { kind: "err" });
+        }
+      });
+
+      async function deactivateSupplier(metaKey) {
+        const s = lastBySupplier.get(metaKey);
+        if (!s) return;
+        if (!confirm(`Desactivar TODAS as ${s.products.length} metas de "${metaKey}"?`)) return;
+        try {
+          // Envia batch com lista vazia → todas as actuais ficam active=0
+          await fetchJSON("/api/admin/supplier-metas/batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ meta_key: metaKey, products: [] }),
+          });
+          if (toast) toast(`✓ ${metaKey} desactivado`, { kind: "ok" });
           load();
         } catch (e) {
           if (toast) toast("Erro: " + e.message, { kind: "err" });
         }
       }
 
-      $("#btn-save").addEventListener("click", async () => {
-        const meta_key = $("#f-meta-key").value.trim().toUpperCase();
-        let product;
-        if ($("#f-product").value === "__other__") {
-          product = $("#f-product-other").value.trim();
-        } else {
-          product = $("#f-product").value;
-        }
-        const qtyStr = $("#f-qty").value.trim();
-        const qty = qtyStr === "" ? null : Number(qtyStr);
-        const unit = $("#f-unit").value;
-        const note = $("#f-note").value.trim();
-        if (!meta_key || !product) {
-          if (toast) toast("Meta Key e Produto são obrigatórios", { kind: "err" });
-          return;
-        }
-        if (qty != null && (isNaN(qty) || qty < 0)) {
-          if (toast) toast("Quantidade inválida", { kind: "err" });
-          return;
-        }
-        try {
-          await fetchJSON("/api/admin/supplier-metas", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ meta_key, product, qty, unit, note }),
-          });
-          if (toast) toast("Meta gravada", { kind: "ok" });
-          closeModal();
-          load();
-        } catch (e) {
-          if (toast) toast("Erro: " + e.message, { kind: "err" });
-        }
+      // ── Wire-up ────────────────────────────────────────────────
+      $("#btn-new").addEventListener("click", () => openModal(null));
+      $("#btn-reload").addEventListener("click", load);
+      $("#btn-cancel").addEventListener("click", closeModal);
+      $("#modal-bg").addEventListener("click", (e) => {
+        if (e.target.id === "modal-bg") closeModal();
+      });
+      // Pesquisa instantânea
+      let searchTimer = null;
+      $("#f-search").addEventListener("input", () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(renderGrid, 150);
       });
 
       AdminUI.renderLayout("supplier-metas");
