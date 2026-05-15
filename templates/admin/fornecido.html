@@ -391,8 +391,15 @@
         section.style.display = "block";
         target.classList.add("prod-cards");
         target.classList.remove("forn-kpis");
-        // Ordena: produtos com pendente primeiro (asc %), depois completos
+        // Ordena: SEMENTES primeiro (Milho/Feijão/Arroz e variantes),
+        // depois outros produtos. Dentro de cada grupo: por % ascendente
+        // (mais atrasados primeiro), depois por meta desc.
+        const isSementesProduct = (name) =>
+          /^(Milho|Feij[aã]o|Arroz)/i.test(String(name || ""));
         const sortedProds = [...by_product].sort((a, b) => {
+          const aSem = isSementesProduct(a.product) ? 0 : 1;
+          const bSem = isSementesProduct(b.product) ? 0 : 1;
+          if (aSem !== bSem) return aSem - bSem;
           const aPct = a.has_meta_any && a.meta_qty > 0 ? a.meta_pct : 999;
           const bPct = b.has_meta_any && b.meta_qty > 0 ? b.meta_pct : 999;
           if (aPct !== bPct) return aPct - bPct;
