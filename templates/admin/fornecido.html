@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AQI — Fornecido</title>
+  <title>AQI — Fornecido vs Meta</title>
   <link rel="stylesheet" href="/static/admin.css">
   <style>
     .forn-ctrl {
@@ -34,7 +34,6 @@
     .cache-info.stale { color: #b45309; }
     .cache-info.loading { color: #2563eb; }
 
-    /* KPIs gerais */
     .forn-kpis {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: .75rem; margin-bottom: 1rem;
@@ -52,13 +51,12 @@
     .kpi-card.green .val { color: #15803d; }
     .kpi-card.amber { border-left-color: #d97706; }
     .kpi-card.amber .val { color: #b45309; }
+    .kpi-card.red   { border-left-color: #dc2626; }
+    .kpi-card.red   .val { color: #b91c1c; }
     .kpi-card.purple{ border-left-color: #7c3aed; }
     .kpi-card.purple .val { color: #5b21b6; }
 
-    /* Cards de fornecedor — substituem a tabela monolítica */
-    .supplier-grid {
-      display: flex; flex-direction: column; gap: .55rem;
-    }
+    .supplier-grid { display: flex; flex-direction: column; gap: .55rem; }
     .sup-card {
       background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
       overflow: hidden;
@@ -74,10 +72,15 @@
     }
     .sup-head::before {
       content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-      background: #15803d;
+      background: #94a3b8;
     }
-    .sup-card.partial .sup-head::before { background: #d97706; }
-    .sup-card.fully-pending .sup-head::before { background: #94a3b8; }
+    .sup-card.over     .sup-head::before { background: #16a34a; }
+    .sup-card.complete .sup-head::before { background: #15803d; }
+    .sup-card.high     .sup-head::before { background: #84cc16; }
+    .sup-card.mid      .sup-head::before { background: #d97706; }
+    .sup-card.low      .sup-head::before { background: #dc2626; }
+    .sup-card.no-meta  .sup-head::before { background: #94a3b8; }
+
     .sup-head .name {
       font-weight: 700; color: #0f172a; font-size: .95rem;
     }
@@ -89,6 +92,12 @@
     .sup-head .name .origin {
       display: block; font-size: .68rem; color: #94a3b8;
       font-weight: 500; margin-top: .12rem;
+    }
+    .sup-head .name .no-meta-tag {
+      display: inline-block; background: #f1f5f9; color: #475569;
+      font-size: .58rem; padding: .05rem .35rem; border-radius: 99px;
+      margin-left: .35rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .03em;
     }
     .sup-head .metric {
       display: flex; flex-direction: column; align-items: flex-end;
@@ -109,22 +118,22 @@
     }
     .sup-head .metric.forn .qty { color: #15803d; }
     .sup-head .metric.pend .qty { color: #b45309; }
+    .sup-head .metric.meta .qty { color: #475569; }
     .sup-head .progress {
       width: 100px; margin-top: .25rem;
       height: 6px; background: #f1f5f9; border-radius: 3px; overflow: hidden;
     }
-    .sup-head .progress > div { height: 100%; background: #16a34a; }
+    .sup-head .progress > div { height: 100%; }
+    .sup-head .progress > div.over     { background: #16a34a; }
+    .sup-head .progress > div.complete { background: #15803d; }
+    .sup-head .progress > div.high     { background: #84cc16; }
+    .sup-head .progress > div.mid      { background: #d97706; }
+    .sup-head .progress > div.low      { background: #dc2626; }
     .sup-head .pct {
       font-size: .65rem; color: #64748b; margin-top: .15rem;
       font-variant-numeric: tabular-nums; text-align: right;
     }
-    .sup-head .caret {
-      color: #94a3b8; transition: transform .15s ease;
-      font-size: 1.1rem;
-    }
-    .sup-card.open .sup-head .caret { transform: rotate(90deg); color: #1e40af; }
 
-    /* Detalhe expandido — tabela por produto */
     .sup-body { display: none; padding: 0; }
     .sup-card.open .sup-body { display: block; }
     .sku-tbl {
@@ -139,19 +148,27 @@
     }
     .sku-tbl thead th.num { text-align: right; }
     .sku-tbl tbody td {
-      padding: .45rem .75rem; border-bottom: 1px solid #f1f5f9;
+      padding: .5rem .75rem; border-bottom: 1px solid #f1f5f9;
     }
     .sku-tbl tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
-    .sku-tbl tbody td.qty-forn { color: #15803d; font-weight: 600; }
-    .sku-tbl tbody td.qty-pend { color: #b45309; font-weight: 500; }
-    .sku-tbl tbody td.qty-total { font-weight: 700; }
+    .sku-tbl tbody td.qty-meta  { color: #475569; }
+    .sku-tbl tbody td.qty-forn  { color: #15803d; font-weight: 600; }
+    .sku-tbl tbody td.qty-pend  { color: #b45309; font-weight: 500; }
+    .sku-tbl tbody td.qty-over  { color: #16a34a; font-weight: 700; }
     .sku-tbl .unit {
       font-size: .65rem; color: #94a3b8; font-weight: 500; margin-left: 2px;
     }
-    .sku-tbl tbody tr.is-saco { background: #faf5ff; }
-    .sku-tbl tbody tr.is-saco td { color: #5b21b6; }
-    .sku-tbl tbody tr.is-saco td.qty-forn { color: #16a34a; }
-    .sku-tbl tbody tr.is-saco td.qty-pend { color: #d97706; }
+    .sku-tbl tbody tr.no-meta-row {
+      background: #fafafa;
+    }
+    .sku-tbl tbody tr.no-meta-row td { color: #64748b; }
+    .sku-tbl tbody tr.is-saco-row {
+      background: #faf5ff;
+    }
+    .sku-tbl tbody tr.is-saco-row td { color: #5b21b6; }
+    .sku-tbl tbody td .criado-note {
+      display: block; font-size: .65rem; color: #94a3b8; margin-top: .15rem;
+    }
     .pct-bar {
       display: inline-flex; align-items: center; gap: .4rem;
       font-variant-numeric: tabular-nums;
@@ -160,9 +177,11 @@
       width: 60px; height: 5px; background: #e2e8f0; border-radius: 3px; overflow: hidden;
     }
     .pct-bar .bar > div { height: 100%; }
-    .pct-bar .bar > div.full { background: #16a34a; }
-    .pct-bar .bar > div.part { background: #d97706; }
-    .pct-bar .bar > div.none { background: #94a3b8; }
+    .pct-bar .bar > div.over     { background: #16a34a; }
+    .pct-bar .bar > div.complete { background: #15803d; }
+    .pct-bar .bar > div.high     { background: #84cc16; }
+    .pct-bar .bar > div.mid      { background: #d97706; }
+    .pct-bar .bar > div.low      { background: #dc2626; }
 
     .loading { padding: 2rem; text-align: center; color: #94a3b8; font-style: italic; }
     .error { padding: 1rem; background: #fef2f2; border: 1px solid #fecaca;
@@ -173,17 +192,16 @@
   <div id="layout"></div>
   <main class="admin-main">
     <header class="admin-header">
-      <h1>Fornecido</h1>
+      <h1>Fornecido vs Meta</h1>
       <span class="admin-sub">
-        <span style="color:#15803d;font-weight:600">FORNECIDO</span> = TRA + FIN ·
-        <span style="color:#b45309;font-weight:600">PENDENTE</span> = CRIADO (guia emitida, camião não foi) ·
+        <span style="color:#15803d;font-weight:600">RECEBIDO</span> = TRA + FIN ·
+        <span style="color:#b45309;font-weight:600">PENDENTE</span> = <strong>Meta − Recebido</strong> (falta para meta) ·
         sacos herméticos em <strong>un</strong>
       </span>
     </header>
 
     <section class="admin-section">
 
-      <!-- Controlos -->
       <div class="forn-ctrl">
         <div><label>De</label><input type="date" id="f-from"></div>
         <div><label>Até</label><input type="date" id="f-to"></div>
@@ -197,16 +215,13 @@
         </div>
       </div>
 
-      <!-- KPIs gerais -->
       <div class="forn-kpis" id="kpis"></div>
 
-      <!-- KPIs por Produto -->
       <div id="prod-section" style="display:none;margin-bottom:1rem">
-        <h3 style="font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:700;margin:0 0 .5rem">Total por Produto (Forn + Pend)</h3>
+        <h3 style="font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:700;margin:0 0 .5rem">Total por Produto vs Meta</h3>
         <div class="forn-kpis" id="prod-kpis"></div>
       </div>
 
-      <!-- Cards de fornecedor (substituem tabela) -->
       <div id="suppliers-wrap" class="supplier-grid">
         <div class="loading">Carregue para começar.</div>
       </div>
@@ -228,34 +243,20 @@
       $("#f-from").value = ymd(d60);
       $("#f-to").value   = ymd(today);
 
-      const SKU_LABEL = {
-        MXIXMILHOKG: "Milho",
-        MXIXFEIJAOKG: "Feijão",
-        MXIXARROZKG: "Arroz",
-        AGRIFEMMA0125L: "Emamectim",
-        AGRIFEMTINL: "Emamectim",
-        AGRIFEMMA01L: "Emamectim",
-        SEEDARROZM50KG: "Arroz (saco 50kg)",
-        MSEEDFJNHB5KG: "Feijão (saco 5kg)",
-        MSEEDOPVZM523: "Milho (OPV)",
-        AGRIMIDACLORIPLT: "Imidacloprid",
-        AGRIMIDACLORP1L: "Imidacloprid",
-        AGRIMHMCPALT: "MCPA",
-        AGRIMHMCPA1L: "MCPA",
-        MMRMINTER25: "Stocofer",
-        SUSSACO: "Sacos Hermét.",
-      };
-      function skuLabel(sku) { return SKU_LABEL[sku] || sku; }
-      function canonicalProduct(skuLbl) {
-        const m = /^(.*?)\s*\(/.exec(skuLbl);
-        return (m ? m[1] : skuLbl).trim();
-      }
       function fmtNum(n) { return (Number(n) || 0).toLocaleString("pt-PT"); }
       function fmtTon(kg) {
         const t = kg / 1000;
         if (t >= 100) return fmt(Math.round(t));
         if (t >= 10)  return t.toFixed(1);
         return t.toFixed(2);
+      }
+      function pctClass(pct) {
+        if (pct == null) return "";
+        if (pct >= 100) return "over";
+        if (pct >= 95)  return "complete";
+        if (pct >= 70)  return "high";
+        if (pct >= 40)  return "mid";
+        return "low";
       }
       function setCacheInfo(cache) {
         const el = $("#cache-info");
@@ -271,87 +272,76 @@
       }
 
       function renderKpis(t) {
+        const pct = t.meta_pct_global;
+        const pctClz = pct == null ? "" : (pct >= 100 ? "green" : (pct >= 70 ? "amber" : "red"));
         $("#kpis").innerHTML = `
           <div class="kpi-card">
             <div class="lbl">Fornecedores</div>
             <div class="val">${fmt(t.suppliers)}</div>
             <div class="sub">distintos</div>
           </div>
+          <div class="kpi-card">
+            <div class="lbl">Meta Total</div>
+            <div class="val">${fmtTon(t.meta_total_kg)}<span style="font-size:.85rem;color:#64748b"> t</span></div>
+            <div class="sub">${fmtNum(t.meta_total_kg)} kg comprometidos</div>
+          </div>
           <div class="kpi-card green">
-            <div class="lbl">Fornecido (kg)</div>
+            <div class="lbl">Recebido</div>
             <div class="val">${fmtTon(t.forn_kg)}<span style="font-size:.85rem;color:#64748b"> t</span></div>
-            <div class="sub">${fmtNum(t.forn_kg)} kg · ${fmt(t.services_forn)} ADSNs TRA+FIN</div>
+            <div class="sub">${fmtNum(t.forn_kg)} kg · ${fmt(t.services_forn)} ADSNs</div>
           </div>
           <div class="kpi-card amber">
-            <div class="lbl">Pendente (kg)</div>
-            <div class="val">${fmtTon(t.pend_kg)}<span style="font-size:.85rem;color:#64748b"> t</span></div>
-            <div class="sub">${fmtNum(t.pend_kg)} kg · ${fmt(t.services_pend)} ADSNs CRIADO</div>
+            <div class="lbl">Pendente (vs Meta)</div>
+            <div class="val">${fmtTon(t.meta_pendente_kg)}<span style="font-size:.85rem;color:#64748b"> t</span></div>
+            <div class="sub">${fmtNum(t.meta_pendente_kg)} kg em falta</div>
           </div>
-          <div class="kpi-card green">
-            <div class="lbl">Sacos Fornecidos</div>
+          <div class="kpi-card ${pctClz}">
+            <div class="lbl">% Recebido</div>
+            <div class="val">${pct == null ? "—" : pct + "%"}</div>
+            <div class="sub">do compromisso global</div>
+          </div>
+          <div class="kpi-card purple">
+            <div class="lbl">Sacos Herm. (recebidos)</div>
             <div class="val">${fmtNum(t.forn_qty_un)}<span style="font-size:.85rem;color:#64748b"> un</span></div>
-            <div class="sub">sacos herméticos</div>
-          </div>
-          <div class="kpi-card amber">
-            <div class="lbl">Sacos Pendentes</div>
-            <div class="val">${fmtNum(t.pend_qty_un)}<span style="font-size:.85rem;color:#64748b"> un</span></div>
-            <div class="sub">sacos herméticos a buscar</div>
+            <div class="sub">sem meta definida</div>
           </div>
         `;
       }
 
-      function renderProductKpis(by_sku) {
-        const target = $("#prod-kpis"), section = $("#prod-section");
-        if (!by_sku || !by_sku.length) { section.style.display = "none"; target.innerHTML = ""; return; }
-        const byCanon = new Map();
-        for (const item of by_sku) {
-          const lbl = skuLabel(item.sku);
-          const canon = canonicalProduct(lbl);
-          if (!byCanon.has(canon)) byCanon.set(canon, {
-            name: canon, is_saco: item.is_saco,
-            forn_kg: 0, forn_un: 0, pend_kg: 0, pend_un: 0, count: 0, skus: [],
-          });
-          const x = byCanon.get(canon);
-          x.forn_kg += item.forn_weight_kg;
-          x.forn_un += item.forn_volumes;
-          x.pend_kg += item.pend_weight_kg;
-          x.pend_un += item.pend_volumes;
-          x.count   += item.forn_count + item.pend_count;
-          x.skus.push(skuLabel(item.sku));
-          x.is_saco = x.is_saco || item.is_saco;
-        }
-        const products = [...byCanon.values()].sort((a, b) => {
-          const aq = a.is_saco ? (a.forn_un + a.pend_un) : (a.forn_kg + a.pend_kg);
-          const bq = b.is_saco ? (b.forn_un + b.pend_un) : (b.forn_kg + b.pend_kg);
-          return bq - aq;
-        });
+      function renderProductKpis(by_product) {
+        const section = $("#prod-section"), target = $("#prod-kpis");
+        if (!by_product || !by_product.length) { section.style.display = "none"; target.innerHTML = ""; return; }
         section.style.display = "block";
-        target.innerHTML = products.map((p) => {
-          const fornQty = p.is_saco ? p.forn_un : p.forn_kg;
-          const pendQty = p.is_saco ? p.pend_un : p.pend_kg;
-          const total   = fornQty + pendQty;
-          const pct     = total > 0 ? Math.round((fornQty / total) * 100) : 0;
-          const unit    = p.is_saco ? "un" : "kg";
-          const big     = p.is_saco ? fmtNum(fornQty) : fmtTon(fornQty);
-          const bigSuf  = p.is_saco ? "un" : "t";
+        target.innerHTML = by_product.map((p) => {
+          const isSaco = p.is_saco;
+          const big = isSaco ? fmtNum(p.forn_qty) : fmtTon(p.forn_qty);
+          const bigSuf = isSaco ? "un" : "t";
+          let cardCls = "";
+          if (p.has_meta_any) {
+            if (p.meta_pct >= 100) cardCls = "green";
+            else if (p.meta_pct >= 70) cardCls = "amber";
+            else cardCls = "red";
+          } else {
+            cardCls = "purple";
+          }
+          const meta = p.has_meta_any ? `Meta: <strong>${isSaco ? fmtNum(p.meta_qty)+'un' : fmtNum(Math.round(p.meta_qty/1000))+'t'}</strong>` : `<em>sem meta</em>`;
+          const pend = p.has_meta_any ? ` · Pend: <strong style="color:#b45309">${isSaco ? fmtNum(p.meta_pendente)+'un' : fmtNum(Math.round(p.meta_pendente/1000))+'t'}</strong>` : '';
+          const pctTxt = p.meta_pct == null ? "" : ` · <strong>${p.meta_pct}%</strong>`;
           return `
-            <div class="kpi-card ${pct === 100 ? "green" : (pct === 0 ? "amber" : "")}">
-              <div class="lbl">${esc(p.name)}</div>
+            <div class="kpi-card ${cardCls}">
+              <div class="lbl">${esc(p.product)}</div>
               <div class="val">${big}<span style="font-size:.75rem;color:#64748b"> ${bigSuf}</span></div>
-              <div class="sub">
-                Forn: <strong style="color:#15803d">${p.is_saco ? fmtNum(fornQty) : fmtNum(Math.round(fornQty/1000))+'t'}</strong> ·
-                Pend: <strong style="color:#b45309">${p.is_saco ? fmtNum(pendQty) : fmtNum(Math.round(pendQty/1000))+'t'}</strong> ·
-                ${pct}%
-              </div>
+              <div class="sub">${meta}${pend}${pctTxt}</div>
             </div>
           `;
         }).join("");
       }
 
       function pctBar(pct) {
-        const cls = pct === 100 ? "full" : (pct === 0 ? "none" : "part");
+        if (pct == null) return `<span style="color:#94a3b8">—</span>`;
+        const cls = pctClass(pct);
         return `<span class="pct-bar">
-          <span class="bar"><div class="${cls}" style="width:${pct}%"></div></span>
+          <span class="bar"><div class="${cls}" style="width:${Math.min(100, pct)}%"></div></span>
           <span>${pct}%</span>
         </span>`;
       }
@@ -363,71 +353,95 @@
           return;
         }
         wrap.innerHTML = suppliers.map((s, idx) => {
-          // Build SKU table rows
-          const skuRows = s.by_sku.map((x) => {
-            const lbl = skuLabel(x.sku);
-            const unit = x.display_unit;
-            const total = x.forn_qty + x.pend_qty;
+          // Tabela por produto
+          const rows = s.by_product.map((p) => {
+            const noMeta = !p.has_meta;
+            const isOver = p.has_meta && p.meta_pct >= 100;
+            const isSaco = p.is_saco;
+            const unit = p.display_unit;
+            const meta = p.meta_qty == null
+              ? '<span style="color:#94a3b8">—</span>'
+              : `${fmtNum(p.meta_qty)}<span class="unit">${unit}</span>`;
+            const pend = p.meta_pendente == null
+              ? '<span style="color:#94a3b8">—</span>'
+              : `${fmtNum(p.meta_pendente)}<span class="unit">${unit}</span>`;
+            const criadoTxt = p.criado_qty > 0
+              ? `<span class="criado-note">+ ${fmtNum(p.criado_qty)} ${unit} em CRIADO</span>` : '';
+            let cls = "";
+            if (isSaco) cls = "is-saco-row";
+            else if (noMeta) cls = "no-meta-row";
             return `
-              <tr class="${x.is_saco ? "is-saco" : ""}">
-                <td>${esc(lbl)} ${x.is_saco ? '<span class="unit">(em un)</span>' : ''}</td>
-                <td class="num qty-forn">${fmtNum(x.forn_qty)}<span class="unit">${unit}</span></td>
-                <td class="num qty-pend">${fmtNum(x.pend_qty)}<span class="unit">${unit}</span></td>
-                <td class="num qty-total">${fmtNum(total)}<span class="unit">${unit}</span></td>
-                <td class="num">${pctBar(x.pct_recebido)}</td>
-                <td class="num">${x.forn_count + x.pend_count} (${x.forn_count}F+${x.pend_count}P)</td>
+              <tr class="${cls}">
+                <td>${esc(p.product)} ${isSaco ? '<span class="unit">(em un)</span>' : ''}</td>
+                <td class="num qty-meta">${meta}</td>
+                <td class="num ${isOver ? 'qty-over' : 'qty-forn'}">${fmtNum(p.forn_qty)}<span class="unit">${unit}</span>${criadoTxt}</td>
+                <td class="num qty-pend">${pend}</td>
+                <td class="num">${pctBar(p.meta_pct)}</td>
+                <td class="num" style="color:#94a3b8">${p.forn_count}${p.criado_count > 0 ? ` (+${p.criado_count} cr.)` : ''}</td>
               </tr>
             `;
           }).join("");
 
-          // Card class — colorir lateral conforme estado global
+          // Classe do card baseada na % global
           let cardCls = "";
-          if (s.pend_kg === 0 && s.forn_kg > 0) cardCls = ""; // tudo fornecido — verde default
-          else if (s.forn_kg === 0)              cardCls = "fully-pending";
-          else                                    cardCls = "partial";
+          if (!s.has_meta) cardCls = "no-meta";
+          else if (s.meta_pct >= 100) cardCls = "over";
+          else if (s.meta_pct >= 95)  cardCls = "complete";
+          else if (s.meta_pct >= 70)  cardCls = "high";
+          else if (s.meta_pct >= 40)  cardCls = "mid";
+          else                         cardCls = "low";
 
           const acctChip = s.account_number ? `<span class="acct">#${esc(s.account_number)}</span>` : "";
+          const noMetaTag = !s.has_meta ? `<span class="no-meta-tag">sem meta</span>` : "";
           const origin = (s.origins[0] || "").trim();
-          // Snippet de pills de produto no header (top 3)
+
+          // Display: para fornecedores sem meta, mostra Meta/Pendente como "—"
+          const metaTxt = s.has_meta ? fmtNum(s.meta_total_kg) : "—";
+          const pendTxt = s.has_meta ? fmtNum(s.meta_pendente_total_kg) : "—";
+          const pctTxt  = s.has_meta ? `${s.meta_pct}% recebido` : "sem meta";
+
           return `
             <article class="sup-card ${cardCls}" data-idx="${idx}">
               <header class="sup-head">
                 <div class="name">
-                  ${esc(s.canonical_name)}${acctChip}
+                  ${esc(s.canonical_name)}${acctChip}${noMetaTag}
                   ${origin ? `<span class="origin">${esc(origin)}</span>` : ""}
                 </div>
+                <div class="metric meta">
+                  <div class="lbl">Meta</div>
+                  <div class="qty">${metaTxt}<span class="unit" style="font-size:.7rem;font-weight:500;color:#94a3b8"> kg</span></div>
+                  <div class="sub">${s.meta_match_key ? '['+esc(s.meta_match_key)+']' : '—'}</div>
+                </div>
                 <div class="metric forn">
-                  <div class="lbl">Fornecido</div>
+                  <div class="lbl">Recebido</div>
                   <div class="qty">${fmtNum(s.forn_kg)}<span class="unit" style="font-size:.7rem;font-weight:500;color:#94a3b8"> kg</span></div>
                   <div class="sub">${s.count_forn} svc${s.forn_qty_un>0 ? ' · '+fmtNum(s.forn_qty_un)+' un' : ''}</div>
                 </div>
-                <div class="metric pend">
-                  <div class="lbl">Pendente</div>
-                  <div class="qty">${fmtNum(s.pend_kg)}<span class="unit" style="font-size:.7rem;font-weight:500;color:#94a3b8"> kg</span></div>
-                  <div class="sub">${s.count_pend} svc${s.pend_qty_un>0 ? ' · '+fmtNum(s.pend_qty_un)+' un' : ''}</div>
-                </div>
                 <div>
-                  <div class="progress"><div style="width:${s.pct_recebido}%"></div></div>
-                  <div class="pct">${s.pct_recebido}% recebido</div>
+                  <div class="metric pend" style="margin-bottom:.2rem">
+                    <div class="lbl">Pendente</div>
+                    <div class="qty">${pendTxt}<span class="unit" style="font-size:.7rem;font-weight:500;color:#94a3b8"> kg</span></div>
+                  </div>
+                  ${s.has_meta ? `<div class="progress"><div class="${pctClass(s.meta_pct)}" style="width:${Math.min(100, s.meta_pct)}%"></div></div>` : ''}
+                  <div class="pct">${pctTxt}</div>
                 </div>
               </header>
               <div class="sup-body">
                 <table class="sku-tbl">
                   <thead><tr>
                     <th>Produto</th>
-                    <th class="num">Fornecido</th>
-                    <th class="num">Pendente</th>
-                    <th class="num">Total</th>
+                    <th class="num">Meta</th>
+                    <th class="num">Recebido</th>
+                    <th class="num">Pendente (vs meta)</th>
                     <th class="num">% Recebido</th>
-                    <th class="num">Serviços</th>
+                    <th class="num">ADSNs</th>
                   </tr></thead>
-                  <tbody>${skuRows}</tbody>
+                  <tbody>${rows}</tbody>
                 </table>
               </div>
             </article>
           `;
         }).join("");
-        // Wire clicks
         $$("#suppliers-wrap .sup-head").forEach((h) => {
           h.addEventListener("click", () => h.closest(".sup-card")?.classList.toggle("open"));
         });
@@ -447,11 +461,11 @@
           const data = await fetchJSON(`/api/admin/adicional/fornecido?${params}`);
           setCacheInfo(data.cache);
           renderKpis(data.totals);
-          renderProductKpis(data.totals.by_sku || []);
+          renderProductKpis(data.totals.by_product || []);
           renderSuppliers(data.suppliers);
           const dt = ((Date.now() - t0) / 1000).toFixed(1);
           const src = data.cache?.from_cache ? "(cache)" : "(fresh)";
-          if (toast) toast(`${data.suppliers.length} fornecedores · ${fmt(data.totals.services_forn)}F+${fmt(data.totals.services_pend)}P ADSNs ${src} ${dt}s`, { kind: "ok" });
+          if (toast) toast(`${data.suppliers.length} fornecedores · ${data.totals.meta_pct_global || "?"}% da meta ${src} ${dt}s`, { kind: "ok" });
         } catch (e) {
           $("#suppliers-wrap").innerHTML = `<div class="error">Erro: ${esc(e.message)}</div>`;
           $("#cache-info").textContent = "";
