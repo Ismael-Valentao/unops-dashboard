@@ -221,6 +221,21 @@
     }
     .sys-pill.both { background: #dcfce7; color: #166534; }
     .sys-pill.only { background: #fef3c7; color: #92400e; }
+    /* Quando há sheet match mas qty diverge — mais grave que "só ADIC" */
+    .sys-pill.qty-mismatch { background: #fee2e2; color: #991b1b; }
+    /* Mini-badge de mismatch na sub-line do header da viagem */
+    .qty-mini {
+      display: inline-block; padding: .08rem .35rem; border-radius: 4px;
+      font-size: .65rem; font-weight: 700;
+      background: #fee2e2; color: #991b1b;
+      margin-left: .25rem; vertical-align: middle;
+    }
+    /* Diff de kg na célula Sistema (info pequena) */
+    .qty-diff-note {
+      display: block; font-size: .63rem; color: #b91c1c;
+      margin-top: .15rem; font-variant-numeric: tabular-nums;
+    }
+    .qty-diff-note.over { color: #166534; }  /* sheet declara MAIS (positivo) */
     /* ── Modal de anexos (lightbox) ─────────────────────────── */
     .attach-modal {
       position: fixed; inset: 0; z-index: 200;
@@ -385,6 +400,7 @@
             <option value="missing">Só com ADSNs fora do UNOPS</option>
             <option value="none">Sem nenhum no UNOPS</option>
             <option value="full">100% no UNOPS</option>
+            <option value="qty_mismatch">⚠️ Quantidade divergente</option>
           </select>
         </div>
         <div class="btn-group">
@@ -612,9 +628,24 @@
                 attachIcons = `<span class="attach-row">${icons.join("")}</span>`;
               }
             }
-            const sysCell = it.sheet_matched
-              ? `<span class="sys-pill both" title="Lançado em ambos os sistemas">UNOPS + ADIC</span>${attachIcons}`
-              : `<span class="sys-pill only" title="Falta lançar no sistema UNOPS">Só ADIC</span>`;
+            // Sistema (UNOPS + ADIC vs Só ADIC) + verificação de quantidade
+            let sysCell;
+            if (it.sheet_matched) {
+              if (it.qty_match === false) {
+                // GTU bate mas QUANTIDADE diverge — alerta vermelho
+                const diff = it.qty_diff_kg || 0;
+                const sign = diff > 0 ? "+" : "";
+                const pct  = it.qty_pct_diff != null ? ` (${it.qty_pct_diff > 0 ? "+" : ""}${it.qty_pct_diff}%)` : "";
+                const dirCls = diff > 0 ? " over" : "";
+                const title = `Sheet declara ${fmt(it.sheet_qty_kg)} kg, API tem ${fmt(it.weight_kg)} kg — diff ${sign}${fmt(diff)} kg`;
+                sysCell = `<span class="sys-pill qty-mismatch" title="${esc(title)}">⚠️ UNOPS + ADIC · kg ≠</span>${attachIcons}` +
+                  `<span class="qty-diff-note${dirCls}">Δ ${sign}${fmt(diff)} kg${pct}</span>`;
+              } else {
+                sysCell = `<span class="sys-pill both" title="Lançado em ambos os sistemas (qty bate ±2%)">UNOPS + ADIC</span>${attachIcons}`;
+              }
+            } else {
+              sysCell = `<span class="sys-pill only" title="Falta lançar no sistema UNOPS">Só ADIC</span>`;
+            }
             return `
             <tr>
               <td class="mono">${esc(it.adsn || "")}</td>
@@ -647,7 +678,11 @@
                   ${productsPills ? `<div class="produtos">${productsPills}</div>` : ""}
                   <div class="titulo-sub">
                     ${esc(v.matricula || "—")}  ·  ${esc(fmtDateShort(v.data_saida))}  ·  ${fmt(v.n_extensionistas)} ext.
-                    <span class="unops-mini ${unopsClass}" title="${esc(unopsTitle)}">${nUnops}/${nTotal} UNOPS</span>
+                    <span class="unops-mini ${unopsClass}" title="${esc(unopsTitle)}">${nUnops}/${nTotal} UNOPS</span>${
+                      v.n_qty_mismatch > 0
+                        ? `<span class="qty-mini" title="${esc(v.n_qty_mismatch + ' ADSN(s) com qty divergente · Δ acumulado ' + (v.sum_qty_diff_kg > 0 ? '+' : '') + fmt(v.sum_qty_diff_kg) + ' kg')}">⚠️ ${v.n_qty_mismatch} kg≠</span>`
+                        : ""
+                    }
                   </div>
                 </div>
                 <div class="ton-wrap">
@@ -878,6 +913,8 @@
         } else if (fUnops === "full") {
           viagensRender = viagensRender.filter((v) =>
             v.items.every((it) => it.sheet_matched));
+        } else if (fUnops === "qty_mismatch") {
+          viagensRender = viagensRender.filter((v) => (v.n_qty_mismatch || 0) > 0);
         }
         // KPIs sobre o subset visível
         let unopsIn = 0, unopsTotal = 0;
