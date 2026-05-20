@@ -159,6 +159,7 @@ window.AdminUI = (function () {
           <div class="sb-logo-title">AQI Operacoes</div>
           <div class="sb-logo-sub">Sistema interno</div>
         </div>
+        <div id="db-status-pill" style="display:none"></div>
         <nav class="sb-nav">${links}</nav>
         <div class="sb-foot">
           <div class="sb-user">${esc(me.name)}</div>
@@ -169,6 +170,28 @@ window.AdminUI = (function () {
         </div>
       </aside>
     `;
+
+    // Pill de DB status — só visível quando estamos em PROD (avisa o utilizador)
+    fetch("/api/admin/system/db-status").then((r) => r.ok ? r.json() : null).then((info) => {
+      const el = document.getElementById("db-status-pill");
+      if (!el || !info) return;
+      const isProd = info.is_prod === true;
+      const dot = info.alive ? "●" : "○";
+      const bg  = isProd ? "linear-gradient(135deg,#dc2626,#b91c1c)" : "linear-gradient(135deg,#15803d,#166534)";
+      const txt = isProd ? "PROD DB" : "Local DB";
+      el.style.cssText = "display:block;margin:.5rem .85rem;padding:.45rem .65rem;border-radius:6px;background:"+bg+";color:#fff;font-size:.68rem;font-weight:700;letter-spacing:.04em;text-align:center;line-height:1.3";
+      el.innerHTML = `${dot} ${txt}<div style="font-size:.6rem;font-weight:500;opacity:.85;margin-top:.15rem;letter-spacing:0">${esc(info.host || "?")} · ${esc(info.database || "?")}</div>`;
+      el.title = `Profile: ${info.profile} · Host: ${info.host} · User: ${info.user} · ${info.alive ? "ligação OK" : "SEM ligação"}`;
+      // Banner adicional em prod — letreiro grande no topo da página
+      if (isProd && !document.getElementById("prod-banner")) {
+        const banner = document.createElement("div");
+        banner.id = "prod-banner";
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;background:linear-gradient(90deg,#dc2626,#991b1b,#dc2626);color:#fff;text-align:center;padding:.4rem;font-size:.78rem;font-weight:700;letter-spacing:.04em;z-index:50;box-shadow:0 2px 8px rgba(0,0,0,.2)";
+        banner.innerHTML = `⚠️  CONECTADO A PROD (${esc(info.host)}/${esc(info.database)}) · cuidado com escritas`;
+        document.body.appendChild(banner);
+        document.body.style.paddingTop = "30px";
+      }
+    }).catch(() => {});
 
     // Carrega contagens de lembretes e (a) actualiza badge na sidebar,
     // (b) injecta banner global de aviso se há vencidos. Falha silenciosamente

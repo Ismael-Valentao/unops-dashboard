@@ -1194,6 +1194,24 @@ app.get("/api/admin/adicional/suppliers", auth.requireRole("admin", "superadmin"
   }
 });
 
+// ── System / DB status ────────────────────────────────────────────
+// GET /api/admin/system/db-status — devolve info do DB activo (sem password)
+app.get("/api/admin/system/db-status", auth.requireRole("admin", "superadmin", "operator", "viewer"), async (req, res) => {
+  try {
+    const { getActiveDbInfo, query } = require("./db/mysql");
+    const info = getActiveDbInfo();
+    // Sanity check: faz uma query trivial para confirmar que a ligação está viva
+    let alive = false;
+    try {
+      await query("SELECT 1");
+      alive = true;
+    } catch (_) {}
+    res.json({ ...info, alive });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Supplier Metas CRUD ───────────────────────────────────────────
 // GET /api/admin/supplier-metas — lista
 app.get("/api/admin/supplier-metas", auth.requireRole("admin", "superadmin"), async (req, res) => {

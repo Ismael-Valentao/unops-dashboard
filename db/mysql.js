@@ -1,21 +1,89 @@
 /**
  * MySQL connection pool + helpers.
- * Uses env vars: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME.
+ *
+ * Escolhe o profile via env var DB_PROFILE:
+ *   - "local" (default) → usa DB_HOST/PORT/USER/PASSWORD/NAME do .env
+ *   - "prod"  → carrega credenciais de .env.prod (Hostinger)
+ *
+ * Mude DB_PROFILE em .env e reinicie o serviço para alternar.
+ * Helper: node scripts/db-switch.js local|prod|status
  */
 const mysql = require("mysql2/promise");
 const fs = require("fs");
 const path = require("path");
 
 let pool = null;
+let activeProfile = null;
+let activeConfig = null;
 
-function getPool() {
-  if (pool) return pool;
-  pool = mysql.createPool({
+function _loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const out = {};
+  for (const line of fs.readFileSync(filePath, "utf8").split(/\r?\n/)) {
+    const m = /^([A-Z_][A-Z0-9_]*)=(.*)$/.exec(line.trim());
+    if (m) out[m[1]] = m[2].replace(/^"(.*)"$/, "$1");
+  }
+  return out;
+}
+
+function getDbConfig() {
+  const profile = String(process.env.DB_PROFILE || "local").toLowerCase();
+  if (profile === "prod" || profile === "remote") {
+    // Carrega .env.prod (gitignored). Falha gracefully se não existir.
+    const envProd = _loadEnvFile(path.join(__dirname, "..", ".env.prod"));
+    if (!envProd || !envProd.DB_HOST) {
+      console.warn("[DB] DB_PROFILE=prod mas .env.prod inválido — caindo para local");
+    } else {
+      return {
+        _profile: "prod",
+        host: envProd.DB_HOST,
+        port: Number(envProd.DB_PORT) || 3306,
+        user: envProd.DB_USER,
+        password: envProd.DB_PASSWORD,
+        database: envProd.DB_NAME,
+      };
+    }
+  }
+  return {
+    _profile: "local",
     host: process.env.DB_HOST || "localhost",
     port: Number(process.env.DB_PORT) || 3306,
     user: process.env.DB_USER || "root",
     password: process.env.DB_PASSWORD || "",
     database: process.env.DB_NAME || "aqi_operations",
+  };
+}
+
+function getActiveDbInfo() {
+  // Devolve metadata do pool actual — usado pelo banner UI + endpoint
+  // /api/admin/system/db-status. NÃO devolve a password.
+  const cfg = activeConfig || getDbConfig();
+  return {
+    profile: cfg._profile,
+    host: cfg.host,
+    port: cfg.port,
+    user: cfg.user,
+    database: cfg.database,
+    is_prod: cfg._profile === "prod",
+  };
+}
+
+function getPool() {
+  if (pool) return pool;
+  const cfg = getDbConfig();
+  activeConfig = cfg;
+  activeProfile = cfg._profile;
+  if (cfg._profile === "prod") {
+    console.log(`[DB] ⚠️  Profile=PROD · ${cfg.host}/${cfg.database}`);
+  } else {
+    console.log(`[DB] Profile=local · ${cfg.host}/${cfg.database}`);
+  }
+  pool = mysql.createPool({
+    host: cfg.host,
+    port: cfg.port,
+    user: cfg.user,
+    password: cfg.password,
+    database: cfg.database,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
@@ -572,4 +640,4 @@ async function hasAnyUser() {
   return row && row.c > 0;
 }
 
-module.exports = { init, query, queryOne, execute, getPool, hasAnyUser };
+module.exports = { init, query, queryOne, execute, getPool, hasAnyUser, getActiveDbInfo };
