@@ -551,6 +551,53 @@ async function migrate() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
   );
 
+  // ── Product Metas (global por produto) ───────────────────────
+  // Meta de contratação a nível de PRODUTO (não por fornecedor) — usado
+  // no topo dos cards em /admin/fornecido. Independente das supplier_metas
+  // (que continuam a representar o compromisso por fornecedor + produto).
+  //
+  // qty em kg para granéis, un para sacos. NULL = "por definir".
+  await getPool().query(
+    `CREATE TABLE IF NOT EXISTS product_metas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      product VARCHAR(64) NOT NULL,
+      qty DECIMAL(14,2) NULL,
+      unit VARCHAR(8) NOT NULL DEFAULT 'kg',
+      note TEXT NULL,
+      active TINYINT NOT NULL DEFAULT 1,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      created_by INT NULL,
+      updated_by INT NULL,
+      UNIQUE KEY uq_product_meta (product),
+      INDEX idx_pm_active (active),
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+  // Seed inicial (só se vazia)
+  const [[pmSeedCheck]] = await getPool().query("SELECT COUNT(*) AS n FROM product_metas");
+  if (Number(pmSeedCheck.n) === 0) {
+    try {
+      const { METAS: PM_SEED } = require("../lib/product-metas-seed");
+      const rows = [];
+      for (const [product, info] of Object.entries(PM_SEED)) {
+        const qty = info.qty == null ? null : Number(info.qty);
+        const unit = String(info.unit || "kg").toLowerCase() === "un" ? "un" : "kg";
+        rows.push([product, qty, unit]);
+      }
+      if (rows.length) {
+        await getPool().query(
+          "INSERT INTO product_metas (product, qty, unit) VALUES ?",
+          [rows]
+        );
+        console.log(`[DB] seeded ${rows.length} product_metas`);
+      }
+    } catch (e) {
+      console.warn("[DB] product_metas seed falhou:", e.message);
+    }
+  }
+
   // ── Supplier Metas ────────────────────────────────────────────
   // Metas de fornecimento por fornecedor + produto (editáveis via
   // /admin/supplier-metas). Substitui o hardcoded em lib/supplier-metas.js.
