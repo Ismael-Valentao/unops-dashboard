@@ -318,15 +318,23 @@ async function buildBatedoresPayload(arg) {
     // foi criada). O batedor pode submeter HOJE um GTU criado há meses.
     // Se usássemos só a janela do batedor (14d) perderíamos a maioria das
     // matrículas. Usamos toIso − 365 dias para apanhar GTUs antigos.
-    // O cache de 5min do listProjectsChunked amortiza o custo.
+    //
+    // ⚠ TODATE +1: estendemos toDate em 1 dia para apanhar GTUs criadas
+    // HOJE pelo operador depois da hora do nosso último cache. A API
+    // ADICIONAL trata toDate como exclusive midnight; mesmo com o
+    // workaround em listProjects._addDay, alargar aqui dá margem extra
+    // para timezone e clock skew.
     const apiFromDt = new Date(toIso + "T00:00:00");
     apiFromDt.setDate(apiFromDt.getDate() - 365);
-    const apiFromIso =
-      apiFromDt.getFullYear() + "-" +
-      String(apiFromDt.getMonth() + 1).padStart(2, "0") + "-" +
-      String(apiFromDt.getDate()).padStart(2, "0");
+    const apiToDt = new Date(toIso + "T00:00:00");
+    apiToDt.setDate(apiToDt.getDate() + 1);
+    const ymdLocal = (d) => d.getFullYear() + "-" +
+      String(d.getMonth() + 1).padStart(2, "0") + "-" +
+      String(d.getDate()).padStart(2, "0");
+    const apiFromIso = ymdLocal(apiFromDt);
+    const apiToIso   = ymdLocal(apiToDt);
     const apiResult = await adicionalApi.listProjectsChunked({
-      fromDate: apiFromIso, toDate: toIso, chunkDays: 14,
+      fromDate: apiFromIso, toDate: apiToIso, chunkDays: 14,
     });
     // Indexa a API por DUAS chaves para match conservador:
     //   - rawClean: uppercase + trim + sem espaços (preserva slashes/formatos)
