@@ -283,6 +283,15 @@ async function buildBatedoresPayload(arg) {
     const { query } = require("./db/mysql");
     const { normGtu } = require("./lib/adicional-match");
     const { normPlate } = require("./lib/adicional-viagens");
+    const onedriveMapa = require("./lib/onedrive-mapa");
+
+    // Carrega mapa ADSN → CAM-XX do OneDrive UNOPS (cacheado, TTL 15min).
+    // Hard-refresh quando o utilizador clicar no botão (noCache=1).
+    // Falha silenciosa: se o OneDrive estiver inacessível, items ficam sem
+    // CAM mas o resto da página continua a funcionar.
+    const mapaResult = await onedriveMapa.getMapaSafe({ force: !!arg.noCache });
+    const adsnToCam = mapaResult ? mapaResult.adsnToCam : new Map();
+    const mapaInfo = onedriveMapa.getCacheInfo();
 
     // Período: usa os dias da resposta para definir a janela de fetch
     const fromIso = data.days[0];
@@ -396,15 +405,20 @@ async function buildBatedoresPayload(arg) {
         continue;
       }
       const plate = apiInfo.plate;
+      // Lookup CAM-XX no mapa OneDrive UNOPS (chave = ADSN da API)
+      const adsnKey = String(apiInfo.adsn || "").trim().toUpperCase();
+      const cam = adsnKey ? (adsnToCam.get(adsnKey) || null) : null;
       if (!trucksByEmail.has(emailKey)) trucksByEmail.set(emailKey, new Map());
       const m = trucksByEmail.get(emailKey);
-      const cur = m.get(plate) || { plate, kg: 0, count: 0, items: [] };
+      const cur = m.get(plate) || { plate, kg: 0, count: 0, items: [], cams: new Set() };
       cur.kg    += sub.kg;
       cur.count += 1;
+      if (cam) cur.cams.add(cam);
       cur.items.push({
         extensionist: sub.beneficiary,
         gtu: sub.gtu_raw,
         adsn: apiInfo.adsn || "",   // sempre o ServiceCode real da API
+        cam: cam,                    // CAM-XX se ADSN foi encontrado no MAPA UNOPS
         kg: Number(sub.kg.toFixed(2)),
         date: sub.date,
       });
@@ -420,6 +434,14 @@ async function buildBatedoresPayload(arg) {
           .map((t) => ({
             ...t,
             kg: Math.round(t.kg),
+            // Lista única e ordenada de CAMs envolvidos nesta matrícula
+            // (geralmente 1; pode ser >1 se o batedor descarregou items
+            // que pertencem a viagens diferentes do mesmo camião físico)
+            cams: [...t.cams].sort((a, b) => {
+              const na = parseInt(String(a).replace(/\D/g, ""), 10);
+              const nb = parseInt(String(b).replace(/\D/g, ""), 10);
+              return na - nb;
+            }),
             items: t.items.sort((a, b) => String(b.date).localeCompare(String(a.date))),
           }))
           .sort((a, b) => b.kg - a.kg);
@@ -435,6 +457,12 @@ async function buildBatedoresPayload(arg) {
   } catch (e) {
     console.warn("[batedores] enrich trucks failed (non-fatal):", e.message);
   }
+  // Info do mapa OneDrive UNOPS (mostrado no UI: "Mapa CAM ↻ há X min")
+  let mapa_cache_info = null;
+  try {
+    const onedriveMapa = require("./lib/onedrive-mapa");
+    mapa_cache_info = onedriveMapa.getCacheInfo();
+  } catch (_) { /* lib não carregada se ainda nunca foi pedido */ }
   const totalKg       = submitters.reduce((acc, s) => acc + s.total_kg, 0);
   const totalVerified = submitters.reduce((acc, s) => acc + s.kg_verified, 0);
   const totalPending  = submitters.reduce((acc, s) => acc + s.kg_pending, 0);
@@ -446,6 +474,7 @@ async function buildBatedoresPayload(arg) {
     day_totals: data.day_totals,
     submitters,
     cache: payload_cache_info,
+    mapa: mapa_cache_info,
     summary: {
       total_batedores: submitters.length,
       total_submissions: totalSubs,

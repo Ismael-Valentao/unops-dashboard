@@ -127,6 +127,33 @@
     .cache-pill.fresh { background: #dcfce7; color: #166534; }
     .cache-pill.recent { background: #dbeafe; color: #1e40af; }
     .cache-pill.stale  { background: #fef3c7; color: #92400e; }
+    .mapa-pill {
+      align-self: center;
+      padding: .3rem .65rem; border-radius: 99px;
+      font-size: .72rem; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      background: #ede9fe; color: #5b21b6;
+      display: inline-flex; align-items: center; gap: .25rem;
+    }
+    .mapa-pill.miss { background: #fee2e2; color: #991b1b; }
+    .mapa-pill .lbl { font-weight: 500; opacity: .8; }
+    /* Badge CAM-XX (lookup OneDrive MAPA UNOPS) */
+    .cam-badge {
+      display: inline-flex; align-items: center;
+      padding: 1px 6px; border-radius: 4px;
+      background: #ede9fe; color: #5b21b6;
+      font-size: .68rem; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0;
+    }
+    .cam-badge.none { background: #f1f5f9; color: #94a3b8; font-weight: 500; }
+    /* INAUG: ADSN está em INAUGURAÇÕES mas sem CAM-XX numerado */
+    .cam-badge.inaug { background: #dbeafe; color: #1e40af; }
+    .truck-card .cams {
+      display: inline-flex; gap: 3px; flex-wrap: wrap;
+      margin-left: .35rem;
+    }
+    .truck-items tbody td.cam-cell { padding: .35rem .5rem; }
     .ctrl-info { font-size: .78rem; color: #64748b; margin-left: auto; }
     .ctrl-info strong { color: #0f172a; }
 
@@ -457,6 +484,7 @@
       </button>
       <div class="ctrl-info" id="ctrl-info"></div>
       <div class="cache-pill" id="cache-pill" style="display:none"></div>
+      <div class="mapa-pill" id="mapa-pill" style="display:none" title="Mapa OneDrive UNOPS — fonte do CAM-XX de cada submissão"></div>
     </div>
   </section>
 
@@ -835,21 +863,41 @@
       const cards = trucks.map((t, idx) => {
         const itemsHtml = (t.items || []).map((it) => {
           const dateShort = it.date ? esc(String(it.date).slice(5).replace("-","/")) : "—";
+          let camCell;
+          if (!it.cam) {
+            camCell = `<span class="cam-badge none" title="ADSN não encontrado no MAPA UNOPS">—</span>`;
+          } else if (it.cam === "INAUG") {
+            camCell = `<span class="cam-badge inaug" title="ADSN listado em INAUGURAÇÕES — camião ainda sem CAM-XX atribuído">INAUG</span>`;
+          } else {
+            camCell = `<span class="cam-badge" title="Identificado a partir do MAPA UNOPS (ENTREGUES/TRANSITO)">${esc(it.cam)}</span>`;
+          }
           return `
             <tr>
               <td>${esc(it.extensionist || "—")}<div class="date">${dateShort}</div></td>
               <td class="num"><strong>${fmt(it.kg)}</strong> kg</td>
               <td class="mono">${esc(it.gtu || "")}</td>
               <td class="mono">${esc(it.adsn || "—")}</td>
+              <td class="cam-cell">${camCell}</td>
             </tr>
           `;
         }).join("");
+        // Badge(s) CAM no header da matrícula — geralmente 1, mas pode ser
+        // multi-CAM se o batedor descarregou items de viagens diferentes
+        // do mesmo camião físico.
+        const camHeadHtml = (t.cams && t.cams.length)
+          ? `<span class="cams">${t.cams.map((c) =>
+              c === "INAUG"
+                ? `<span class="cam-badge inaug">INAUG</span>`
+                : `<span class="cam-badge">${esc(c)}</span>`
+            ).join("")}</span>`
+          : "";
         return `
           <div class="truck-card" data-truck-idx="${idx}" data-email="${esc(submitter.email)}">
             <div class="truck-head">
-              <span style="display:inline-flex;align-items:center;gap:.4rem">
+              <span style="display:inline-flex;align-items:center;gap:.4rem;flex-wrap:wrap">
                 <span class="caret">▶</span>
                 <span class="plate">${esc(t.plate)}</span>
+                ${camHeadHtml}
               </span>
               <span class="head-meta">
                 <span class="kg">${fmt(t.kg)}<span class="unit">kg</span></span>
@@ -863,6 +911,7 @@
                   <th class="num">Qtd</th>
                   <th>GTU/GTS</th>
                   <th>ADSN</th>
+                  <th>CAM</th>
                 </tr></thead>
                 <tbody>${itemsHtml}</tbody>
               </table>
@@ -1026,6 +1075,34 @@
             cachePill.textContent = "● Fresh";
             cachePill.className = "cache-pill fresh";
             cachePill.title = "Dados acabados de buscar da API ADICIONAL.";
+          }
+        }
+        // Mapa pill — fonte CAM-XX (OneDrive UNOPS xlsx)
+        const mapaPill = $("#mapa-pill");
+        if (mapaPill) {
+          const mi = data.mapa || {};
+          if (!mi.loaded) {
+            mapaPill.style.display = "inline-block";
+            mapaPill.className = "mapa-pill miss";
+            mapaPill.textContent = "⚠ Mapa CAM indisponível";
+            mapaPill.title = "Não foi possível carregar o mapa OneDrive UNOPS. Submissões aparecerão sem CAM-XX.";
+          } else {
+            const age = mi.age_seconds || 0;
+            const min = Math.floor(age / 60);
+            const ageTxt = min > 0 ? `${min}min` : `${age}s`;
+            mapaPill.style.display = "inline-block";
+            mapaPill.className = "mapa-pill";
+            mapaPill.innerHTML = `<span class="lbl">Mapa CAM</span> ${mi.adsn_count} ADSN · há ${ageTxt}`;
+            // Tooltip detalhado: breakdown por sheet (ENTREGUES / TRANSITO / INAUGURAÇÕES)
+            const src = mi.sources || {};
+            const lines = [
+              `MAPA UNOPS OneDrive — ${mi.adsn_count} ADSN mapeados, ${mi.cam_blocks} blocos CAM`,
+              `  • ENTREGUES: ${src.entregues || 0} ADSN com CAM-XX`,
+              `  • TRANSITO: ${src.transito || 0} ADSN com CAM-XX`,
+              `  • INAUGURAÇÕES: ${src.inauguracoes || 0} ADSN (label INAUG quando exclusivo)`,
+              `Cache local TTL ${Math.round((mi.ttl_seconds||0)/60)}min. Clique '↻ Fresh' para refrescar.`,
+            ];
+            mapaPill.title = lines.join("\n");
           }
         }
         renderHero(data);
