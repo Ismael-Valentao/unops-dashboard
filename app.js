@@ -253,6 +253,7 @@ const PAYMENT_MZN_PER_TON = 100;
 // Helper partilhado: parse from/to/days e devolve { data, periodLabel } pronto para exports
 function parseBatedoresQuery(q) {
   const arg = (q.from && q.to) ? { from: q.from, to: q.to } : { days: Number(q.days) || 1 };
+  if (q.noCache === "1" || q.fresh === "1") arg.noCache = true;
   return arg;
 }
 async function buildBatedoresPayload(arg) {
@@ -277,6 +278,7 @@ async function buildBatedoresPayload(arg) {
   // ── Enriquecimento: matrículas dos camiões por batedor ─────────
   // Para cada submitter, agrega os camiões com que descarregou no UNOPS.
   // Match: GTU da delivery_audit ↔ ClientBarCode da ADICIONAL API.
+  let payload_cache_info = { from_cache: false, age_seconds: 0 };
   try {
     const { query } = require("./db/mysql");
     const { normGtu } = require("./lib/adicional-match");
@@ -335,7 +337,13 @@ async function buildBatedoresPayload(arg) {
     const apiToIso   = ymdLocal(apiToDt);
     const apiResult = await adicionalApi.listProjectsChunked({
       fromDate: apiFromIso, toDate: apiToIso, chunkDays: 14,
+      noCache: !!arg.noCache,
     });
+    // Capture cache info so frontend can show "Cache 2min ago" or "Fresh"
+    payload_cache_info = {
+      from_cache: !!apiResult.from_cache,
+      age_seconds: apiResult.cache_age_seconds || 0,
+    };
     // Indexa a API por DUAS chaves para match conservador:
     //   - rawClean: uppercase + trim + sem espaços (preserva slashes/formatos)
     //   - norm:     resultado de normGtu (colapsa variantes equivalentes)
@@ -437,6 +445,7 @@ async function buildBatedoresPayload(arg) {
     days: data.days,
     day_totals: data.day_totals,
     submitters,
+    cache: payload_cache_info,
     summary: {
       total_batedores: submitters.length,
       total_submissions: totalSubs,

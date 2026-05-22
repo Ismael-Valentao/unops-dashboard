@@ -102,6 +102,31 @@
     .btn-export { background: #15803d; color: #fff; }
     .btn-export:hover { background: #166534; }
     .btn-export svg { width: 14px; height: 14px; }
+    .btn-fresh {
+      padding: .5rem .85rem; height: 38px;
+      border-radius: 7px; cursor: pointer;
+      font-size: .8rem; font-weight: 600;
+      border: 1px solid #cbd5e1; background: #fff; color: #0f4c75;
+      transition: background .12s;
+    }
+    .btn-fresh:hover { background: #f1f5f9; border-color: #93c5fd; }
+    .btn-fresh.loading { opacity: .6; pointer-events: none; }
+    .btn-fresh.loading::after {
+      content: ""; display: inline-block; width: 10px; height: 10px;
+      margin-left: .35rem; border: 2px solid #cbd5e1; border-top-color: #0f4c75;
+      border-radius: 50%; animation: spin 1s linear infinite;
+      vertical-align: -1px;
+    }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .cache-pill {
+      align-self: center;
+      padding: .3rem .65rem; border-radius: 99px;
+      font-size: .7rem; font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .cache-pill.fresh { background: #dcfce7; color: #166534; }
+    .cache-pill.recent { background: #dbeafe; color: #1e40af; }
+    .cache-pill.stale  { background: #fef3c7; color: #92400e; }
     .ctrl-info { font-size: .78rem; color: #64748b; margin-left: auto; }
     .ctrl-info strong { color: #0f172a; }
 
@@ -424,12 +449,14 @@
         <input type="date" id="d-to" class="date-input">
       </div>
       <button class="btn-apply" id="btn-apply">Aplicar</button>
+      <button class="btn-fresh" id="btn-fresh" title="Força refresh — ignora cache (~30-60s)">↻ Fresh</button>
       <div class="ctrl-divider"></div>
       <button class="btn-export" id="btn-xlsx" title="Descarregar relatório em Excel">
         <svg viewBox="0 0 20 20" fill="currentColor"><path d="M5 2a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7l-5-5H5zm6 1.5V7h3.5L11 3.5z"/></svg>
         Excel
       </button>
       <div class="ctrl-info" id="ctrl-info"></div>
+      <div class="cache-pill" id="cache-pill" style="display:none"></div>
     </div>
   </section>
 
@@ -967,15 +994,40 @@
     }
 
     // ── Load + render ────────────────────────────────────
-    async function load() {
+    async function load({ fresh = false } = {}) {
       const from = state.from, to = state.to;
       $("#board-list").innerHTML = `<div class="empty"><span class="skel" style="width:200px"></span></div>`;
+      const freshBtn = $("#btn-fresh");
+      if (fresh && freshBtn) freshBtn.classList.add("loading");
+      const cachePill = $("#cache-pill");
+      if (cachePill) {
+        cachePill.style.display = "inline-block";
+        cachePill.className = "cache-pill recent";
+        cachePill.textContent = fresh ? "A buscar fresh…" : "A carregar…";
+      }
       try {
         const params = new URLSearchParams({ from, to });
+        if (fresh) params.set("noCache", "1");
         const res = await fetch(`/api/public/batedores?${params}`, { cache: "no-store" });
         if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
         state.data = data;
+        // Cache pill — mostra se veio do cache, com idade
+        if (cachePill) {
+          const ci = data.cache || {};
+          if (ci.from_cache) {
+            const age = ci.age_seconds || 0;
+            const min = Math.floor(age / 60);
+            const label = min > 0 ? `Cache ${min}min` : `Cache ${age}s`;
+            cachePill.textContent = "● " + label;
+            cachePill.className = "cache-pill " + (age > 240 ? "stale" : "recent");
+            cachePill.title = "Dados do cache. Clique '↻ Fresh' para forçar refresh.";
+          } else {
+            cachePill.textContent = "● Fresh";
+            cachePill.className = "cache-pill fresh";
+            cachePill.title = "Dados acabados de buscar da API ADICIONAL.";
+          }
+        }
         renderHero(data);
         renderDailyChart(data);
         renderStatusChart(data);
@@ -983,7 +1035,9 @@
         renderBoard(data);
       } catch (e) {
         $("#board-list").innerHTML = `<div class="empty" style="color:#dc2626">Erro: ${esc(e.message)}</div>`;
+        if (cachePill) cachePill.style.display = "none";
       } finally {
+        if (freshBtn) freshBtn.classList.remove("loading");
         // Cada load reinicia o countdown de auto-refresh para os 5 min seguintes
         if (typeof scheduleAutoRefresh === "function") scheduleAutoRefresh();
       }
@@ -1027,6 +1081,8 @@
       const params = new URLSearchParams({ from: state.from, to: state.to }).toString();
       window.location.href = `/api/public/batedores/export.xlsx?${params}`;
     });
+    // Hard refresh: força noCache=1, ignora o cache de 5min do API ADICIONAL
+    $("#btn-fresh").addEventListener("click", () => load({ fresh: true }));
 
     // ── Refresh manual + auto-refresh com countdown visível ──
     const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
