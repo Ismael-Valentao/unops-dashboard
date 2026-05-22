@@ -346,6 +346,11 @@ async function buildBatedoresPayload(arg) {
 
     // 3. Para cada submitter, agregar por matrícula:
     //    { plate, kg, count, items: [{ extensionist, gtu, adsn, kg, date }] }
+    //
+    // ⚠ ADSN: usa SEMPRE o ServiceCode da API ADICIONAL (formato real
+    // "ADSN11690000573400"). O campo delivery_audit.adsn está populado com
+    // r.delivery_id (UUID interno do AppSheet tipo "85180c77") — não é
+    // um ADSN real, NÃO USAR.
     const trucksByEmail = new Map();
     for (const [gtu, submissions] of sheetByGtu) {
       const apiInfo = apiByGtu.get(gtu);
@@ -358,13 +363,11 @@ async function buildBatedoresPayload(arg) {
         const cur = m.get(plate) || { plate, kg: 0, count: 0, items: [] };
         cur.kg    += sub.kg;
         cur.count += 1;
-        // ADSN: prefere o que está no audit; fallback ao da API
-        const adsn = sub.adsn || apiInfo.adsn || "";
         cur.items.push({
           extensionist: sub.beneficiary,
           gtu: sub.gtu_raw,
           gtu_norm: gtu,
-          adsn,
+          adsn: apiInfo.adsn || "",   // sempre o ServiceCode real da API
           kg: Number(sub.kg.toFixed(2)),
           date: sub.date,
         });
