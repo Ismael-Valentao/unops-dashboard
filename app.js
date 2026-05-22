@@ -286,9 +286,11 @@ async function buildBatedoresPayload(arg) {
     const fromIso = data.days[0];
     const toIso   = data.days[data.days.length - 1];
 
-    // 1. GTU → submitter + kg da delivery_audit
+    // 1. GTU → submitter + kg + beneficiário da delivery_audit
     const auditRows = await query(
-      `SELECT gtu, submitted_by AS email, delivered_qty AS kg
+      `SELECT gtu, adsn, submitted_by AS email,
+              delivered_qty AS kg, beneficiary_name,
+              delivery_date_iso
        FROM delivery_audit
        WHERE submitted_by IS NOT NULL AND submitted_by <> ''
          AND delivery_date_iso BETWEEN ? AND ?
@@ -296,14 +298,21 @@ async function buildBatedoresPayload(arg) {
          AND gtu IS NOT NULL AND gtu <> ''`,
       [fromIso, toIso]
     );
-    // Map: gtu_norm → { email, kg } (se houver várias rows com mesma GTU, somam)
+    // Map: gtu_norm → array de submissões (cada uma com seu próprio benef/qty/data)
     const sheetByGtu = new Map();
     for (const r of auditRows) {
       const g = normGtu(r.gtu);
       if (!g) continue;
-      const cur = sheetByGtu.get(g) || { email: r.email, kg: 0 };
-      cur.kg += Number(r.kg) || 0;
-      sheetByGtu.set(g, cur);
+      const arr = sheetByGtu.get(g) || [];
+      arr.push({
+        email: r.email,
+        kg: Number(r.kg) || 0,
+        beneficiary: r.beneficiary_name || "",
+        adsn: r.adsn || "",
+        date: r.delivery_date_iso || "",
+        gtu_raw: r.gtu,
+      });
+      sheetByGtu.set(g, arr);
     }
 
     // 2. Fetch API ADICIONAL (chunked, com cache).
@@ -322,34 +331,57 @@ async function buildBatedoresPayload(arg) {
     const apiResult = await adicionalApi.listProjectsChunked({
       fromDate: apiFromIso, toDate: toIso, chunkDays: 14,
     });
-    // Map: gtu_norm → VehiclePlate
-    const plateByGtu = new Map();
+    // Map: gtu_norm → { plate, adsn } (api-side)
+    const apiByGtu = new Map();
     for (const r of apiResult.rows) {
       const g = normGtu(r.ClientBarCode);
       if (!g) continue;
       const plate = normPlate(r.VehiclePlate);
-      if (plate) plateByGtu.set(g, plate);
+      if (!plate) continue;
+      apiByGtu.set(g, {
+        plate,
+        adsn: r.ServiceCode || "",
+      });
     }
 
-    // 3. Para cada submitter, agregar plates: { plate, kg, count }
+    // 3. Para cada submitter, agregar por matrícula:
+    //    { plate, kg, count, items: [{ extensionist, gtu, adsn, kg, date }] }
     const trucksByEmail = new Map();
-    for (const [gtu, info] of sheetByGtu) {
-      const plate = plateByGtu.get(gtu);
-      if (!plate) continue;
-      const emailKey = String(info.email || "").toLowerCase();
-      if (!trucksByEmail.has(emailKey)) trucksByEmail.set(emailKey, new Map());
-      const m = trucksByEmail.get(emailKey);
-      const cur = m.get(plate) || { plate, kg: 0, count: 0 };
-      cur.kg    += info.kg;
-      cur.count += 1;
-      m.set(plate, cur);
+    for (const [gtu, submissions] of sheetByGtu) {
+      const apiInfo = apiByGtu.get(gtu);
+      if (!apiInfo) continue;
+      const plate = apiInfo.plate;
+      for (const sub of submissions) {
+        const emailKey = String(sub.email || "").toLowerCase();
+        if (!trucksByEmail.has(emailKey)) trucksByEmail.set(emailKey, new Map());
+        const m = trucksByEmail.get(emailKey);
+        const cur = m.get(plate) || { plate, kg: 0, count: 0, items: [] };
+        cur.kg    += sub.kg;
+        cur.count += 1;
+        // ADSN: prefere o que está no audit; fallback ao da API
+        const adsn = sub.adsn || apiInfo.adsn || "";
+        cur.items.push({
+          extensionist: sub.beneficiary,
+          gtu: sub.gtu_raw,
+          gtu_norm: gtu,
+          adsn,
+          kg: Number(sub.kg.toFixed(2)),
+          date: sub.date,
+        });
+        m.set(plate, cur);
+      }
     }
-    // Anexa aos submitters (ordenado por kg desc)
+    // Anexa aos submitters (matrículas ordenadas por kg desc;
+    // items dentro de cada matrícula ordenados por data desc)
     for (const sub of submitters) {
       const m = trucksByEmail.get(String(sub.email || "").toLowerCase());
       if (!m) continue;
       sub.trucks = [...m.values()]
-        .map((t) => ({ ...t, kg: Math.round(t.kg) }))
+        .map((t) => ({
+          ...t,
+          kg: Math.round(t.kg),
+          items: t.items.sort((a, b) => String(b.date).localeCompare(String(a.date))),
+        }))
         .sort((a, b) => b.kg - a.kg);
     }
   } catch (e) {

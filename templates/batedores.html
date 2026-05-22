@@ -229,26 +229,66 @@
       color: #94a3b8; font-weight: 700; margin-bottom: .4rem;
     }
     .trucks-list {
-      display: flex; flex-wrap: wrap; gap: .35rem;
+      display: flex; flex-direction: column; gap: .4rem;
     }
-    .truck-pill {
-      display: inline-flex; align-items: center; gap: .35rem;
-      background: #f1f5f9; border: 1px solid #e2e8f0;
-      border-radius: 6px; padding: .25rem .55rem;
-      font-size: .72rem;
+    .truck-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 6px;
+      overflow: hidden;
     }
-    .truck-pill .plate {
+    .truck-card .truck-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: .5rem; padding: .4rem .65rem;
+      cursor: pointer; user-select: none;
+      background: #f8fafc;
+      transition: background .12s;
+    }
+    .truck-card .truck-head:hover { background: #f0f9ff; }
+    .truck-card.open .truck-head { background: #dbeafe; }
+    .truck-card .plate {
       font-family: ui-monospace, monospace; font-weight: 700;
-      color: #0f172a; letter-spacing: .02em;
+      color: #0f172a; letter-spacing: .02em; font-size: .8rem;
     }
-    .truck-pill .kg {
-      color: #475569; font-variant-numeric: tabular-nums; font-weight: 600;
+    .truck-card .head-meta {
+      display: flex; align-items: center; gap: .5rem;
     }
-    .truck-pill .kg .unit { color: #94a3b8; font-weight: 500; font-size: .65rem; margin-left: 2px; }
-    .truck-pill .count {
+    .truck-card .head-meta .kg {
+      color: #0f4c75; font-variant-numeric: tabular-nums; font-weight: 700;
+      font-size: .8rem;
+    }
+    .truck-card .head-meta .kg .unit { color: #94a3b8; font-weight: 500; font-size: .65rem; margin-left: 2px; }
+    .truck-card .head-meta .count {
       background: #dbeafe; color: #1e40af;
-      padding: .05rem .35rem; border-radius: 99px;
-      font-size: .62rem; font-weight: 700;
+      padding: .1rem .45rem; border-radius: 99px;
+      font-size: .65rem; font-weight: 700;
+    }
+    .truck-card .caret {
+      color: #94a3b8; font-size: .75rem; transition: transform .15s;
+      width: 12px; text-align: center;
+    }
+    .truck-card.open .caret { transform: rotate(90deg); color: #1e40af; }
+    .truck-card .truck-body { display: none; }
+    .truck-card.open .truck-body { display: block; }
+    .truck-items {
+      width: 100%; border-collapse: collapse; font-size: .7rem;
+    }
+    .truck-items thead { background: #f1f5f9; color: #475569; }
+    .truck-items thead th {
+      padding: .3rem .55rem; text-align: left; font-weight: 700;
+      font-size: .6rem; text-transform: uppercase; letter-spacing: .03em;
+      border-bottom: 1px solid #cbd5e1;
+    }
+    .truck-items thead th.num { text-align: right; }
+    .truck-items tbody td {
+      padding: .3rem .55rem; border-bottom: 1px solid #f1f5f9;
+    }
+    .truck-items tbody tr:last-child td { border-bottom: 0; }
+    .truck-items tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .truck-items tbody td.mono {
+      font-family: ui-monospace, monospace; font-size: .66rem;
+      color: #475569;
+    }
+    .truck-items tbody td .date {
+      font-size: .6rem; color: #94a3b8;
     }
     .trucks-empty {
       font-size: .7rem; color: #94a3b8; font-style: italic;
@@ -725,7 +765,8 @@
       });
     }
 
-    // Bloco de matrículas: pills com plate + kg + nº submissões
+    // Bloco de matrículas: cards expandíveis por matrícula com detalhe
+    // (extensionista, GTU/GTS, ADSN, qtd, data) — clicar para expandir.
     function renderTrucksBlock(submitter) {
       const trucks = submitter.trucks || [];
       if (!trucks.length) {
@@ -737,17 +778,48 @@
         `;
       }
       const totalKg = trucks.reduce((s, t) => s + t.kg, 0);
-      const pills = trucks.map((t) => `
-        <span class="truck-pill" title="${esc(t.plate)} — ${fmt(t.kg)} kg em ${t.count} submissão(ões)">
-          <span class="plate">${esc(t.plate)}</span>
-          <span class="kg">${fmt(t.kg)}<span class="unit">kg</span></span>
-          <span class="count">${t.count}</span>
-        </span>
-      `).join("");
+      const cards = trucks.map((t, idx) => {
+        const itemsHtml = (t.items || []).map((it) => {
+          const dateShort = it.date ? esc(String(it.date).slice(5).replace("-","/")) : "—";
+          return `
+            <tr>
+              <td>${esc(it.extensionist || "—")}<div class="date">${dateShort}</div></td>
+              <td class="num"><strong>${fmt(it.kg)}</strong> kg</td>
+              <td class="mono">${esc(it.gtu || "")}</td>
+              <td class="mono">${esc(it.adsn || "—")}</td>
+            </tr>
+          `;
+        }).join("");
+        return `
+          <div class="truck-card" data-truck-idx="${idx}" data-email="${esc(submitter.email)}">
+            <div class="truck-head">
+              <span style="display:inline-flex;align-items:center;gap:.4rem">
+                <span class="caret">▶</span>
+                <span class="plate">${esc(t.plate)}</span>
+              </span>
+              <span class="head-meta">
+                <span class="kg">${fmt(t.kg)}<span class="unit">kg</span></span>
+                <span class="count">${t.count} submissão${t.count === 1 ? "" : "es"}</span>
+              </span>
+            </div>
+            <div class="truck-body">
+              <table class="truck-items">
+                <thead><tr>
+                  <th>Extensionista / Data</th>
+                  <th class="num">Qtd</th>
+                  <th>GTU/GTS</th>
+                  <th>ADSN</th>
+                </tr></thead>
+                <tbody>${itemsHtml}</tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }).join("");
       return `
         <div class="trucks-block">
           <div class="trucks-title">Matrículas dos camiões · ${trucks.length} distinta${trucks.length === 1 ? "" : "s"} · ${fmt(totalKg)} kg total</div>
-          <div class="trucks-list">${pills}</div>
+          <div class="trucks-list">${cards}</div>
         </div>
       `;
     }
@@ -834,6 +906,15 @@
           if (state.expanded.has(email)) state.expanded.delete(email);
           else state.expanded.add(email);
           renderBoard(state.data);
+        });
+      });
+      // Click em truck-head expande/colapsa o card de matrícula (sem
+      // tocar no row do batedor)
+      $$("#board-list .truck-head").forEach((h) => {
+        h.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const card = h.closest(".truck-card");
+          if (card) card.classList.toggle("open");
         });
       });
     }
