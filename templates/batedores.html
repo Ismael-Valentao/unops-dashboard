@@ -293,6 +293,33 @@
     .trucks-empty {
       font-size: .7rem; color: #94a3b8; font-style: italic;
     }
+    /* GTUs submetidas mas SEM match na API ADICIONAL (suspeitas) */
+    .unmatched-block {
+      margin-top: .55rem;
+      background: #fffbeb; border: 1px solid #fde68a;
+      border-radius: 6px; padding: .5rem .65rem;
+    }
+    .unmatched-title {
+      font-size: .65rem; font-weight: 700;
+      color: #92400e; margin-bottom: .35rem;
+      text-transform: uppercase; letter-spacing: .03em;
+    }
+    .unmatched-list {
+      display: flex; flex-direction: column; gap: .15rem;
+      font-size: .7rem;
+    }
+    .unmatched-row {
+      display: grid; grid-template-columns: 1fr auto auto;
+      gap: .55rem; padding: .12rem 0;
+      color: #78350f;
+    }
+    .unmatched-row .gtu {
+      font-family: ui-monospace, monospace; font-size: .67rem;
+      color: #92400e; font-weight: 600;
+    }
+    .unmatched-row .kg {
+      font-variant-numeric: tabular-nums; font-weight: 700;
+    }
 
     .empty {
       padding: 2rem 1rem; text-align: center; color: #94a3b8;
@@ -816,10 +843,30 @@
           </div>
         `;
       }).join("");
+      // Bloco extra para GTUs/GTS submetidas mas SEM match na API ADICIONAL
+      // (provável erro de transcrição do batedor)
+      let unmatchedHtml = "";
+      const um = submitter.unmatched || [];
+      if (um.length) {
+        const umRows = um.map((u) => `
+          <div class="unmatched-row" title="${esc(u.extensionist || "")}">
+            <span class="gtu">${esc(u.gtu)}</span>
+            <span style="color:#78350f">${esc(u.extensionist || "—")}</span>
+            <span class="kg">${fmt(u.kg)} kg</span>
+          </div>
+        `).join("");
+        unmatchedHtml = `
+          <div class="unmatched-block">
+            <div class="unmatched-title">⚠️ ${um.length} GTU/GTS submetida${um.length===1?"":"s"} sem match na API ADICIONAL · ${fmt(submitter.unmatched_kg || 0)} kg</div>
+            <div class="unmatched-list">${umRows}</div>
+          </div>
+        `;
+      }
       return `
         <div class="trucks-block">
           <div class="trucks-title">Matrículas dos camiões · ${trucks.length} distinta${trucks.length === 1 ? "" : "s"} · ${fmt(totalKg)} kg total</div>
           <div class="trucks-list">${cards}</div>
+          ${unmatchedHtml}
         </div>
       `;
     }

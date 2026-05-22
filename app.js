@@ -298,21 +298,18 @@ async function buildBatedoresPayload(arg) {
          AND gtu IS NOT NULL AND gtu <> ''`,
       [fromIso, toIso]
     );
-    // Map: gtu_norm → array de submissões (cada uma com seu próprio benef/qty/data)
-    const sheetByGtu = new Map();
+    // Lista plana de submissões da sheet — preserva a forma RAW da GTU
+    // para que o lookupApi possa tentar match conservador (raw primeiro).
+    const sheetSubmissions = [];
     for (const r of auditRows) {
-      const g = normGtu(r.gtu);
-      if (!g) continue;
-      const arr = sheetByGtu.get(g) || [];
-      arr.push({
+      if (!r.gtu) continue;
+      sheetSubmissions.push({
         email: r.email,
         kg: Number(r.kg) || 0,
         beneficiary: r.beneficiary_name || "",
-        adsn: r.adsn || "",
         date: r.delivery_date_iso || "",
         gtu_raw: r.gtu,
       });
-      sheetByGtu.set(g, arr);
     }
 
     // 2. Fetch API ADICIONAL (chunked, com cache).
@@ -331,17 +328,31 @@ async function buildBatedoresPayload(arg) {
     const apiResult = await adicionalApi.listProjectsChunked({
       fromDate: apiFromIso, toDate: toIso, chunkDays: 14,
     });
-    // Map: gtu_norm → { plate, adsn } (api-side)
-    const apiByGtu = new Map();
+    // Indexa a API por DUAS chaves para match conservador:
+    //   - rawClean: uppercase + trim + sem espaços (preserva slashes/formatos)
+    //   - norm:     resultado de normGtu (colapsa variantes equivalentes)
+    // Lookup tenta primeiro rawClean (forma original da sheet), só faz
+    // fallback para norm se o raw não encontrar — evita falsos positivos
+    // por causa de normalização agressiva.
+    const apiByRaw  = new Map();
+    const apiByNorm = new Map();
+    const cleanRaw = (s) => String(s || "").trim().toUpperCase().replace(/\s+/g, "");
     for (const r of apiResult.rows) {
-      const g = normGtu(r.ClientBarCode);
-      if (!g) continue;
+      const rawClean = cleanRaw(r.ClientBarCode);
+      if (!rawClean) continue;
       const plate = normPlate(r.VehiclePlate);
       if (!plate) continue;
-      apiByGtu.set(g, {
-        plate,
-        adsn: r.ServiceCode || "",
-      });
+      const data = { plate, adsn: r.ServiceCode || "" };
+      apiByRaw.set(rawClean, data);
+      apiByNorm.set(normGtu(r.ClientBarCode), data);
+    }
+    // Match conservador: raw primeiro, depois normalizado
+    function lookupApi(sheetGtuRaw) {
+      const rawClean = cleanRaw(sheetGtuRaw);
+      if (apiByRaw.has(rawClean)) return apiByRaw.get(rawClean);
+      const norm = normGtu(sheetGtuRaw);
+      if (apiByNorm.has(norm)) return apiByNorm.get(norm);
+      return null;
     }
 
     // 3. Para cada submitter, agregar por matrícula:
@@ -352,40 +363,58 @@ async function buildBatedoresPayload(arg) {
     // r.delivery_id (UUID interno do AppSheet tipo "85180c77") — não é
     // um ADSN real, NÃO USAR.
     const trucksByEmail = new Map();
-    for (const [gtu, submissions] of sheetByGtu) {
-      const apiInfo = apiByGtu.get(gtu);
-      if (!apiInfo) continue;
-      const plate = apiInfo.plate;
-      for (const sub of submissions) {
-        const emailKey = String(sub.email || "").toLowerCase();
-        if (!trucksByEmail.has(emailKey)) trucksByEmail.set(emailKey, new Map());
-        const m = trucksByEmail.get(emailKey);
-        const cur = m.get(plate) || { plate, kg: 0, count: 0, items: [] };
-        cur.kg    += sub.kg;
-        cur.count += 1;
-        cur.items.push({
+    const unmatchedByEmail = new Map();  // submissões sem GTU na API
+    for (const sub of sheetSubmissions) {
+      const emailKey = String(sub.email || "").toLowerCase();
+      const apiInfo = lookupApi(sub.gtu_raw);
+      if (!apiInfo) {
+        // GTU não encontrada na API — fica numa lista separada para
+        // o utilizador ver a discrepância (em vez de desaparecer silenciosamente)
+        if (!unmatchedByEmail.has(emailKey)) unmatchedByEmail.set(emailKey, []);
+        unmatchedByEmail.get(emailKey).push({
           extensionist: sub.beneficiary,
           gtu: sub.gtu_raw,
-          gtu_norm: gtu,
-          adsn: apiInfo.adsn || "",   // sempre o ServiceCode real da API
           kg: Number(sub.kg.toFixed(2)),
           date: sub.date,
         });
-        m.set(plate, cur);
+        continue;
       }
+      const plate = apiInfo.plate;
+      if (!trucksByEmail.has(emailKey)) trucksByEmail.set(emailKey, new Map());
+      const m = trucksByEmail.get(emailKey);
+      const cur = m.get(plate) || { plate, kg: 0, count: 0, items: [] };
+      cur.kg    += sub.kg;
+      cur.count += 1;
+      cur.items.push({
+        extensionist: sub.beneficiary,
+        gtu: sub.gtu_raw,
+        adsn: apiInfo.adsn || "",   // sempre o ServiceCode real da API
+        kg: Number(sub.kg.toFixed(2)),
+        date: sub.date,
+      });
+      m.set(plate, cur);
     }
     // Anexa aos submitters (matrículas ordenadas por kg desc;
     // items dentro de cada matrícula ordenados por data desc)
     for (const sub of submitters) {
-      const m = trucksByEmail.get(String(sub.email || "").toLowerCase());
-      if (!m) continue;
-      sub.trucks = [...m.values()]
-        .map((t) => ({
-          ...t,
-          kg: Math.round(t.kg),
-          items: t.items.sort((a, b) => String(b.date).localeCompare(String(a.date))),
-        }))
-        .sort((a, b) => b.kg - a.kg);
+      const emailKey = String(sub.email || "").toLowerCase();
+      const m = trucksByEmail.get(emailKey);
+      if (m) {
+        sub.trucks = [...m.values()]
+          .map((t) => ({
+            ...t,
+            kg: Math.round(t.kg),
+            items: t.items.sort((a, b) => String(b.date).localeCompare(String(a.date))),
+          }))
+          .sort((a, b) => b.kg - a.kg);
+      }
+      const um = unmatchedByEmail.get(emailKey);
+      if (um && um.length) {
+        sub.unmatched = um
+          .map((u) => ({ ...u, kg: Math.round(u.kg) }))
+          .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+        sub.unmatched_kg = sub.unmatched.reduce((s, u) => s + u.kg, 0);
+      }
     }
   } catch (e) {
     console.warn("[batedores] enrich trucks failed (non-fatal):", e.message);
