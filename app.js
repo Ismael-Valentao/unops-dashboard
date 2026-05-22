@@ -285,20 +285,49 @@ async function buildBatedoresPayload(arg) {
     const { normPlate } = require("./lib/adicional-viagens");
     const onedriveMapa = require("./lib/onedrive-mapa");
 
-    // Carrega mapa ADSN → CAM-XX do OneDrive UNOPS (cacheado, TTL 15min).
-    // Hard-refresh quando o utilizador clicar no botão (noCache=1).
-    // Falha silenciosa: se o OneDrive estiver inacessível, items ficam sem
-    // CAM mas o resto da página continua a funcionar.
-    const mapaResult = await onedriveMapa.getMapaSafe({ force: !!arg.noCache });
-    const adsnToCam = mapaResult ? mapaResult.adsnToCam : new Map();
-    const mapaInfo = onedriveMapa.getCacheInfo();
-
     // Período: usa os dias da resposta para definir a janela de fetch
     const fromIso = data.days[0];
     const toIso   = data.days[data.days.length - 1];
 
-    // 1. GTU → submitter + kg + beneficiário da delivery_audit
-    const auditRows = await query(
+    // ── Janela API ADICIONAL ───────────────────────────────────
+    //
+    // A API ADICIONAL filtra por CreateDate (quando a guia foi criada).
+    // O batedor pode submeter HOJE um GTU criado há meses. Por bench
+    // empírico (scripts/_perf-bench.js): GTUs dos últimos 12 meses
+    // estão concentrados nos últimos 90 dias — janela 90d devolve
+    // exactamente as mesmas rows que 365d mas com 16s a menos.
+    //
+    // Configurável via env BATEDORES_API_LOOKBACK_DAYS (default 90).
+    // Se aparecer um GTU antigo (>90d) não-mapeado, o utilizador pode
+    // clicar ↻ Fresh — também não muda nada já que está fora do TTL.
+    // Solução real: aumentar BATEDORES_API_LOOKBACK_DAYS no .env.
+    //
+    // ⚠ TODATE +1: estendemos em 1 dia para apanhar GTUs criadas HOJE
+    // depois da hora do último cache. A API trata toDate como exclusive
+    // midnight; mesmo com workaround em listProjects._addDay, alargar
+    // aqui dá margem para timezone/clock skew.
+    const LOOKBACK_DAYS = Number(process.env.BATEDORES_API_LOOKBACK_DAYS) || 90;
+    const apiFromDt = new Date(toIso + "T00:00:00");
+    apiFromDt.setDate(apiFromDt.getDate() - LOOKBACK_DAYS);
+    const apiToDt = new Date(toIso + "T00:00:00");
+    apiToDt.setDate(apiToDt.getDate() + 1);
+    const ymdLocal = (d) => d.getFullYear() + "-" +
+      String(d.getMonth() + 1).padStart(2, "0") + "-" +
+      String(d.getDate()).padStart(2, "0");
+    const apiFromIso = ymdLocal(apiFromDt);
+    const apiToIso   = ymdLocal(apiToDt);
+
+    // ── Fetches paralelos ──────────────────────────────────────
+    //
+    // DB, API ADICIONAL e OneDrive MAPA são independentes. Antes
+    // estavam sequenciais (DB → API → OneDrive ≈ 33s no cold).
+    // Promise.all corre em paralelo → tempo total ≈ max(API) ≈ 12s.
+    //
+    // Cada um falha-suavemente:
+    //   - DB falha → throw (não há fallback útil)
+    //   - API falha → throw (igual)
+    //   - OneDrive falha → mapaResult=null, items ficam sem CAM
+    const auditQ = query(
       `SELECT gtu, adsn, submitted_by AS email,
               delivered_qty AS kg, beneficiary_name,
               delivery_date_iso
@@ -309,6 +338,16 @@ async function buildBatedoresPayload(arg) {
          AND gtu IS NOT NULL AND gtu <> ''`,
       [fromIso, toIso]
     );
+    const apiQ = adicionalApi.listProjectsChunked({
+      fromDate: apiFromIso, toDate: apiToIso, chunkDays: 14,
+      noCache: !!arg.noCache,
+    });
+    const mapaQ = onedriveMapa.getMapaSafe({ force: !!arg.noCache });
+    const [auditRows, apiResult, mapaResult] = await Promise.all([auditQ, apiQ, mapaQ]);
+
+    const adsnToCam = mapaResult ? mapaResult.adsnToCam : new Map();
+    // mapaInfo é exposto via mapa_cache_info no return final (não usado aqui)
+
     // Lista plana de submissões da sheet — preserva a forma RAW da GTU
     // para que o lookupApi possa tentar match conservador (raw primeiro).
     const sheetSubmissions = [];
@@ -322,32 +361,6 @@ async function buildBatedoresPayload(arg) {
         gtu_raw: r.gtu,
       });
     }
-
-    // 2. Fetch API ADICIONAL (chunked, com cache).
-    //
-    // ⚠ JANELA LARGA: a API ADICIONAL filtra por CreateDate (quando a guia
-    // foi criada). O batedor pode submeter HOJE um GTU criado há meses.
-    // Se usássemos só a janela do batedor (14d) perderíamos a maioria das
-    // matrículas. Usamos toIso − 365 dias para apanhar GTUs antigos.
-    //
-    // ⚠ TODATE +1: estendemos toDate em 1 dia para apanhar GTUs criadas
-    // HOJE pelo operador depois da hora do nosso último cache. A API
-    // ADICIONAL trata toDate como exclusive midnight; mesmo com o
-    // workaround em listProjects._addDay, alargar aqui dá margem extra
-    // para timezone e clock skew.
-    const apiFromDt = new Date(toIso + "T00:00:00");
-    apiFromDt.setDate(apiFromDt.getDate() - 365);
-    const apiToDt = new Date(toIso + "T00:00:00");
-    apiToDt.setDate(apiToDt.getDate() + 1);
-    const ymdLocal = (d) => d.getFullYear() + "-" +
-      String(d.getMonth() + 1).padStart(2, "0") + "-" +
-      String(d.getDate()).padStart(2, "0");
-    const apiFromIso = ymdLocal(apiFromDt);
-    const apiToIso   = ymdLocal(apiToDt);
-    const apiResult = await adicionalApi.listProjectsChunked({
-      fromDate: apiFromIso, toDate: apiToIso, chunkDays: 14,
-      noCache: !!arg.noCache,
-    });
     // Capture cache info so frontend can show "Cache 2min ago" or "Fresh"
     payload_cache_info = {
       from_cache: !!apiResult.from_cache,
@@ -2555,6 +2568,15 @@ async function main() {
       }
     }
   }, 60 * 1000);
+
+  // Pre-warm dos caches da /batedores (API ADICIONAL + OneDrive MAPA UNOPS)
+  // → mantém os dados sempre quentes em background; utilizador nunca paga
+  //   cold load. Detalhes em lib/batedores-prewarm.js.
+  try {
+    require("./lib/batedores-prewarm").start();
+  } catch (e) {
+    console.warn("[prewarm] falhou ao iniciar (non-fatal):", e.message);
+  }
 
   app.listen(PORT, () => {
     console.log(`Dashboard running at http://localhost:${PORT}`);
