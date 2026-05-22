@@ -223,11 +223,19 @@
     .sys-pill.only { background: #fef3c7; color: #92400e; }
     /* Quando há sheet match mas qty diverge — mais grave que "só ADIC" */
     .sys-pill.qty-mismatch { background: #fee2e2; color: #991b1b; }
+    /* Quando há sheet match mas o NOME diverge — possível benef. errado */
+    .sys-pill.name-mismatch { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
     /* Mini-badge de mismatch na sub-line do header da viagem */
     .qty-mini {
       display: inline-block; padding: .08rem .35rem; border-radius: 4px;
       font-size: .65rem; font-weight: 700;
       background: #fee2e2; color: #991b1b;
+      margin-left: .25rem; vertical-align: middle;
+    }
+    .name-mini {
+      display: inline-block; padding: .08rem .35rem; border-radius: 4px;
+      font-size: .65rem; font-weight: 700;
+      background: #fef3c7; color: #92400e;
       margin-left: .25rem; vertical-align: middle;
     }
     /* Diff de kg na célula Sistema (info pequena) */
@@ -236,6 +244,11 @@
       margin-top: .15rem; font-variant-numeric: tabular-nums;
     }
     .qty-diff-note.over { color: #166534; }  /* sheet declara MAIS (positivo) */
+    /* Nota com nome alternativo da Sheet (info pequena) */
+    .name-diff-note {
+      display: block; font-size: .63rem; color: #92400e;
+      margin-top: .15rem; font-style: italic;
+    }
     /* ── Modal de anexos (lightbox) ─────────────────────────── */
     .attach-modal {
       position: fixed; inset: 0; z-index: 200;
@@ -401,6 +414,7 @@
             <option value="none">Sem nenhum no UNOPS</option>
             <option value="full">100% no UNOPS</option>
             <option value="qty_mismatch">⚠️ Quantidade divergente</option>
+            <option value="name_mismatch">⚠️ Beneficiário diferente</option>
           </select>
         </div>
         <div class="btn-group">
@@ -628,20 +642,34 @@
                 attachIcons = `<span class="attach-row">${icons.join("")}</span>`;
               }
             }
-            // Sistema (UNOPS + ADIC vs Só ADIC) + verificação de quantidade
+            // Sistema (UNOPS + ADIC vs Só ADIC) + verificação de quantidade + NOME
             let sysCell;
             if (it.sheet_matched) {
-              if (it.qty_match === false) {
-                // GTU bate mas QUANTIDADE diverge — alerta vermelho
-                const diff = it.qty_diff_kg || 0;
-                const sign = diff > 0 ? "+" : "";
-                const pct  = it.qty_pct_diff != null ? ` (${it.qty_pct_diff > 0 ? "+" : ""}${it.qty_pct_diff}%)` : "";
-                const dirCls = diff > 0 ? " over" : "";
-                const title = `Sheet declara ${fmt(it.sheet_qty_kg)} kg, API tem ${fmt(it.weight_kg)} kg — diff ${sign}${fmt(diff)} kg`;
-                sysCell = `<span class="sys-pill qty-mismatch" title="${esc(title)}">⚠️ UNOPS + ADIC · kg ≠</span>${attachIcons}` +
-                  `<span class="qty-diff-note${dirCls}">Δ ${sign}${fmt(diff)} kg${pct}</span>`;
+              const qtyBad  = it.qty_match  === false;
+              const nameBad = it.name_match === false;
+              if (qtyBad || nameBad) {
+                // Alerta: GTU bate mas qty E/OU nome diverge
+                const labels = [];
+                if (qtyBad)  labels.push("kg ≠");
+                if (nameBad) labels.push("nome ≠");
+                const pillCls = qtyBad ? "qty-mismatch" : "name-mismatch";
+                const pillTitle = [
+                  qtyBad  ? `qty: sheet ${fmt(it.sheet_qty_kg)} kg vs api ${fmt(it.weight_kg)} kg` : "",
+                  nameBad ? `nome: sheet "${it.sheet_beneficiary_name}" vs api "${it.ext_name}"` : "",
+                ].filter(Boolean).join(" · ");
+                sysCell = `<span class="sys-pill ${pillCls}" title="${esc(pillTitle)}">⚠️ UNOPS + ADIC · ${labels.join(" + ")}</span>${attachIcons}`;
+                if (qtyBad) {
+                  const diff = it.qty_diff_kg || 0;
+                  const sign = diff > 0 ? "+" : "";
+                  const pct  = it.qty_pct_diff != null ? ` (${it.qty_pct_diff > 0 ? "+" : ""}${it.qty_pct_diff}%)` : "";
+                  const dirCls = diff > 0 ? " over" : "";
+                  sysCell += `<span class="qty-diff-note${dirCls}">Δ ${sign}${fmt(diff)} kg${pct}</span>`;
+                }
+                if (nameBad) {
+                  sysCell += `<span class="name-diff-note">Sheet: ${esc(it.sheet_beneficiary_name || "")}</span>`;
+                }
               } else {
-                sysCell = `<span class="sys-pill both" title="Lançado em ambos os sistemas (qty bate ±2%)">UNOPS + ADIC</span>${attachIcons}`;
+                sysCell = `<span class="sys-pill both" title="Lançado em ambos os sistemas (GTU + nome + qty conferem)">UNOPS + ADIC</span>${attachIcons}`;
               }
             } else {
               sysCell = `<span class="sys-pill only" title="Falta lançar no sistema UNOPS">Só ADIC</span>`;
@@ -681,6 +709,10 @@
                     <span class="unops-mini ${unopsClass}" title="${esc(unopsTitle)}">${nUnops}/${nTotal} UNOPS</span>${
                       v.n_qty_mismatch > 0
                         ? `<span class="qty-mini" title="${esc(v.n_qty_mismatch + ' ADSN(s) com qty divergente · Δ acumulado ' + (v.sum_qty_diff_kg > 0 ? '+' : '') + fmt(v.sum_qty_diff_kg) + ' kg')}">⚠️ ${v.n_qty_mismatch} kg≠</span>`
+                        : ""
+                    }${
+                      v.n_name_mismatch > 0
+                        ? `<span class="name-mini" title="${esc(v.n_name_mismatch + ' ADSN(s) com beneficiário diferente entre API e Sheet UNOPS')}">⚠️ ${v.n_name_mismatch} nome≠</span>`
                         : ""
                     }
                   </div>
@@ -915,6 +947,8 @@
             v.items.every((it) => it.sheet_matched));
         } else if (fUnops === "qty_mismatch") {
           viagensRender = viagensRender.filter((v) => (v.n_qty_mismatch || 0) > 0);
+        } else if (fUnops === "name_mismatch") {
+          viagensRender = viagensRender.filter((v) => (v.n_name_mismatch || 0) > 0);
         }
         // KPIs sobre o subset visível
         let unopsIn = 0, unopsTotal = 0;
