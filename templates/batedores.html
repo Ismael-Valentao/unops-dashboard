@@ -149,6 +149,17 @@
     .cam-badge.none { background: #f1f5f9; color: #94a3b8; font-weight: 500; }
     /* INAUG: ADSN está em INAUGURAÇÕES mas sem CAM-XX numerado */
     .cam-badge.inaug { background: #dbeafe; color: #1e40af; }
+    /* Destino da carga (extraído do header do bloco CAM no MAPA UNOPS) */
+    .destino-badge {
+      display: inline-flex; align-items: center; gap: 2px;
+      padding: 1px 6px 1px 4px; border-radius: 4px;
+      background: #fef3c7; color: #92400e;
+      font-size: .68rem; font-weight: 600;
+      letter-spacing: 0;
+    }
+    .destino-badge::before { content: "→"; margin-right: 2px; opacity: .7; }
+    .destino-badge.none { background: #f1f5f9; color: #94a3b8; font-weight: 400; }
+    .destino-badge.none::before { content: ""; margin: 0; }
     .truck-card .cams {
       display: inline-flex; gap: 3px; flex-wrap: wrap;
       margin-left: .35rem;
@@ -871,6 +882,9 @@
           } else {
             camCell = `<span class="cam-badge" title="Identificado a partir do MAPA UNOPS (ENTREGUES/TRANSITO)">${esc(it.cam)}</span>`;
           }
+          const destinoCell = it.destino
+            ? `<span class="destino-badge" title="Destino lido do header CAM no MAPA UNOPS">${esc(it.destino)}</span>`
+            : `<span class="destino-badge none">—</span>`;
           return `
             <tr>
               <td>${esc(it.extensionist || "—")}<div class="date">${dateShort}</div></td>
@@ -878,17 +892,23 @@
               <td class="mono">${esc(it.gtu || "")}</td>
               <td class="mono">${esc(it.adsn || "—")}</td>
               <td class="cam-cell">${camCell}</td>
+              <td class="cam-cell">${destinoCell}</td>
             </tr>
           `;
         }).join("");
-        // Badge(s) CAM no header da matrícula — geralmente 1, mas pode ser
-        // multi-CAM se o batedor descarregou items de viagens diferentes
-        // do mesmo camião físico.
+        // Badges no header da matrícula:
+        //   - CAMs envolvidos (geralmente 1; multi se items são de viagens diferentes)
+        //   - Destinos únicos do(s) CAM(s)
         const camHeadHtml = (t.cams && t.cams.length)
           ? `<span class="cams">${t.cams.map((c) =>
               c === "INAUG"
                 ? `<span class="cam-badge inaug">INAUG</span>`
                 : `<span class="cam-badge">${esc(c)}</span>`
+            ).join("")}</span>`
+          : "";
+        const destinosHeadHtml = (t.destinos && t.destinos.length)
+          ? `<span class="cams">${t.destinos.map((d) =>
+              `<span class="destino-badge">${esc(d)}</span>`
             ).join("")}</span>`
           : "";
         return `
@@ -898,6 +918,7 @@
                 <span class="caret">▶</span>
                 <span class="plate">${esc(t.plate)}</span>
                 ${camHeadHtml}
+                ${destinosHeadHtml}
               </span>
               <span class="head-meta">
                 <span class="kg">${fmt(t.kg)}<span class="unit">kg</span></span>
@@ -912,6 +933,7 @@
                   <th>GTU/GTS</th>
                   <th>ADSN</th>
                   <th>CAM</th>
+                  <th>Destino</th>
                 </tr></thead>
                 <tbody>${itemsHtml}</tbody>
               </table>

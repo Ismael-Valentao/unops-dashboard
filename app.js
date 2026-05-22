@@ -418,20 +418,29 @@ async function buildBatedoresPayload(arg) {
         continue;
       }
       const plate = apiInfo.plate;
-      // Lookup CAM-XX no mapa OneDrive UNOPS (chave = ADSN da API)
+      // Lookup CAM-XX + destino no mapa OneDrive UNOPS (chave = ADSN)
+      // Valor: { cam: "CAM-NN"|"INAUG", destino: "Chibuto"|null } ou null
       const adsnKey = String(apiInfo.adsn || "").trim().toUpperCase();
-      const cam = adsnKey ? (adsnToCam.get(adsnKey) || null) : null;
+      const camInfo = adsnKey ? (adsnToCam.get(adsnKey) || null) : null;
+      const cam     = camInfo ? camInfo.cam : null;
+      const destino = camInfo ? camInfo.destino : null;
       if (!trucksByEmail.has(emailKey)) trucksByEmail.set(emailKey, new Map());
       const m = trucksByEmail.get(emailKey);
-      const cur = m.get(plate) || { plate, kg: 0, count: 0, items: [], cams: new Set() };
+      const cur = m.get(plate) || {
+        plate, kg: 0, count: 0, items: [],
+        cams: new Set(),
+        destinos: new Set(),
+      };
       cur.kg    += sub.kg;
       cur.count += 1;
       if (cam) cur.cams.add(cam);
+      if (destino) cur.destinos.add(destino);
       cur.items.push({
         extensionist: sub.beneficiary,
         gtu: sub.gtu_raw,
         adsn: apiInfo.adsn || "",   // sempre o ServiceCode real da API
-        cam: cam,                    // CAM-XX se ADSN foi encontrado no MAPA UNOPS
+        cam:     cam,                // CAM-XX se ADSN foi encontrado no MAPA UNOPS
+        destino: destino,            // destino do camião (ex: "Chibuto")
         kg: Number(sub.kg.toFixed(2)),
         date: sub.date,
       });
@@ -455,6 +464,8 @@ async function buildBatedoresPayload(arg) {
               const nb = parseInt(String(b).replace(/\D/g, ""), 10);
               return na - nb;
             }),
+            // Destinos únicos do(s) CAM(s) — geralmente 1
+            destinos: [...t.destinos].sort(),
             items: t.items.sort((a, b) => String(b.date).localeCompare(String(a.date))),
           }))
           .sort((a, b) => b.kg - a.kg);
