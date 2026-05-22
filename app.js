@@ -271,7 +271,78 @@ async function buildBatedoresPayload(arg) {
     kg_rejected: Math.round(s.kg_rejected || 0),
     payment_mzn: Math.round(((s.total_kg || 0) / 1000) * PAYMENT_MZN_PER_TON),
     by_day: s.by_day || {},
+    trucks: [],   // populado a seguir via match GTU → VehiclePlate da API ADICIONAL
   }));
+
+  // ── Enriquecimento: matrículas dos camiões por batedor ─────────
+  // Para cada submitter, agrega os camiões com que descarregou no UNOPS.
+  // Match: GTU da delivery_audit ↔ ClientBarCode da ADICIONAL API.
+  try {
+    const { query } = require("./db/mysql");
+    const { normGtu } = require("./lib/adicional-match");
+    const { normPlate } = require("./lib/adicional-viagens");
+
+    // Período: usa os dias da resposta para definir a janela de fetch
+    const fromIso = data.days[0];
+    const toIso   = data.days[data.days.length - 1];
+
+    // 1. GTU → submitter + kg da delivery_audit
+    const auditRows = await query(
+      `SELECT gtu, submitted_by AS email, delivered_qty AS kg
+       FROM delivery_audit
+       WHERE submitted_by IS NOT NULL AND submitted_by <> ''
+         AND delivery_date_iso BETWEEN ? AND ?
+         AND deleted_at IS NULL
+         AND gtu IS NOT NULL AND gtu <> ''`,
+      [fromIso, toIso]
+    );
+    // Map: gtu_norm → { email, kg } (se houver várias rows com mesma GTU, somam)
+    const sheetByGtu = new Map();
+    for (const r of auditRows) {
+      const g = normGtu(r.gtu);
+      if (!g) continue;
+      const cur = sheetByGtu.get(g) || { email: r.email, kg: 0 };
+      cur.kg += Number(r.kg) || 0;
+      sheetByGtu.set(g, cur);
+    }
+
+    // 2. Fetch API ADICIONAL (chunked, com cache)
+    const apiResult = await adicionalApi.listProjectsChunked({
+      fromDate: fromIso, toDate: toIso, chunkDays: 7,
+    });
+    // Map: gtu_norm → VehiclePlate
+    const plateByGtu = new Map();
+    for (const r of apiResult.rows) {
+      const g = normGtu(r.ClientBarCode);
+      if (!g) continue;
+      const plate = normPlate(r.VehiclePlate);
+      if (plate) plateByGtu.set(g, plate);
+    }
+
+    // 3. Para cada submitter, agregar plates: { plate, kg, count }
+    const trucksByEmail = new Map();
+    for (const [gtu, info] of sheetByGtu) {
+      const plate = plateByGtu.get(gtu);
+      if (!plate) continue;
+      const emailKey = String(info.email || "").toLowerCase();
+      if (!trucksByEmail.has(emailKey)) trucksByEmail.set(emailKey, new Map());
+      const m = trucksByEmail.get(emailKey);
+      const cur = m.get(plate) || { plate, kg: 0, count: 0 };
+      cur.kg    += info.kg;
+      cur.count += 1;
+      m.set(plate, cur);
+    }
+    // Anexa aos submitters (ordenado por kg desc)
+    for (const sub of submitters) {
+      const m = trucksByEmail.get(String(sub.email || "").toLowerCase());
+      if (!m) continue;
+      sub.trucks = [...m.values()]
+        .map((t) => ({ ...t, kg: Math.round(t.kg) }))
+        .sort((a, b) => b.kg - a.kg);
+    }
+  } catch (e) {
+    console.warn("[batedores] enrich trucks failed (non-fatal):", e.message);
+  }
   const totalKg       = submitters.reduce((acc, s) => acc + s.total_kg, 0);
   const totalVerified = submitters.reduce((acc, s) => acc + s.kg_verified, 0);
   const totalPending  = submitters.reduce((acc, s) => acc + s.kg_pending, 0);

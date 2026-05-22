@@ -219,6 +219,41 @@
     .badge-p { color: #b45309; }
     .badge-r { color: #b91c1c; }
 
+    /* Matrículas dos camiões descarregados pelo batedor */
+    .trucks-block {
+      margin-top: .75rem; padding-top: .55rem;
+      border-top: 1px dashed #e2e8f0;
+    }
+    .trucks-title {
+      font-size: .62rem; text-transform: uppercase; letter-spacing: .04em;
+      color: #94a3b8; font-weight: 700; margin-bottom: .4rem;
+    }
+    .trucks-list {
+      display: flex; flex-wrap: wrap; gap: .35rem;
+    }
+    .truck-pill {
+      display: inline-flex; align-items: center; gap: .35rem;
+      background: #f1f5f9; border: 1px solid #e2e8f0;
+      border-radius: 6px; padding: .25rem .55rem;
+      font-size: .72rem;
+    }
+    .truck-pill .plate {
+      font-family: ui-monospace, monospace; font-weight: 700;
+      color: #0f172a; letter-spacing: .02em;
+    }
+    .truck-pill .kg {
+      color: #475569; font-variant-numeric: tabular-nums; font-weight: 600;
+    }
+    .truck-pill .kg .unit { color: #94a3b8; font-weight: 500; font-size: .65rem; margin-left: 2px; }
+    .truck-pill .count {
+      background: #dbeafe; color: #1e40af;
+      padding: .05rem .35rem; border-radius: 99px;
+      font-size: .62rem; font-weight: 700;
+    }
+    .trucks-empty {
+      font-size: .7rem; color: #94a3b8; font-style: italic;
+    }
+
     .empty {
       padding: 2rem 1rem; text-align: center; color: #94a3b8;
       font-size: .9rem;
@@ -690,6 +725,33 @@
       });
     }
 
+    // Bloco de matrículas: pills com plate + kg + nº submissões
+    function renderTrucksBlock(submitter) {
+      const trucks = submitter.trucks || [];
+      if (!trucks.length) {
+        return `
+          <div class="trucks-block">
+            <div class="trucks-title">Matrículas dos camiões</div>
+            <div class="trucks-empty">Sem GTU/GTS com correspondência na ADICIONAL para este batedor neste período.</div>
+          </div>
+        `;
+      }
+      const totalKg = trucks.reduce((s, t) => s + t.kg, 0);
+      const pills = trucks.map((t) => `
+        <span class="truck-pill" title="${esc(t.plate)} — ${fmt(t.kg)} kg em ${t.count} submissão(ões)">
+          <span class="plate">${esc(t.plate)}</span>
+          <span class="kg">${fmt(t.kg)}<span class="unit">kg</span></span>
+          <span class="count">${t.count}</span>
+        </span>
+      `).join("");
+      return `
+        <div class="trucks-block">
+          <div class="trucks-title">Matrículas dos camiões · ${trucks.length} distinta${trucks.length === 1 ? "" : "s"} · ${fmt(totalKg)} kg total</div>
+          <div class="trucks-list">${pills}</div>
+        </div>
+      `;
+    }
+
     // ── Leaderboard ───────────────────────────────────────
     function renderDayBars(submitter, allDays, todayIso) {
       const max = Math.max(0, ...allDays.map((d) => (submitter.by_day[d]?.kg || 0)));
@@ -758,6 +820,7 @@
                   <span class="badge-r">✗ <strong>${fmt(s.kg_rejected)}</strong> kg rejected</span>
                   <span style="margin-left:auto"><strong>${fmtMzn(s.payment_mzn)}</strong> MZN estimados</span>
                 </div>
+                ${renderTrucksBlock(s)}
               </div>
             ` : ""}
           </div>
