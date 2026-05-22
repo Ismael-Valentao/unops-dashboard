@@ -306,9 +306,21 @@ async function buildBatedoresPayload(arg) {
       sheetByGtu.set(g, cur);
     }
 
-    // 2. Fetch API ADICIONAL (chunked, com cache)
+    // 2. Fetch API ADICIONAL (chunked, com cache).
+    //
+    // ⚠ JANELA LARGA: a API ADICIONAL filtra por CreateDate (quando a guia
+    // foi criada). O batedor pode submeter HOJE um GTU criado há meses.
+    // Se usássemos só a janela do batedor (14d) perderíamos a maioria das
+    // matrículas. Usamos toIso − 365 dias para apanhar GTUs antigos.
+    // O cache de 5min do listProjectsChunked amortiza o custo.
+    const apiFromDt = new Date(toIso + "T00:00:00");
+    apiFromDt.setDate(apiFromDt.getDate() - 365);
+    const apiFromIso =
+      apiFromDt.getFullYear() + "-" +
+      String(apiFromDt.getMonth() + 1).padStart(2, "0") + "-" +
+      String(apiFromDt.getDate()).padStart(2, "0");
     const apiResult = await adicionalApi.listProjectsChunked({
-      fromDate: fromIso, toDate: toIso, chunkDays: 7,
+      fromDate: apiFromIso, toDate: toIso, chunkDays: 14,
     });
     // Map: gtu_norm → VehiclePlate
     const plateByGtu = new Map();
