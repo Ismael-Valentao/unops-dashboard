@@ -79,22 +79,24 @@
       letter-spacing: -.01em; line-height: 1.1;
     }
     .prod-card .nums {
-      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .4rem;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: .35rem;
       font-size: .72rem; color: #64748b; font-weight: 600;
     }
     .prod-card .nums > div {
       display: flex; flex-direction: column;
     }
     .prod-card .nums .lbl {
-      font-size: .58rem; text-transform: uppercase; letter-spacing: .04em;
+      font-size: .56rem; text-transform: uppercase; letter-spacing: .03em;
       color: #94a3b8;
     }
     .prod-card .nums .v {
-      font-size: .95rem; font-weight: 700; color: #0f172a;
+      font-size: .9rem; font-weight: 700; color: #0f172a;
       font-variant-numeric: tabular-nums;
     }
-    .prod-card .nums .v.forn { color: #15803d; }
-    .prod-card .nums .v.pend { color: #b45309; }
+    .prod-card .nums .v.forn      { color: #15803d; }
+    .prod-card .nums .v.pend      { color: #b45309; }
+    .prod-card .nums .v.pend-app  { color: #6d28d9; }   /* roxo — PEND APP */
+    .prod-card .nums .v.zero      { color: #cbd5e1; font-weight: 600; }
     .prod-card .progress-wrap {
       height: 10px; background: #f1f5f9; border-radius: 5px; overflow: hidden;
       position: relative;
@@ -354,7 +356,8 @@
       <h1>Fornecido vs Contratado</h1>
       <span class="admin-sub">
         <span style="color:#15803d;font-weight:600">LEVANTADO</span> = TRA + FIN ·
-        <span style="color:#b45309;font-weight:600">PENDENTE</span> = <strong>Meta − Levantado</strong> (falta para meta) ·
+        <span style="color:#b45309;font-weight:600">PEND LEVANT.</span> = <strong>Meta − Levantado</strong> ·
+        <span style="color:#6d28d9;font-weight:600">PEND APP</span> = <strong>Levantado − UNOPS app</strong> ·
         sacos herméticos em <strong>un</strong>
       </span>
     </header>
@@ -556,13 +559,20 @@
             `;
           }
 
+          // PEND APP = quanto foi LEVANTADO mas ainda não foi lançado na
+          // app UNOPS (GTU não está na sheet "Delivery"). Sinal de que a
+          // operação tirou o camião mas o batedor esqueceu de submeter.
+          const pendAppQty = Number(p.pend_app_qty) || 0;
+          const pendAppDisplay = pendAppQty > 0 ? fmtNum(pendAppQty) : "0";
+          const pendAppCls = pendAppQty > 0 ? "v pend-app" : "v zero";
           return `
             <div class="prod-card ${cardCls}">
               <div class="name">${esc(p.product)}${isSaco ? '<span style="font-size:.7rem;font-weight:500;color:#94a3b8"> (em un)</span>' : ''}</div>
               <div class="nums">
                 <div><span class="lbl">Meta</span><span class="v">${metaDisplay}</span></div>
                 <div><span class="lbl">Levantado</span><span class="v forn">${fornDisplay}</span></div>
-                <div><span class="lbl">Pendente</span><span class="v pend">${pendDisplay}</span></div>
+                <div><span class="lbl" title="Falta levantar do fornecedor (Meta − Levantado)">Pend Levant.</span><span class="v pend">${pendDisplay}</span></div>
+                <div><span class="lbl" title="Já levantado mas o batedor ainda não lançou na app UNOPS">Pend APP</span><span class="${pendAppCls}">${pendAppDisplay}</span></div>
               </div>
               <div class="progress-wrap"><div class="${barCls}" style="width:${barWidth}%"></div></div>
               <div class="pct-row">
@@ -610,12 +620,18 @@
             let cls = "";
             if (isSaco) cls = "is-saco-row";
             else if (noMeta) cls = "no-meta-row";
+            // Pend APP per row
+            const pAppQty = Number(p.pend_app_qty) || 0;
+            const pAppHtml = pAppQty > 0
+              ? `<strong style="color:#6d28d9">${fmtNum(pAppQty)}</strong><span class="unit">${unit}</span>`
+              : `<span style="color:#cbd5e1">0</span>`;
             return `
               <tr class="${cls}">
                 <td>${esc(p.product)} ${isSaco ? '<span class="unit">(em un)</span>' : ''}</td>
                 <td class="num qty-meta">${meta}</td>
                 <td class="num ${fornCls}">${fmtNum(p.forn_qty)}<span class="unit">${unit}</span></td>
                 <td class="num qty-pend">${pend}</td>
+                <td class="num">${pAppHtml}</td>
                 <td class="num">${pctBar(p.meta_pct)}</td>
                 <td class="num" style="color:#94a3b8">${p.forn_count}</td>
               </tr>
@@ -687,7 +703,8 @@
                     <th>Produto</th>
                     <th class="num">Meta</th>
                     <th class="num">Levantado</th>
-                    <th class="num">Pendente (vs meta)</th>
+                    <th class="num" title="Falta levantar do fornecedor">Pend Levant.</th>
+                    <th class="num" title="Levantado mas não lançado na app UNOPS">Pend APP</th>
                     <th class="num">% Levantado</th>
                     <th class="num">ADSNs</th>
                   </tr></thead>

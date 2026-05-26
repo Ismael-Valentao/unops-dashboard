@@ -1566,7 +1566,20 @@ app.get("/api/admin/adicional/fornecido", auth.requireRole("admin", "superadmin"
     const noCache = req.query.noCache === "1" || req.query.fresh === "1";
 
     const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays, noCache });
-    const result = await supLib.aggregateFornecido(apiResult.rows);
+
+    // Constrói o Set de GTUs já lançados na app UNOPS (sheet "Delivery",
+    // coluna "Delivery Note Number"). Sem este set, aggregateFornecido
+    // trata tudo como já-na-app (app_qty=forn_qty, pend_app_qty=0).
+    const { normGtu } = require("./lib/adicional-match");
+    const unopsGtus = new Set();
+    for (const row of cache.data || []) {
+      const g = row.delivery_note_number;
+      if (!g) continue;
+      const n = normGtu(g);
+      if (n) unopsGtus.add(n);
+    }
+
+    const result = await supLib.aggregateFornecido(apiResult.rows, { unopsGtus });
 
     res.json({
       period: apiResult.period,
@@ -1575,6 +1588,7 @@ app.get("/api/admin/adicional/fornecido", auth.requireRole("admin", "superadmin"
         age_seconds: apiResult.cache_age_seconds || 0,
       },
       api: { total: apiResult.rows.length, chunks: apiResult.chunks_total, chunks_failed: apiResult.chunks_failed },
+      unops_sheet: { total_gtus: unopsGtus.size },
       totals: result.totals,
       suppliers: result.suppliers,
     });
