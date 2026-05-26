@@ -357,7 +357,7 @@
       <span class="admin-sub">
         <span style="color:#15803d;font-weight:600">LEVANTADO</span> = TRA + FIN ·
         <span style="color:#b45309;font-weight:600">PEND LEVANT.</span> = <strong>Meta − Levantado</strong> ·
-        <span style="color:#6d28d9;font-weight:600">PEND APP</span> = <strong>Levantado − UNOPS app</strong> ·
+        <span style="color:#6d28d9;font-weight:600">PEND APP</span> = <strong>Meta − app UNOPS</strong> ·
         sacos herméticos em <strong>un</strong>
       </span>
     </header>
@@ -559,12 +559,17 @@
             `;
           }
 
-          // PEND APP = quanto foi LEVANTADO mas ainda não foi lançado na
-          // app UNOPS (GTU não está na sheet "Delivery"). Sinal de que a
-          // operação tirou o camião mas o batedor esqueceu de submeter.
-          const pendAppQty = Number(p.pend_app_qty) || 0;
-          const pendAppDisplay = pendAppQty > 0 ? fmtNum(pendAppQty) : "0";
-          const pendAppCls = pendAppQty > 0 ? "v pend-app" : "v zero";
+          // PEND APP = META − APP (gap total face ao contratado que ainda
+          // não está visível na app UNOPS, quer porque não foi levantado
+          // do fornecedor, quer porque o batedor ainda não lançou).
+          // Inclui PEND LEVANT e por isso PEND APP ≥ PEND LEVANT sempre.
+          const pendAppQty = p.pend_app_qty == null ? null : Number(p.pend_app_qty);
+          const pendAppDisplay = pendAppQty == null
+            ? "—"
+            : (pendAppQty > 0 ? fmtNum(pendAppQty) : "0");
+          const pendAppCls = pendAppQty == null
+            ? "v zero"
+            : (pendAppQty > 0 ? "v pend-app" : "v zero");
           return `
             <div class="prod-card ${cardCls}">
               <div class="name">${esc(p.product)}${isSaco ? '<span style="font-size:.7rem;font-weight:500;color:#94a3b8"> (em un)</span>' : ''}</div>
@@ -572,7 +577,7 @@
                 <div><span class="lbl">Meta</span><span class="v">${metaDisplay}</span></div>
                 <div><span class="lbl">Levantado</span><span class="v forn">${fornDisplay}</span></div>
                 <div><span class="lbl" title="Falta levantar do fornecedor (Meta − Levantado)">Pend Levant.</span><span class="v pend">${pendDisplay}</span></div>
-                <div><span class="lbl" title="Já levantado mas o batedor ainda não lançou na app UNOPS">Pend APP</span><span class="${pendAppCls}">${pendAppDisplay}</span></div>
+                <div><span class="lbl" title="Falta na app UNOPS (Meta − app UNOPS) — inclui o que ainda não foi levantado">Pend APP</span><span class="${pendAppCls}">${pendAppDisplay}</span></div>
               </div>
               <div class="progress-wrap"><div class="${barCls}" style="width:${barWidth}%"></div></div>
               <div class="pct-row">
@@ -620,11 +625,13 @@
             let cls = "";
             if (isSaco) cls = "is-saco-row";
             else if (noMeta) cls = "no-meta-row";
-            // Pend APP per row
-            const pAppQty = Number(p.pend_app_qty) || 0;
-            const pAppHtml = pAppQty > 0
-              ? `<strong style="color:#6d28d9">${fmtNum(pAppQty)}</strong><span class="unit">${unit}</span>`
-              : `<span style="color:#cbd5e1">0</span>`;
+            // Pend APP por linha (Meta − app UNOPS)
+            const pAppQty = p.pend_app_qty == null ? null : Number(p.pend_app_qty);
+            const pAppHtml = pAppQty == null
+              ? `<span style="color:#94a3b8">—</span>`
+              : (pAppQty > 0
+                ? `<strong style="color:#6d28d9">${fmtNum(pAppQty)}</strong><span class="unit">${unit}</span>`
+                : `<span style="color:#cbd5e1">0</span>`);
             return `
               <tr class="${cls}">
                 <td>${esc(p.product)} ${isSaco ? '<span class="unit">(em un)</span>' : ''}</td>
@@ -703,8 +710,8 @@
                     <th>Produto</th>
                     <th class="num">Meta</th>
                     <th class="num">Levantado</th>
-                    <th class="num" title="Falta levantar do fornecedor">Pend Levant.</th>
-                    <th class="num" title="Levantado mas não lançado na app UNOPS">Pend APP</th>
+                    <th class="num" title="Falta levantar do fornecedor (Meta − Levantado)">Pend Levant.</th>
+                    <th class="num" title="Falta na app UNOPS (Meta − app UNOPS)">Pend APP</th>
                     <th class="num">% Levantado</th>
                     <th class="num">ADSNs</th>
                   </tr></thead>
