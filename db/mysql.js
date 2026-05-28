@@ -360,6 +360,47 @@ async function migrate() {
     }
   } catch (e) { /* idempotente — se falhar não bloqueia */ }
 
+  // ── Audit-snapshots diários (backup do mapa de entregas) ────
+  // Clone diário de delivery_audit às 00:00 — salvaguarda contra:
+  //   - Mudança/corrupção da Google Sheet remota (caso já visto: aba
+  //     com mesmo nome substituída por pivot semanal de invoicing, e
+  //     o sweep de deleted_at marcou ~1100 rows como apagadas)
+  //   - Edições/eliminações destrutivas pela equipa UNOPS
+  //   - Restauração forense em qualquer dia anterior
+  // Schema replica delivery_audit + snapshot_date. Idempotente: a UNIQUE
+  // (snapshot_date, dedup_key) garante que correr o snapshot 2× no mesmo
+  // dia não duplica linhas. Retenção configurável (default 365 dias).
+  await getPool().query(
+    `CREATE TABLE IF NOT EXISTS delivery_audit_snapshots (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      snapshot_date DATE NOT NULL,
+      dedup_key VARCHAR(80) NOT NULL,
+      audit_id INT NOT NULL,
+      gtu VARCHAR(64) NULL,
+      adsn VARCHAR(64) NULL,
+      beneficiary_name VARCHAR(255) NULL,
+      extensionist_id VARCHAR(32) NULL,
+      nuit VARCHAR(32) NULL,
+      product VARCHAR(128) NULL,
+      delivered_qty DECIMAL(14,3) NULL,
+      packages DECIMAL(14,3) NULL,
+      unit VARCHAR(16) NULL,
+      district VARCHAR(64) NULL,
+      province VARCHAR(64) NULL,
+      submitted_by VARCHAR(255) NULL,
+      delivery_date_iso VARCHAR(20) NULL,
+      verification_status VARCHAR(64) NULL,
+      detected_at DATETIME NULL,
+      raw_data JSON NULL,
+      captured_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_snapshot_dedup (snapshot_date, dedup_key),
+      INDEX idx_snap_date (snapshot_date),
+      INDEX idx_snap_audit (audit_id),
+      INDEX idx_snap_gtu (gtu),
+      INDEX idx_snap_submitter (submitted_by)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+
   // ── Audit-history (histórico de mudanças de status) ────────
   // Sempre que delivery_audit.verification_status muda, gravamos
   // 1 row aqui para forensics: "este GTU passou de Pending → Verified

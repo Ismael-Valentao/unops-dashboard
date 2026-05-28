@@ -2585,6 +2585,8 @@ async function main() {
 
   // Snapshot scheduler: check every minute, save at 22:00
   let lastSnapshotDate = "";
+  let lastDailySnapshotDate = "";
+  const auditSnapshot = require("./lib/audit-snapshot");
   setInterval(() => {
     const now = new Date();
     const hour = now.getHours();
@@ -2597,7 +2599,28 @@ async function main() {
         lastSnapshotDate = dateStr;
       }
     }
+    // Snapshot diário em MySQL às 00:00 — backup do mapa de entregas
+    // (delivery_audit) para protecção contra corrupção da Sheet remota
+    // ou sweeps massivos de deleted_at. Ver lib/audit-snapshot.js.
+    if (hour === 0 && minute === 0 && lastDailySnapshotDate !== dateStr) {
+      lastDailySnapshotDate = dateStr;  // marca antes para evitar race
+      auditSnapshot.captureDailySnapshot(dateStr).catch((e) => {
+        console.warn("[snapshot] daily 00:00 FAILED:", e.message);
+        lastDailySnapshotDate = "";  // permite retry no minuto seguinte
+      });
+    }
   }, 60 * 1000);
+
+  // Catch-up: se o servidor arrancou depois das 00:00 e ainda não há
+  // snapshot para hoje, dispara já um (não bloqueia startup).
+  setTimeout(() => {
+    auditSnapshot.captureDailySnapshot().then((s) => {
+      lastDailySnapshotDate = s.snapshot_date;
+      console.log("[snapshot] catch-up no arranque: " + s.rows_captured + " rows para " + s.snapshot_date);
+    }).catch((e) => {
+      console.warn("[snapshot] catch-up FAILED (non-fatal):", e.message);
+    });
+  }, 30 * 1000);
 
   // Pre-warm dos caches da /batedores (API ADICIONAL + OneDrive MAPA UNOPS)
   // → mantém os dados sempre quentes em background; utilizador nunca paga
