@@ -20,10 +20,15 @@ app.use(cookieParser());
 app.use(auth.loadUser);
 const PORT = process.env.PORT || 5000;
 
+// Usa gid=0 (aba original "Delivery" com linhas detalhadas) em vez de
+// sheet=Delivery, porque a UNOPS criou recentemente uma 2ª aba também
+// chamada "Delivery" com um pivot semanal de invoicing — e o Sheets
+// estava a devolver essa em vez das submissões individuais. gid=0 é
+// estável e aponta sempre para a aba criada primeiro.
 const SHEET_CSV_URL =
   "https://docs.google.com/spreadsheets/d/" +
   "1mgPMSyWn2IoxIXW7vkCiOCOMBOCWTVjMHfZKkFwjvWM" +
-  "/export?format=csv&sheet=Delivery";
+  "/export?format=csv&gid=0";
 
 const COLUMN_KEYS = [
   "delivery_id", "supplier", "province", "district",
