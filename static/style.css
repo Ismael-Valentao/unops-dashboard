@@ -597,9 +597,22 @@ td.diff-positive{color:#d97706;font-weight:600}
 .verify-table-pattern tbody tr:hover{background:#faf5ff}
 td.reason-cell{color:#6b21a8;font-weight:600;font-size:.76rem}
 
-/* ── Loading spinner ─────────────────────────────────────── */
-.loading-overlay{position:fixed;inset:0;background:rgba(255,255,255,.7);
-  display:flex;align-items:center;justify-content:center;z-index:200}
-.spinner{width:40px;height:40px;border:4px solid #e2e8f0;border-top-color:#0f4c75;
-  border-radius:50%;animation:spin .7s linear infinite}
+/* ── Loading: indicador discreto inline (sem overlay) ──────
+   O auto-refresh de 5min NÃO bloqueia a página. Um pequeno dot
+   pulsante no header indica que está a buscar; a tabela actual
+   continua interactiva enquanto isso. */
+.refresh-indicator{display:inline-flex;align-items:center;gap:.4rem;
+  font-size:.78rem;color:#0f4c75;font-weight:600;
+  padding:.2rem .55rem;border-radius:99px;background:#e0f2fe;
+  opacity:0;transition:opacity .2s ease;margin-left:.5rem;
+  pointer-events:none}
+.refresh-indicator.show{opacity:1}
+.refresh-indicator .dot{width:7px;height:7px;border-radius:50%;
+  background:#0f4c75;animation:refresh-pulse 1s ease-in-out infinite}
+@keyframes refresh-pulse{0%,100%{opacity:.3;transform:scale(.8)}
+  50%{opacity:1;transform:scale(1.15)}}
+/* Legacy — chamadores antigos não bloqueiam a página */
+.loading-overlay{display:none}
+.spinner{width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:#0f4c75;
+  border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}

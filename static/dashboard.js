@@ -98,16 +98,23 @@
     }
   }
 
+  // Indicador discreto de actualização — NÃO bloqueia a página.
+  // O overlay branco antigo era invasivo (cobria tudo a 70% white).
+  // Agora: pequeno pill pulsante no header, tabela continua interactiva.
   function showLoading(show) {
-    let el = $(".loading-overlay");
-    if (show && !el) {
-      el = document.createElement("div");
-      el.className = "loading-overlay";
-      el.innerHTML = '<div class="spinner"></div>';
-      document.body.appendChild(el);
-    } else if (!show && el) {
-      el.remove();
+    let el = document.getElementById("refresh-indicator");
+    if (!el) {
+      el = document.createElement("span");
+      el.id = "refresh-indicator";
+      el.className = "refresh-indicator";
+      el.innerHTML = '<span class="dot"></span><span>A actualizar…</span>';
+      // Coloca ao lado do "Próxima actualização em…" se existir, senão no body
+      const host = elCountdown && elCountdown.parentNode
+        ? elCountdown.parentNode
+        : (elLastUpdated && elLastUpdated.parentNode) || document.body;
+      host.appendChild(el);
     }
+    el.classList.toggle("show", !!show);
   }
 
   // ── Countdown ───────────────────────────────────────────────
