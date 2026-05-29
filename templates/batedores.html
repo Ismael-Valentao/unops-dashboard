@@ -92,6 +92,35 @@
       width: 1px; height: 26px; background: #e2e8f0; margin: 0 .15rem;
       align-self: center;
     }
+    /* Search batedor — input à direita do botão Aplicar */
+    .search-batedor {
+      position: relative; display: flex; align-items: center;
+      background: #fff; border: 1px solid #cbd5e1; border-radius: 7px;
+      padding: 0 .35rem 0 .55rem; height: 38px; min-width: 220px;
+      transition: border-color .12s;
+    }
+    .search-batedor:focus-within { border-color: #0f4c75; box-shadow: 0 0 0 2px #0f4c7522; }
+    .search-batedor svg { width: 14px; height: 14px; color: #94a3b8; flex-shrink: 0; }
+    .search-batedor input {
+      border: none; outline: none; background: transparent;
+      font-size: .85rem; padding: .35rem .35rem .35rem .45rem;
+      flex: 1; min-width: 0; color: #0f172a;
+    }
+    .search-batedor input::placeholder { color: #94a3b8; }
+    .search-batedor .clear {
+      cursor: pointer; padding: 2px 5px; border-radius: 50%;
+      color: #94a3b8; font-size: 1rem; line-height: 1;
+      transition: background .12s, color .12s;
+    }
+    .search-batedor .clear:hover { background: #f1f5f9; color: #ef4444; }
+    .search-batedor.has-query { border-color: #0f4c75; background: #f0f9ff; }
+    .filter-chip {
+      display: inline-flex; align-items: center; gap: .35rem;
+      padding: 4px 10px; border-radius: 99px;
+      background: #dbeafe; color: #1e40af;
+      font-size: .75rem; font-weight: 600;
+      margin-left: .35rem;
+    }
     .btn-apply, .btn-export {
       border: 0; cursor: pointer; padding: .45rem .85rem; border-radius: 6px;
       font-size: .8rem; font-weight: 600; font-family: inherit;
@@ -487,6 +516,11 @@
         <input type="date" id="d-to" class="date-input">
       </div>
       <button class="btn-apply" id="btn-apply">Aplicar</button>
+      <div class="search-batedor" id="search-wrap" title="Pesquisar por nome, email ou contacto">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+        <input type="text" id="q-batedor" placeholder="Filtrar batedor…" autocomplete="off">
+        <span class="clear" id="q-clear" style="display:none" title="Limpar filtro">×</span>
+      </div>
       <button class="btn-fresh" id="btn-fresh" title="Força refresh — ignora cache (~30-60s)">↻ Fresh</button>
       <div class="ctrl-divider"></div>
       <button class="btn-export" id="btn-xlsx" title="Descarregar relatório em Excel">
@@ -538,7 +572,7 @@
   <!-- LEADERBOARD -->
   <section class="board">
     <div class="board-head">
-      <h2>Classificação completa</h2>
+      <h2>Classificação completa <span id="filter-count" class="filter-chip" style="display:none"></span></h2>
       <div class="board-sub" id="board-sub"></div>
     </div>
     <div class="row-list" id="board-list">
@@ -565,7 +599,34 @@
       to:   null,
       data: null,
       expanded: new Set(),
+      q: "",   // query do filtro batedor (case-insensitive, sem acentos)
     };
+
+    // Normaliza string para match insensível: lowercase + sem acentos
+    function normQ(s) {
+      return String(s || "")
+        .toLowerCase()
+        .normalize("NFD").replace(/[̀-ͯ]/g, "")
+        .trim();
+    }
+
+    // Filtra a lista de submitters pela query actual.
+    // Match em: nome, email, contacto, contact_alt — qualquer um basta.
+    // Quebra a query em palavras: todas têm de estar presentes (AND).
+    function filterSubmitters(subs, q) {
+      const nq = normQ(q);
+      if (!nq) return subs;
+      const words = nq.split(/\s+/).filter(Boolean);
+      return subs.filter((s) => {
+        const haystack = normQ(
+          (s.name || "") + " " +
+          (s.email || "") + " " +
+          (s.contact || "") + " " +
+          (s.contact_alt || "")
+        );
+        return words.every((w) => haystack.includes(w));
+      });
+    }
 
     // ── Helpers ───────────────────────────────────────────
     const fmt = (n) => Number(n || 0).toLocaleString("pt-MZ", { maximumFractionDigits: 0 });
@@ -996,10 +1057,35 @@
     }
 
     function renderBoard(data) {
-      const subs = data.submitters || [];
+      const allSubs = data.submitters || [];
       const todayIso = localYmd(new Date());
-      if (!subs.length) {
+      if (!allSubs.length) {
         $("#board-list").innerHTML = `<div class="empty">Nenhum batedor submeteu entregas neste período.</div>`;
+        return;
+      }
+      // Aplica filtro de batedor (state.q). Charts continuam a usar dataset
+      // completo — só a lista abaixo é filtrada.
+      const subs = filterSubmitters(allSubs, state.q);
+      // Atualiza contador "N de M" no header
+      const chip = $("#filter-count");
+      if (chip) {
+        if (state.q) {
+          chip.style.display = "inline-flex";
+          chip.textContent = subs.length + " de " + allSubs.length + " batedores";
+        } else {
+          chip.style.display = "none";
+        }
+      }
+      if (state.q && !subs.length) {
+        $("#board-list").innerHTML =
+          `<div class="empty">Nenhum batedor encontrado para <strong>"${esc(state.q)}"</strong>. ` +
+          `<a href="#" id="clear-empty" style="color:#0f4c75;text-decoration:underline">Limpar filtro</a></div>`;
+        const clr = $("#clear-empty");
+        if (clr) clr.addEventListener("click", (e) => {
+          e.preventDefault();
+          $("#q-batedor").value = "";
+          applyBatedorFilter("");
+        });
         return;
       }
       const html = subs.map((s) => {
@@ -1183,6 +1269,42 @@
     // Hard refresh: força noCache=1, ignora o cache de 5min do API ADICIONAL
     $("#btn-fresh").addEventListener("click", () => load({ fresh: true }));
 
+    // ── Filtro batedor ───────────────────────────────────────────
+    // Filtragem é client-side (rápida; data já em state.data). Debounce
+    // 150ms para evitar re-render a cada keystroke. URL é sincronizada
+    // para permitir partilhar links com filtro pré-aplicado.
+    let qDebounce = null;
+    function applyBatedorFilter(q) {
+      state.q = q;
+      const wrap = $("#search-wrap");
+      const clr  = $("#q-clear");
+      if (wrap) wrap.classList.toggle("has-query", !!q);
+      if (clr)  clr.style.display = q ? "inline-block" : "none";
+      // Sync URL preservando from/to
+      const url = new URL(location.href);
+      if (q) url.searchParams.set("q", q);
+      else   url.searchParams.delete("q");
+      history.replaceState(null, "", url.toString());
+      // Re-render só a lista (charts não filtradas)
+      if (state.data) renderBoard(state.data);
+    }
+    $("#q-batedor").addEventListener("input", (e) => {
+      const v = e.target.value;
+      clearTimeout(qDebounce);
+      qDebounce = setTimeout(() => applyBatedorFilter(v), 150);
+    });
+    $("#q-clear").addEventListener("click", () => {
+      $("#q-batedor").value = "";
+      applyBatedorFilter("");
+    });
+    // Esc no input limpa
+    $("#q-batedor").addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.target.value = "";
+        applyBatedorFilter("");
+      }
+    });
+
     // ── Refresh manual + auto-refresh com countdown visível ──
     const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
     let nextRefreshAt = Date.now() + REFRESH_INTERVAL_MS;
@@ -1227,10 +1349,21 @@
 
     // ── Initial load ─────────────────────────────────────
     (function init() {
-      // Lê da URL se vier ?from=...&to=...
+      // Lê da URL se vier ?from=...&to=...&q=...
       const url = new URL(location.href);
       const urlFrom = url.searchParams.get("from");
       const urlTo   = url.searchParams.get("to");
+      const urlQ    = url.searchParams.get("q");
+      // Hydrata o filtro batedor antes do load para 1.º render já vir filtrado
+      if (urlQ) {
+        state.q = urlQ;
+        const input = $("#q-batedor");
+        const wrap = $("#search-wrap");
+        const clr = $("#q-clear");
+        if (input) input.value = urlQ;
+        if (wrap) wrap.classList.add("has-query");
+        if (clr) clr.style.display = "inline-block";
+      }
       if (urlFrom && urlTo) {
         setRange(urlFrom, urlTo);
       } else {
