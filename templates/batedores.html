@@ -189,6 +189,14 @@
     .destino-badge::before { content: "→"; margin-right: 2px; opacity: .7; }
     .destino-badge.none { background: #f1f5f9; color: #94a3b8; font-weight: 400; }
     .destino-badge.none::before { content: ""; margin: 0; }
+    /* Artigo (produto canonicalizado) */
+    .product-badge {
+      display: inline-flex; align-items: center;
+      padding: 1px 6px; border-radius: 4px;
+      background: #dcfce7; color: #166534;
+      font-size: .68rem; font-weight: 600;
+    }
+    .product-badge.none { background: #f1f5f9; color: #94a3b8; font-weight: 400; }
     .truck-card .cams {
       display: inline-flex; gap: 3px; flex-wrap: wrap;
       margin-left: .35rem;
@@ -946,12 +954,16 @@
           const destinoCell = it.destino
             ? `<span class="destino-badge" title="Destino lido do header CAM no MAPA UNOPS">${esc(it.destino)}</span>`
             : `<span class="destino-badge none">—</span>`;
+          const productCell = it.product
+            ? `<span class="product-badge">${esc(it.product)}</span>`
+            : `<span class="product-badge none">—</span>`;
           return `
             <tr>
               <td>${esc(it.extensionist || "—")}<div class="date">${dateShort}</div></td>
               <td class="num"><strong>${fmt(it.kg)}</strong> kg</td>
               <td class="mono">${esc(it.gtu || "")}</td>
               <td class="mono">${esc(it.adsn || "—")}</td>
+              <td class="cam-cell">${productCell}</td>
               <td class="cam-cell">${camCell}</td>
               <td class="cam-cell">${destinoCell}</td>
             </tr>
@@ -993,6 +1005,7 @@
                   <th class="num">Qtd</th>
                   <th>GTU/GTS</th>
                   <th>ADSN</th>
+                  <th>Artigo</th>
                   <th>CAM</th>
                   <th>Destino</th>
                 </tr></thead>

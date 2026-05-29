@@ -335,7 +335,7 @@ async function buildBatedoresPayload(arg) {
     const auditQ = query(
       `SELECT gtu, adsn, submitted_by AS email,
               delivered_qty AS kg, beneficiary_name,
-              delivery_date_iso
+              product, delivery_date_iso
        FROM delivery_audit
        WHERE submitted_by IS NOT NULL AND submitted_by <> ''
          AND delivery_date_iso BETWEEN ? AND ?
@@ -353,6 +353,22 @@ async function buildBatedoresPayload(arg) {
     const adsnToCam = mapaResult ? mapaResult.adsnToCam : new Map();
     // mapaInfo é exposto via mapa_cache_info no return final (não usado aqui)
 
+    // Canonicaliza o product da Google Sheet para etiqueta PT curta.
+    // Sheet usa nomes em EN ("Maize Seeds (kg)"); operação fala PT.
+    function canonicalProduct(raw) {
+      const s = String(raw || "").toLowerCase();
+      if (!s) return "";
+      if (/maize/.test(s))                       return "Milho";
+      if (/common bean|feij[aã]o/.test(s))       return "Feijão";
+      if (/rice/.test(s))                        return "Arroz";
+      if (/hermetic|saco/.test(s))               return "Sacos Hermét.";
+      if (/emamect/.test(s))                     return "Emamectim";
+      if (/imidaclop/.test(s))                   return "Imidacloprid";
+      if (/mcpa/.test(s))                        return "MCPA";
+      // Fallback: devolve o raw em title case (sem o sufixo unitário)
+      return String(raw).replace(/\s*\([^)]*\)\s*$/, "").trim();
+    }
+
     // Lista plana de submissões da sheet — preserva a forma RAW da GTU
     // para que o lookupApi possa tentar match conservador (raw primeiro).
     const sheetSubmissions = [];
@@ -364,6 +380,7 @@ async function buildBatedoresPayload(arg) {
         beneficiary: r.beneficiary_name || "",
         date: r.delivery_date_iso || "",
         gtu_raw: r.gtu,
+        product: canonicalProduct(r.product),
       });
     }
     // Capture cache info so frontend can show "Cache 2min ago" or "Fresh"
@@ -446,6 +463,7 @@ async function buildBatedoresPayload(arg) {
         adsn: apiInfo.adsn || "",   // sempre o ServiceCode real da API
         cam:     cam,                // CAM-XX se ADSN foi encontrado no MAPA UNOPS
         destino: destino,            // destino do camião (ex: "Chibuto")
+        product: sub.product,        // canonicalizado: "Milho", "Feijão", etc.
         kg: Number(sub.kg.toFixed(2)),
         date: sub.date,
       });
