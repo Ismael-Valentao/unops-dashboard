@@ -1605,6 +1605,31 @@ router.patch("/api/distribution/services/:id", express.json(), auth.requireRole(
   res.json(result);
 }));
 
+// Editar qty de UM item do serviço — só permitido em status "draft".
+// Body: { qty: number }
+router.patch("/api/distribution/services/:id/items/:itemId",
+  express.json(),
+  auth.requireRole("operator", "admin", "superadmin"),
+  ah(async (req, res) => {
+    const { qty } = req.body || {};
+    if (qty == null) return jsonError(res, 400, "Campo 'qty' obrigatório");
+    const result = await DistServices.updateItemQty(req.params.id, req.params.itemId, qty);
+    if (result.error) return res.status(400).json(result);
+    if (!result.no_change) {
+      await auth.logAction(req, "update_item_qty", "delivery_service", req.params.id,
+        JSON.stringify({
+          item_id: result.item_id,
+          extensionist_id: result.extensionist_id,
+          sku: result.item_sku,
+          previous_qty: result.previous_qty,
+          new_qty: result.new_qty,
+        })
+      );
+    }
+    res.json(result);
+  })
+);
+
 router.get("/api/distribution/services/:id/preflight", ah(async (req, res) => {
   const result = await DistServices.preflightCheck(req.params.id);
   if (result.error) return res.status(400).json(result);

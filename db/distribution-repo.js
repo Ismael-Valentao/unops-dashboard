@@ -507,6 +507,97 @@ const Services = {
   // Capacidade NÃO é editável fora de draft porque é usada para validação
   // de auto-fill no momento da criação. Items (qty, sku, ext_id) também
   // nunca são editáveis fora de draft.
+  /**
+   * Actualiza qty de UM item do serviço. Permitido apenas quando o
+   * serviço está em "draft" (= CRIADO no ADICIONAL). Recalcula
+   * automaticamente o total_kg do serviço a partir de TODOS os items.
+   *
+   * Não bloqueia se exceder capacidade — o utilizador pode estar a
+   * ajustar para depois corrigir outro item. O over_capacity é
+   * devolvido como flag para o frontend mostrar warning visível.
+   *
+   * @param serviceId  id do serviço
+   * @param itemId     id do item (delivery_service_items.id)
+   * @param newQty     nova qty (na unidade nativa do item — kg/L/un)
+   */
+  async updateItemQty(serviceId, itemId, newQty) {
+    const conn = await getPool().getConnection();
+    try {
+      await conn.beginTransaction();
+      const [svcRows] = await conn.query(
+        "SELECT status, truck_capacity_kg FROM delivery_services WHERE id = ? FOR UPDATE",
+        [serviceId]
+      );
+      if (!svcRows[0]) { await conn.rollback(); return { error: "Serviço não existe" }; }
+      const status = svcRows[0].status;
+      if (status !== "draft") {
+        await conn.rollback();
+        return {
+          error: "Só pode editar quantidades enquanto o serviço estiver em CRIADO (Rascunho). " +
+                 "Status actual: " + status + ".",
+          status,
+        };
+      }
+
+      const [itRows] = await conn.query(
+        "SELECT id, sku, unit, qty, extensionist_id, beneficiary_name FROM delivery_service_items " +
+        "WHERE id = ? AND service_id = ?",
+        [itemId, serviceId]
+      );
+      if (!itRows[0]) { await conn.rollback(); return { error: "Item não pertence a este serviço" }; }
+
+      const nq = Number(newQty);
+      if (!Number.isFinite(nq) || nq < 0) {
+        await conn.rollback();
+        return { error: "Quantidade inválida (deve ser número ≥ 0)" };
+      }
+      const prevQty = Number(itRows[0].qty);
+      if (Math.abs(prevQty - nq) < 1e-6) {
+        // Sem mudança real
+        await conn.rollback();
+        return { ok: true, no_change: true, new_qty: nq, previous_qty: prevQty };
+      }
+
+      await conn.query(
+        "UPDATE delivery_service_items SET qty = ? WHERE id = ?",
+        [nq, itemId]
+      );
+
+      // Recalc total_kg do serviço a partir de TODOS os items
+      const [allItems] = await conn.query(
+        "SELECT qty, unit FROM delivery_service_items WHERE service_id = ?",
+        [serviceId]
+      );
+      const totalKg = allItems.reduce((s, x) => s + qtyToKg(x.qty, x.unit), 0);
+      await conn.query(
+        "UPDATE delivery_services SET total_kg = ? WHERE id = ?",
+        [Math.round(totalKg), serviceId]
+      );
+
+      await conn.commit();
+      const capacityKg = Number(svcRows[0].truck_capacity_kg) || 0;
+      return {
+        ok: true,
+        item_id: Number(itemId),
+        item_sku: itRows[0].sku,
+        item_unit: itRows[0].unit,
+        extensionist_id: itRows[0].extensionist_id,
+        beneficiary_name: itRows[0].beneficiary_name,
+        previous_qty: prevQty,
+        new_qty: nq,
+        new_total_kg: Math.round(totalKg),
+        capacity_kg: capacityKg,
+        over_capacity: capacityKg > 0 && totalKg > capacityKg,
+        overload_kg: capacityKg > 0 ? Math.max(0, Math.round(totalKg - capacityKg)) : 0,
+      };
+    } catch (e) {
+      try { await conn.rollback(); } catch (_) {}
+      return { error: e.message };
+    } finally {
+      conn.release();
+    }
+  },
+
   async update(serviceId, patch) {
     // Sempre editável (qualquer status). Metadados puros que não afectam
     // saldos nem cálculos — só dados de identificação/observação.

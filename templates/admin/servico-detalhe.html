@@ -78,6 +78,15 @@
     }
     .print-header{display:none}
     @media print { .print-header{display:block;text-align:center;border-bottom:2px solid #000;padding-bottom:.5rem;margin-bottom:.75rem}}
+    /* Qty editor inline — só activo em status draft (CRIADO) */
+    td.qty-edit{cursor:pointer;position:relative;transition:background .12s}
+    td.qty-edit:hover{background:#fef3c7}
+    td.qty-edit .qty-pencil{color:#cbd5e1;font-size:.72rem;margin-left:.25rem;transition:color .12s}
+    td.qty-edit:hover .qty-pencil{color:#b45309}
+    td.qty-edit .qty-unit{color:#94a3b8;font-size:.75rem;font-weight:500}
+    td.qty-edit.editing{background:#dbeafe;cursor:default}
+    td.qty-edit.editing:hover{background:#dbeafe}
+    @media print { td.qty-edit{cursor:default}td.qty-edit .qty-pencil{display:none} }
   </style>
 </head>
 <body class="admin-body">
@@ -341,7 +350,8 @@
         `;
         document.getElementById("content").innerHTML = html;
 
-        // Items table — sortable
+        // Items table — sortable; qty editável inline em draft (CRIADO)
+        const isDraftForEdit = svc.status === "draft";
         function renderItemsTable() {
           const headerHtml = ITEM_COLS.map((c) => {
             const cls = (c.numCol ? "num " : "") + (c.noPrint ? "no-print" : "");
@@ -351,17 +361,98 @@
           document.getElementById("items-thead-row").innerHTML = headerHtml;
           const col = ITEM_COLS.find((c) => c.key === itemsSort.sortKey);
           const sorted = sortRows(svc.items, itemsSort.sortKey, itemsSort.sortAsc, col?.type);
-          document.getElementById("items-body").innerHTML = sorted.map((it) => `<tr>
-            <td><code>${esc(it.extensionist_id)}</code></td>
-            <td>${esc(it.beneficiary_name)}</td>
-            <td>${esc(it.district || "")}</td>
-            <td>${esc(it.product_name)}</td>
-            <td class="num">${fmt(it.qty)} ${esc(it.unit)}</td>
-            <td><code style="font-size:.7rem">${esc(it.external_adsn || "—")}</code></td>
-            <td><code style="font-size:.7rem">${esc(it.external_gtu || "—")}</code></td>
-            <td class="no-print" style="border-bottom:1px dashed #cbd5e1;width:120px"></td>
-          </tr>`).join("");
+          document.getElementById("items-body").innerHTML = sorted.map((it) => {
+            const qtyCell = isDraftForEdit
+              ? `<td class="num qty-edit" data-item-id="${it.id}" data-unit="${esc(it.unit)}" data-current="${it.qty}" title="Clique para editar (só em Rascunho/CRIADO)"><span class="qty-val">${fmt(it.qty)}</span> <span class="qty-unit">${esc(it.unit)}</span> <span class="qty-pencil">✎</span></td>`
+              : `<td class="num">${fmt(it.qty)} ${esc(it.unit)}</td>`;
+            return `<tr data-item-id="${it.id}">
+              <td><code>${esc(it.extensionist_id)}</code></td>
+              <td>${esc(it.beneficiary_name)}</td>
+              <td>${esc(it.district || "")}</td>
+              <td>${esc(it.product_name)}</td>
+              ${qtyCell}
+              <td><code style="font-size:.7rem">${esc(it.external_adsn || "—")}</code></td>
+              <td><code style="font-size:.7rem">${esc(it.external_gtu || "—")}</code></td>
+              <td class="no-print" style="border-bottom:1px dashed #cbd5e1;width:120px"></td>
+            </tr>`;
+          }).join("");
           bindSortable(document.getElementById("items-table"), itemsSort);
+          if (isDraftForEdit) bindQtyEditors();
+        }
+
+        // Edição inline da qty — só em draft. Click numa cell .qty-edit
+        // transforma-a num <input>. Enter ou blur grava via PATCH; Esc cancela.
+        // Em sucesso, actualiza svc.items localmente + total_kg no header e
+        // re-renderiza só esta tabela (mantém scroll/sort).
+        function bindQtyEditors() {
+          document.querySelectorAll("td.qty-edit").forEach((cell) => {
+            cell.addEventListener("click", (e) => {
+              if (cell.classList.contains("editing")) return;
+              startQtyEdit(cell);
+            });
+          });
+        }
+        function startQtyEdit(cell) {
+          const itemId = Number(cell.dataset.itemId);
+          const unit = cell.dataset.unit;
+          const current = Number(cell.dataset.current);
+          cell.classList.add("editing");
+          cell.innerHTML = `
+            <input type="number" step="any" min="0" value="${current}" class="qty-input" style="width:90px;padding:.2rem .35rem;font-size:.85rem;border:1px solid #0f4c75;border-radius:4px;text-align:right" />
+            <span class="qty-unit" style="margin-left:.25rem;color:#64748b">${esc(unit)}</span>
+          `;
+          const input = cell.querySelector(".qty-input");
+          input.focus();
+          input.select();
+          let committed = false;
+          const commit = async () => {
+            if (committed) return; committed = true;
+            const newQty = Number(input.value);
+            if (!Number.isFinite(newQty) || newQty < 0) {
+              toast("Quantidade inválida", "error");
+              cancel(); return;
+            }
+            if (Math.abs(newQty - current) < 1e-6) { cancel(); return; }
+            try {
+              const res = await fetch(
+                `/admin/api/distribution/services/${svc.id}/items/${itemId}`,
+                { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qty: newQty }) }
+              );
+              const data = await res.json();
+              if (!res.ok || data.error) {
+                toast(data.error || ("HTTP " + res.status), "error");
+                cancel(); return;
+              }
+              // Actualiza svc local
+              const it = svc.items.find((x) => x.id === itemId);
+              if (it) it.qty = newQty;
+              svc.total_kg = data.new_total_kg;
+              // Re-render do header (total) + tabela (qty)
+              const totalCell = document.querySelector(".meta-cell .meta-val");
+              const totalEl = [...document.querySelectorAll(".meta-cell")]
+                .find((c) => /Total carregado/.test(c.textContent));
+              if (totalEl) {
+                const v = totalEl.querySelector(".meta-val");
+                if (v) v.textContent = fmt(data.new_total_kg) + " kg";
+              }
+              renderItemsTable();
+              const overTxt = data.over_capacity ? ` ⚠ Excede capacidade em ${fmt(data.overload_kg)} kg` : "";
+              toast(`Qtd actualizada: ${fmt(data.previous_qty)} → ${fmt(newQty)} ${unit}${overTxt}`,
+                    data.over_capacity ? "warn" : "success");
+            } catch (e) {
+              toast("Erro: " + e.message, "error");
+              cancel();
+            }
+          };
+          const cancel = () => {
+            cell.classList.remove("editing");
+            cell.innerHTML = `<span class="qty-val">${fmt(current)}</span> <span class="qty-unit">${esc(unit)}</span> <span class="qty-pencil">✎</span>`;
+          };
+          input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") { e.preventDefault(); commit(); }
+            else if (e.key === "Escape") { e.preventDefault(); committed = true; cancel(); }
+          });
+          input.addEventListener("blur", () => { commit(); });
         }
         itemsSort.render = renderItemsTable;
         renderItemsTable();
