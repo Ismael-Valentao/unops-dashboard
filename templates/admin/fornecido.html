@@ -394,6 +394,7 @@
           <button class="btn btn-sec" id="btn-expand-all">Expandir tudo</button>
           <button class="btn btn-sec" id="btn-preset-30">30d</button>
           <button class="btn btn-sec" id="btn-preset-60">60d</button>
+          <button class="btn btn-sec" id="btn-preset-all" title="Desde 31/03/2026 (início do projecto)">Desde início</button>
           <button class="btn btn-share no-public" id="btn-share" title="Obter link público partilhável" style="background:#7c3aed;color:#fff;border:0">🔗 Partilhar</button>
           <span id="cache-info" class="cache-info"></span>
         </div>
@@ -474,8 +475,11 @@
         return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
       }
       const today = new Date(); today.setHours(0,0,0,0);
-      const d60 = new Date(today); d60.setDate(d60.getDate() - 60);
-      $("#f-from").value = ymd(d60);
+      // Data de início FIXA do projecto — todos os dados anteriores são de
+      // outros projectos/test e não devem aparecer. Botões 30d/60d podem
+      // restringir; "Desde o início" volta a este default.
+      const PROJECT_START_DATE = "2026-03-31";
+      $("#f-from").value = PROJECT_START_DATE;
       $("#f-to").value   = ymd(today);
 
       function fmtNum(n) { return (Number(n) || 0).toLocaleString("pt-PT"); }
@@ -852,6 +856,11 @@
       $("#btn-preset-60").addEventListener("click", () => {
         const d = new Date(today); d.setDate(d.getDate() - 60);
         $("#f-from").value = ymd(d);
+        load();
+      });
+      $("#btn-preset-all").addEventListener("click", () => {
+        $("#f-from").value = PROJECT_START_DATE;
+        $("#f-to").value   = ymd(today);
         load();
       });
 
