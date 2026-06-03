@@ -753,6 +753,26 @@
             ? `${API_BASE}&${params}`
             : `${API_BASE}${params}`;
           const data = await fetchJSON(url);
+          // Em modo público, mostra info de expiração do link
+          if (IS_PUBLIC && data.token) {
+            const sub = document.querySelector(".admin-sub");
+            if (sub) {
+              const tok = data.token;
+              let badge = "";
+              if (tok.fixed) {
+                badge = ` · <span style="color:#64748b;font-weight:500">Link permanente</span>`;
+              } else if (tok.days_remaining != null) {
+                const d = tok.days_remaining;
+                const color = d <= 3 ? "#dc2626" : (d <= 7 ? "#b45309" : "#15803d");
+                const exp = new Date(tok.expires_at).toLocaleDateString("pt-PT");
+                badge = ` · <span style="color:${color};font-weight:600">Link válido até ${exp} (${d}d)</span>`;
+              }
+              if (badge && !sub.dataset.tokenBadgeAdded) {
+                sub.innerHTML += badge;
+                sub.dataset.tokenBadgeAdded = "1";
+              }
+            }
+          }
           setCacheInfo(data.cache);
           renderProductKpis(data.totals.by_product || []);
           renderSuppliers(data.suppliers);

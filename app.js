@@ -252,33 +252,95 @@ app.get("/batedores", (_req, res) => {
 
 // ── Página pública /fornecido (partilhável via link com token) ─────
 // Permite mostrar /admin/fornecido a stakeholders externos sem precisar
-// de login. URL: /fornecido/publico/<token>. Token vem de:
-//   1. process.env.PUBLIC_FORNECIDO_TOKEN (preferido em prod)
-//   2. Senão, gerado no 1.º arranque e persistido em data/.public-fornecido-token
-// Para revogar, basta apagar o ficheiro / mudar env var e reiniciar.
+// de login. URL: /fornecido/publico/<token>.
+//
+// Token: rotação automática a cada PUBLIC_FORNECIDO_TOKEN_TTL_DAYS (default 30d).
+//   - process.env.PUBLIC_FORNECIDO_TOKEN → token FIXO (sem rotação)
+//   - senão → gerado e persistido em data/.public-fornecido-token (JSON
+//     com { token, created_at }). Após expirar, rota-se sozinho na próxima
+//     chamada e o link antigo passa a 404.
+// Para revogar antes da expiração: apagar o ficheiro + restart (ou simplesmente
+// esperar pela próxima janela de rotação).
 const _crypto = require("crypto");
 const _tokenFile = path.join(__dirname, "data", ".public-fornecido-token");
-function _loadOrCreateFornecidoToken() {
-  if (process.env.PUBLIC_FORNECIDO_TOKEN) return process.env.PUBLIC_FORNECIDO_TOKEN;
+const _TOKEN_TTL_MS =
+  (Number(process.env.PUBLIC_FORNECIDO_TOKEN_TTL_DAYS) || 30) * 24 * 60 * 60 * 1000;
+let _tokenCache = null;  // { token, created_at }
+let _lastLoggedToken = null;
+
+function _readTokenFile() {
   const _fs = require("fs");
   try {
-    if (_fs.existsSync(_tokenFile)) {
-      const t = _fs.readFileSync(_tokenFile, "utf8").trim();
-      if (t && t.length >= 24) return t;
+    if (!_fs.existsSync(_tokenFile)) return null;
+    const raw = _fs.readFileSync(_tokenFile, "utf8").trim();
+    if (!raw) return null;
+    // Tenta JSON (formato actual). Se falhar, assume legacy plain-string
+    // e migra na próxima escrita (created_at = NOW, dá TTL completo).
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.token && parsed.created_at) return parsed;
+    } catch (_) {
+      if (raw.length >= 24) return { token: raw, created_at: Date.now() };
     }
   } catch (_) {}
-  const generated = _crypto.randomBytes(24).toString("hex");
+  return null;
+}
+
+function _writeTokenFile(payload) {
+  const _fs = require("fs");
   try {
     _fs.mkdirSync(path.dirname(_tokenFile), { recursive: true });
-    _fs.writeFileSync(_tokenFile, generated, { mode: 0o600 });
+    _fs.writeFileSync(_tokenFile, JSON.stringify(payload), { mode: 0o600 });
   } catch (_) {}
-  return generated;
 }
-const PUBLIC_FORNECIDO_TOKEN = _loadOrCreateFornecidoToken();
-console.log("[PUBLIC] /fornecido share link path: /fornecido/publico/" + PUBLIC_FORNECIDO_TOKEN);
+
+function _logTokenLink(token, expiresAt) {
+  if (_lastLoggedToken === token) return;
+  _lastLoggedToken = token;
+  const daysLeft = Math.max(0, Math.round((expiresAt - Date.now()) / 86400000));
+  console.log("[PUBLIC] /fornecido share link path: /fornecido/publico/" + token);
+  console.log("[PUBLIC] válido durante " + daysLeft + " dias (até " + new Date(expiresAt).toISOString() + ")");
+}
+
+// Devolve { token, created_at, expires_at, fixed } — rota se necessário.
+function getCurrentTokenInfo() {
+  // Caso 1: env var fixa — nunca expira (admin controla rotação manualmente)
+  if (process.env.PUBLIC_FORNECIDO_TOKEN) {
+    return { token: process.env.PUBLIC_FORNECIDO_TOKEN, created_at: 0, expires_at: 0, fixed: true };
+  }
+  // Caso 2: cache em memória ainda válida
+  if (_tokenCache && (Date.now() - _tokenCache.created_at) < _TOKEN_TTL_MS) {
+    const expiresAt = _tokenCache.created_at + _TOKEN_TTL_MS;
+    _logTokenLink(_tokenCache.token, expiresAt);
+    return { token: _tokenCache.token, created_at: _tokenCache.created_at, expires_at: expiresAt, fixed: false };
+  }
+  // Caso 3: lê do ficheiro; se ainda válido, hidrata cache
+  const fromDisk = _readTokenFile();
+  if (fromDisk && (Date.now() - fromDisk.created_at) < _TOKEN_TTL_MS) {
+    _tokenCache = fromDisk;
+    const expiresAt = fromDisk.created_at + _TOKEN_TTL_MS;
+    _logTokenLink(fromDisk.token, expiresAt);
+    return { token: fromDisk.token, created_at: fromDisk.created_at, expires_at: expiresAt, fixed: false };
+  }
+  // Caso 4: gerar novo (1ª vez OU expirou)
+  if (fromDisk) {
+    const ageDays = Math.round((Date.now() - fromDisk.created_at) / 86400000);
+    console.log("[PUBLIC] token expirou (" + ageDays + " dias), a rotar…");
+  }
+  const generated = { token: _crypto.randomBytes(24).toString("hex"), created_at: Date.now() };
+  _writeTokenFile(generated);
+  _tokenCache = generated;
+  const expiresAt = generated.created_at + _TOKEN_TTL_MS;
+  _logTokenLink(generated.token, expiresAt);
+  return { token: generated.token, created_at: generated.created_at, expires_at: expiresAt, fixed: false };
+}
+
+// Hidrata na boot (log + cache populada)
+getCurrentTokenInfo();
 
 app.get("/fornecido/publico/:token", (req, res) => {
-  if (req.params.token !== PUBLIC_FORNECIDO_TOKEN) {
+  const info = getCurrentTokenInfo();
+  if (req.params.token !== info.token) {
     return res.status(404).send("Not found");
   }
   // Reutiliza o mesmo template — JS detecta modo público via location.pathname
@@ -288,7 +350,8 @@ app.get("/fornecido/publico/:token", (req, res) => {
 // API pública do /fornecido — espelha /admin/api/adicional/fornecido sem auth.
 // Acesso só com token correcto.
 app.get("/api/public/fornecido", async (req, res) => {
-  if (req.query.token !== PUBLIC_FORNECIDO_TOKEN) {
+  const info = getCurrentTokenInfo();
+  if (req.query.token !== info.token) {
     return res.status(404).json({ error: "Not found" });
   }
   try {
@@ -318,6 +381,13 @@ app.get("/api/public/fornecido", async (req, res) => {
       totals: result.totals,
       suppliers: result.suppliers,
       public: true,
+      token: {
+        expires_at: info.expires_at ? new Date(info.expires_at).toISOString() : null,
+        days_remaining: info.expires_at
+          ? Math.max(0, Math.ceil((info.expires_at - Date.now()) / 86400000))
+          : null,
+        fixed: !!info.fixed,
+      },
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
