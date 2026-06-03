@@ -347,6 +347,65 @@ app.get("/fornecido/publico/:token", (req, res) => {
   res.sendFile(path.join(__dirname, "templates", "admin", "fornecido.html"));
 });
 
+// Admin: obter o link público actual (com URL absoluta + expiry).
+// Usado pelo botão "Partilhar" em /admin/fornecido.
+app.get("/api/admin/fornecido/share-link", auth.requireRole("operator", "admin", "superadmin"), (req, res) => {
+  const info = getCurrentTokenInfo();
+  // Constrói URL absoluta usando o host do request — funciona em local + prod
+  // sem precisar de hardcoded BASE_URL. Respeita X-Forwarded-Proto se reverse
+  // proxy injectar (Render/nginx fazem isto).
+  const proto = req.get("x-forwarded-proto") || req.protocol;
+  const host  = req.get("x-forwarded-host") || req.get("host");
+  const url = `${proto}://${host}/fornecido/publico/${info.token}`;
+  res.json({
+    url,
+    token: info.token,
+    expires_at: info.expires_at ? new Date(info.expires_at).toISOString() : null,
+    days_remaining: info.expires_at
+      ? Math.max(0, Math.ceil((info.expires_at - Date.now()) / 86400000))
+      : null,
+    fixed: !!info.fixed,
+  });
+});
+
+// Admin: rotar o token agora (revoga o link actual imediatamente).
+// Útil quando o link foi divulgado por engano ou para forçar repartilha.
+// Só admin/superadmin (operator não pode revogar).
+app.post("/api/admin/fornecido/share-link/rotate",
+  auth.requireRole("admin", "superadmin"),
+  (req, res) => {
+    if (process.env.PUBLIC_FORNECIDO_TOKEN) {
+      return res.status(400).json({
+        error: "Token está fixado via env var PUBLIC_FORNECIDO_TOKEN. " +
+               "Para rotar, mude o valor do env e reinicie o serviço.",
+      });
+    }
+    try {
+      const _fs = require("fs");
+      if (_fs.existsSync(_tokenFile)) _fs.unlinkSync(_tokenFile);
+      _tokenCache = null;
+      _lastLoggedToken = null;
+      const info = getCurrentTokenInfo();
+      const proto = req.get("x-forwarded-proto") || req.protocol;
+      const host  = req.get("x-forwarded-host") || req.get("host");
+      const url = `${proto}://${host}/fornecido/publico/${info.token}`;
+      auth.logAction(req, "rotate", "share_token", "fornecido",
+        JSON.stringify({ new_token_prefix: info.token.slice(0, 8) + "…" })
+      ).catch(() => {});
+      res.json({
+        ok: true,
+        url,
+        token: info.token,
+        expires_at: new Date(info.expires_at).toISOString(),
+        days_remaining: Math.ceil((info.expires_at - Date.now()) / 86400000),
+        fixed: false,
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
 // API pública do /fornecido — espelha /admin/api/adicional/fornecido sem auth.
 // Acesso só com token correcto.
 app.get("/api/public/fornecido", async (req, res) => {

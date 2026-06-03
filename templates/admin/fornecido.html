@@ -347,6 +347,27 @@
     .loading { padding: 2rem; text-align: center; color: #94a3b8; font-style: italic; }
     .error { padding: 1rem; background: #fef2f2; border: 1px solid #fecaca;
       border-radius: 6px; color: #b91c1c; }
+
+    /* Share modal — visível só fora de modo público */
+    body.public-mode .no-public { display: none !important; }
+    .share-modal { position: fixed; inset: 0; z-index: 9999; display: flex;
+      align-items: center; justify-content: center; padding: 1rem; }
+    .share-backdrop { position: absolute; inset: 0; background: rgba(15,23,42,.5);
+      backdrop-filter: blur(2px); }
+    .share-dialog { position: relative; background: #fff; border-radius: 10px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.25); width: 100%; max-width: 580px;
+      overflow: hidden; }
+    .share-header { display: flex; justify-content: space-between; align-items: center;
+      padding: 1rem 1.2rem; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+    .share-close { background: none; border: none; font-size: 1.6rem; cursor: pointer;
+      color: #64748b; line-height: 1; padding: 0 .25rem; }
+    .share-close:hover { color: #dc2626; }
+    .share-body { padding: 1rem 1.2rem 1.2rem; }
+    .share-expiry-ok { color: #15803d; font-weight: 600; }
+    .share-expiry-warn { color: #b45309; font-weight: 600; }
+    .share-expiry-soon { color: #dc2626; font-weight: 700; }
+    .btn-share:hover { background: #6d28d9 !important; }
+    #share-copy.copied { background: #16a34a !important; }
   </style>
 </head>
 <body class="admin-body">
@@ -373,7 +394,36 @@
           <button class="btn btn-sec" id="btn-expand-all">Expandir tudo</button>
           <button class="btn btn-sec" id="btn-preset-30">30d</button>
           <button class="btn btn-sec" id="btn-preset-60">60d</button>
+          <button class="btn btn-share no-public" id="btn-share" title="Obter link público partilhável" style="background:#7c3aed;color:#fff;border:0">🔗 Partilhar</button>
           <span id="cache-info" class="cache-info"></span>
+        </div>
+      </div>
+
+      <!-- Share modal — só visível em modo admin (escondido em /publico/) -->
+      <div id="share-modal" class="share-modal no-public" style="display:none">
+        <div class="share-backdrop"></div>
+        <div class="share-dialog">
+          <div class="share-header">
+            <h3 style="margin:0">Partilhar /fornecido publicamente</h3>
+            <button class="share-close" id="share-close" title="Fechar">×</button>
+          </div>
+          <div class="share-body">
+            <p style="margin:.25rem 0 .75rem;color:#475569;font-size:.85rem">
+              Qualquer pessoa com este link vê a mesma página, sem precisar de login.
+              Use HTTPS se partilhar fora da rede interna.
+            </p>
+            <div style="display:flex;gap:.5rem;align-items:stretch">
+              <input type="text" id="share-url" readonly style="flex:1;padding:.55rem .65rem;border:1px solid #cbd5e1;border-radius:6px;font-family:ui-monospace,monospace;font-size:.78rem;background:#f8fafc">
+              <button class="btn" id="share-copy" style="background:#0f4c75;color:#fff;border:0;min-width:88px">Copiar</button>
+            </div>
+            <div id="share-expiry" style="margin-top:.75rem;font-size:.85rem"></div>
+            <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #e2e8f0">
+              <button class="btn" id="share-rotate" style="background:#dc2626;color:#fff;border:0">Revogar e gerar novo link</button>
+              <p style="margin:.5rem 0 0;font-size:.75rem;color:#64748b">
+                Útil se o link foi divulgado por engano. O link actual deixará de funcionar imediatamente.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -803,6 +853,80 @@
         const d = new Date(today); d.setDate(d.getDate() - 60);
         $("#f-from").value = ymd(d);
         load();
+      });
+
+      // ── Share modal ─────────────────────────────────────────
+      // Aberto pelo botão "🔗 Partilhar" no toolbar. Mostra o link
+      // público partilhável, copia para clipboard, indica expiry, e
+      // permite revogar o link actual (gera novo).
+      async function refreshShareInfo() {
+        const expiryEl = $("#share-expiry");
+        const urlEl = $("#share-url");
+        urlEl.value = "A carregar…";
+        expiryEl.textContent = "";
+        try {
+          const info = await fetchJSON("/api/admin/fornecido/share-link");
+          urlEl.value = info.url;
+          if (info.fixed) {
+            expiryEl.innerHTML = `<span style="color:#64748b">Link permanente (configurado via env var) — sem expiração automática.</span>`;
+          } else if (info.days_remaining != null) {
+            const d = info.days_remaining;
+            const cls = d <= 3 ? "share-expiry-soon" : (d <= 7 ? "share-expiry-warn" : "share-expiry-ok");
+            const exp = info.expires_at ? new Date(info.expires_at).toLocaleDateString("pt-PT") : "?";
+            expiryEl.innerHTML = `<span class="${cls}">Válido até ${exp} (${d} dia${d===1?"":"s"} restante${d===1?"":"s"})</span>` +
+              `<br><span style="font-size:.78rem;color:#64748b">Quando expirar, o sistema gera um novo automaticamente.</span>`;
+          }
+        } catch (e) {
+          urlEl.value = "Erro ao carregar link";
+          expiryEl.innerHTML = `<span style="color:#dc2626">Erro: ${esc(e.message)}</span>`;
+        }
+      }
+
+      function openShareModal() {
+        $("#share-modal").style.display = "flex";
+        refreshShareInfo();
+      }
+      function closeShareModal() {
+        $("#share-modal").style.display = "none";
+      }
+
+      $("#btn-share").addEventListener("click", openShareModal);
+      $("#share-close").addEventListener("click", closeShareModal);
+      $("#share-modal").querySelector(".share-backdrop").addEventListener("click", closeShareModal);
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && $("#share-modal").style.display === "flex") closeShareModal();
+      });
+
+      $("#share-copy").addEventListener("click", async () => {
+        const urlEl = $("#share-url");
+        try {
+          await navigator.clipboard.writeText(urlEl.value);
+          const btn = $("#share-copy");
+          const orig = btn.textContent;
+          btn.textContent = "✓ Copiado";
+          btn.classList.add("copied");
+          setTimeout(() => { btn.textContent = orig; btn.classList.remove("copied"); }, 1800);
+          if (toast) toast("Link copiado para clipboard", { kind: "ok" });
+        } catch (e) {
+          // Fallback: selecciona o texto para o utilizador copiar manualmente
+          urlEl.select();
+          urlEl.setSelectionRange(0, urlEl.value.length);
+          if (toast) toast("Use Ctrl+C para copiar", { kind: "info" });
+        }
+      });
+
+      $("#share-rotate").addEventListener("click", async () => {
+        const ok = window.AdminUI.confirm
+          ? await window.AdminUI.confirm("Revogar o link actual? Quem o tiver deixará de conseguir aceder. Será gerado um novo link imediatamente.")
+          : confirm("Revogar o link actual? Será gerado um novo imediatamente.");
+        if (!ok) return;
+        try {
+          const r = await fetchJSON("/api/admin/fornecido/share-link/rotate", { method: "POST" });
+          if (toast) toast("Link revogado. Novo link gerado.", { kind: "ok" });
+          refreshShareInfo();
+        } catch (e) {
+          if (toast) toast("Erro: " + e.message, { kind: "err" });
+        }
       });
 
       AdminUI.renderLayout("fornecido");
