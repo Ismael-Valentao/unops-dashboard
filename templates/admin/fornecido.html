@@ -405,9 +405,20 @@
   <script src="/static/admin.js"></script>
   <script>
     (function () {
-      const { fetchJSON, fmt, esc, toast } = window.AdminUI;
+      const { fetchJSON, fmt, esc, toast, isPublicMode } = window.AdminUI;
       const $ = (s) => document.querySelector(s);
       const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+      // ── Modo público ─────────────────────────────────────────
+      // Quando partilhado via /fornecido/publico/<token>, usamos
+      // o endpoint público com token em vez do /admin/api/...
+      const IS_PUBLIC = isPublicMode && isPublicMode();
+      const PUBLIC_TOKEN = IS_PUBLIC
+        ? location.pathname.split("/").filter(Boolean).pop()
+        : null;
+      const API_BASE = IS_PUBLIC
+        ? `/api/public/fornecido?token=${encodeURIComponent(PUBLIC_TOKEN)}`
+        : `/api/admin/adicional/fornecido?`;
 
       function ymd(d) {
         return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
@@ -737,7 +748,11 @@
         $("#cache-info").className = "cache-info loading";
         const t0 = Date.now();
         try {
-          const data = await fetchJSON(`/api/admin/adicional/fornecido?${params}`);
+          // Em modo público a URL já tem "?token=..."; junta os params restantes com &
+          const url = IS_PUBLIC
+            ? `${API_BASE}&${params}`
+            : `${API_BASE}${params}`;
+          const data = await fetchJSON(url);
           setCacheInfo(data.cache);
           renderProductKpis(data.totals.by_product || []);
           renderSuppliers(data.suppliers);

@@ -16,6 +16,7 @@ data/audit_*.xlsx
 data/.mapa-cache.xlsx
 data/.mapa-cache.meta.json
 data/.mapa-cookies.txt
+data/.public-fornecido-token
 scripts/_perf-bench.js
 *.output
 test_*.xlsx

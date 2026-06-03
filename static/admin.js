@@ -115,6 +115,12 @@ window.AdminUI = (function () {
       products.map((p) => `<option value="${p.id}" data-unit="${p.default_unit}" ${p.id == selectedId ? "selected" : ""}>${esc(p.name)}</option>`).join("");
   }
 
+  // Detecta páginas em modo público (partilháveis sem login).
+  // Convenção: pathname contém "/publico/" (ex: /fornecido/publico/<token>).
+  function isPublicMode() {
+    return typeof location !== "undefined" && /\/publico\//.test(location.pathname);
+  }
+
   async function fetchJSON(url, opts) {
     const o = opts || {};
     if (o.body && typeof o.body === "object" && !(o.body instanceof FormData)) {
@@ -122,7 +128,11 @@ window.AdminUI = (function () {
       o.body = JSON.stringify(o.body);
     }
     const res = await fetch(url, o);
-    if (res.status === 401) { location.href = "/admin/login"; return; }
+    if (res.status === 401) {
+      // Em modo público, não há login: lança erro em vez de redirecionar
+      if (isPublicMode()) throw new Error("Não autorizado");
+      location.href = "/admin/login"; return;
+    }
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || res.statusText);
     return json;
@@ -138,6 +148,16 @@ window.AdminUI = (function () {
   }
 
   async function renderLayout(activeKey) {
+    // Em modo público (link partilhável), não há sidebar nem identificação.
+    // Marca body com class p/ CSS ajustar layout, e adiciona um header
+    // simplificado em vez do header admin completo.
+    if (isPublicMode()) {
+      document.body.classList.add("public-mode");
+      // Esconde o div #layout (sidebar) que está vazio
+      const layoutDiv = document.getElementById("layout");
+      if (layoutDiv) layoutDiv.style.display = "none";
+      return;
+    }
     const me = await loadMe();
     if (!me) { location.href = "/admin/login"; return; }
 
@@ -709,7 +729,7 @@ window.AdminUI = (function () {
   return {
     esc, fmt, fmtDate, statusBadge, fetchJSON, renderLayout, loadMe,
     loadProducts, loadWarehouses, productSelectOptions, clearCache,
-    sortRows, sortArrow, bindSortable, mountGlobalSearch,
+    sortRows, sortArrow, bindSortable, mountGlobalSearch, isPublicMode,
     exportCSV, urlState, renderFilterChips,
     toast, confirm: confirmDialog,
     renderPaginator, bindRowShortcuts, showShortcutsHelp,

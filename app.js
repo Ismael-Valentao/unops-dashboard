@@ -250,6 +250,80 @@ app.get("/batedores", (_req, res) => {
   res.sendFile(path.join(__dirname, "templates", "batedores.html"));
 });
 
+// ── Página pública /fornecido (partilhável via link com token) ─────
+// Permite mostrar /admin/fornecido a stakeholders externos sem precisar
+// de login. URL: /fornecido/publico/<token>. Token vem de:
+//   1. process.env.PUBLIC_FORNECIDO_TOKEN (preferido em prod)
+//   2. Senão, gerado no 1.º arranque e persistido em data/.public-fornecido-token
+// Para revogar, basta apagar o ficheiro / mudar env var e reiniciar.
+const _crypto = require("crypto");
+const _tokenFile = path.join(__dirname, "data", ".public-fornecido-token");
+function _loadOrCreateFornecidoToken() {
+  if (process.env.PUBLIC_FORNECIDO_TOKEN) return process.env.PUBLIC_FORNECIDO_TOKEN;
+  const _fs = require("fs");
+  try {
+    if (_fs.existsSync(_tokenFile)) {
+      const t = _fs.readFileSync(_tokenFile, "utf8").trim();
+      if (t && t.length >= 24) return t;
+    }
+  } catch (_) {}
+  const generated = _crypto.randomBytes(24).toString("hex");
+  try {
+    _fs.mkdirSync(path.dirname(_tokenFile), { recursive: true });
+    _fs.writeFileSync(_tokenFile, generated, { mode: 0o600 });
+  } catch (_) {}
+  return generated;
+}
+const PUBLIC_FORNECIDO_TOKEN = _loadOrCreateFornecidoToken();
+console.log("[PUBLIC] /fornecido share link path: /fornecido/publico/" + PUBLIC_FORNECIDO_TOKEN);
+
+app.get("/fornecido/publico/:token", (req, res) => {
+  if (req.params.token !== PUBLIC_FORNECIDO_TOKEN) {
+    return res.status(404).send("Not found");
+  }
+  // Reutiliza o mesmo template — JS detecta modo público via location.pathname
+  res.sendFile(path.join(__dirname, "templates", "admin", "fornecido.html"));
+});
+
+// API pública do /fornecido — espelha /admin/api/adicional/fornecido sem auth.
+// Acesso só com token correcto.
+app.get("/api/public/fornecido", async (req, res) => {
+  if (req.query.token !== PUBLIC_FORNECIDO_TOKEN) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  try {
+    const supLib = require("./lib/adicional-suppliers");
+    const fromDate = req.query.fromDate || undefined;
+    const toDate   = req.query.toDate   || undefined;
+    const chunkDays = req.query.chunkDays ? Number(req.query.chunkDays) : undefined;
+    const noCache = req.query.noCache === "1" || req.query.fresh === "1";
+
+    const apiResult = await adicionalApi.listProjectsChunked({ fromDate, toDate, chunkDays, noCache });
+
+    // Constrói set de GTUs da Sheet UNOPS para cálculo do PEND APP
+    const unopsGtus = new Set();
+    try {
+      const { normGtu } = require("./lib/adicional-match");
+      for (const row of cache.data || []) {
+        const g = row.delivery_note_number;
+        if (g) unopsGtus.add(normGtu(g));
+      }
+    } catch (_) { /* fall through — pend_app fica menos preciso */ }
+
+    const result = await supLib.aggregateFornecido(apiResult.rows, { unopsGtus });
+    res.json({
+      period: apiResult.period,
+      cache: { from_cache: !!apiResult.from_cache, age_seconds: apiResult.cache_age_seconds || 0 },
+      api: { total: apiResult.rows.length, chunks: apiResult.chunks_total, chunks_failed: apiResult.chunks_failed },
+      totals: result.totals,
+      suppliers: result.suppliers,
+      public: true,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // API pública (sem auth) — fonte de dados do ranking de batedores
 // Calcula pagamento estimado: ~100 MZN por tonelada submetida
 const { Audit: PublicAudit } = require("./db/audit-repo");
