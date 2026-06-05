@@ -157,7 +157,28 @@ function parseCSV(text) {
 
       return row;
     })
-    .filter((r) => r.delivery_id !== "");
+    .filter((r) => r.delivery_id !== "")
+    .filter((r) => !_isExcludedProduct(r.product));
+}
+
+// Produtos que NÃO pertencem ao projecto UNOPS Cheias 2026 — devem ser
+// ignorados completamente (não chegam a cache.data nem a delivery_audit).
+// Lista vem da Sheet Delivery agora consolidar dados de vários projectos.
+//
+// Match permissivo (lowercase + contains) para apanhar variantes de grafia:
+//   "Back sprayer (16L)" / "Back Sprayer 16L" / "Backsprayer..."
+//   "Fertilizer NPK - 12:24:12 (Bag of 50 kg)" / "NPK 12-24-12" / ...
+//   "Hand Hoe (un)" / "Hand-Hoe" / "Hand Hoe"
+const _EXCLUDED_PRODUCT_PATTERNS = [
+  /back[\s\-]*sprayer/i,
+  /\bnpk\b.*12[\s\-:.]?24[\s\-:.]?12/i,
+  /fertilizer.*npk/i,
+  /\bhand[\s\-]*hoe\b/i,
+];
+function _isExcludedProduct(name) {
+  const s = String(name || "").trim();
+  if (!s) return false;
+  return _EXCLUDED_PRODUCT_PATTERNS.some((re) => re.test(s));
 }
 
 // ── Enrich delivery rows with ADSN from logistics file ───────
