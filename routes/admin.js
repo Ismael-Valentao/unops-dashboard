@@ -2417,60 +2417,152 @@ router.post("/api/distribution/guias-pdf-to-excel",
       return jsonError(res, 400, "Nenhuma guia (ADSN) detectada nos PDFs. Verifica se o ficheiro é a Guia Transporte ADICIONAL.");
     }
 
-    // 2. Construir Excel no formato igual ao guias_*.xlsx do utilizador
+    // 2. Construir Excel no formato MAPA UNOPS (sheet TRANSITO):
+    //    - 1 PDF = 1 bloco CAM
+    //    - cada bloco: header CAM + headers tabela + linhas + TOTAL
+    //    - múltiplos PDFs → múltiplos blocos na mesma sheet
     const ExcelJS = require("exceljs");
     const wb = new ExcelJS.Workbook();
     wb.creator = "AQI Dashboard — PDF→Excel";
     wb.created = new Date();
-    const ws = wb.addWorksheet("Guias");
-    ws.columns = [
-      { header: "Código Serviço",     key: "adsn",      width: 24 },
-      { header: "Nome Extensionista", key: "nome",      width: 32 },
-      { header: "Telf Extensionista", key: "tel",       width: 14 },
-      { header: "NUIT",               key: "nuit",      width: 12 },
-      { header: "Matrícula",          key: "matricula", width: 16 },
-      { header: "Artigo",             key: "artigo",    width: 14 },
-      { header: "GTU/GTS",            key: "gtu",       width: 18 },
-      { header: "Distrito",           key: "distrito",  width: 18 },
-      { header: "Volumes (kg)",       key: "volumes",   width: 14 },
-      { header: "Peso (kg)",          key: "peso",      width: 14 },
+    const ws = wb.addWorksheet("TRANSITO");
+
+    // Larguras (15 colunas A..O) — match com MAPA UNOPS
+    const COL_WIDTHS = [16, 12, 22, 32, 14, 24, 14, 22, 18, 12, 22, 14, 14, 8, 18];
+    COL_WIDTHS.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+    const STYLES = {
+      blockHeader: {
+        font: { bold: true, color: { argb: "FF1E3A8A" } },
+        fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFDBEAFE" } },
+        alignment: { horizontal: "left" },
+      },
+      tableHeader: {
+        font: { bold: true, size: 10 },
+        fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } },
+        alignment: { horizontal: "center", wrapText: true },
+        border: {
+          top:    { style: "thin", color: { argb: "FF94A3B8" } },
+          bottom: { style: "thin", color: { argb: "FF94A3B8" } },
+        },
+      },
+      total: {
+        font: { bold: true },
+        fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } },
+        border: {
+          top:    { style: "thin", color: { argb: "FF92400E" } },
+          bottom: { style: "thin", color: { argb: "FF92400E" } },
+        },
+      },
+    };
+    const TABLE_HEADERS = [
+      "MATRICULA", "DATA SAIDA", "Código Serviço", "Nome Extensionista",
+      "Telf Extensionista", "BATEDOR", "Telef Batedor", "Telf Supervisor",
+      "Distrito", "NUIT", "Artigo", "Volumes (un)", "Peso (kg)", "Ton",
+      "Observações/ESTADO",
     ];
-    // Estilo header
-    ws.getRow(1).eachCell((c) => {
-      c.font = { bold: true };
-      c.alignment = { horizontal: "center" };
-      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
-      c.border = { bottom: { style: "thin", color: { argb: "FF94A3B8" } } };
-    });
 
-    // 3. Adicionar linhas — distrito em UPPERCASE para casar com formato AQI
-    let totalVolumes = 0, totalPeso = 0;
+    // Agrupa deliveries por ficheiro-fonte — 1 PDF = 1 camião = 1 bloco
+    const byFile = new Map();
     for (const d of allDeliveries) {
-      ws.addRow({
-        adsn:      d.adsn || "",
-        nome:      d.destinatario || "",
-        tel:       d.telefone_destinatario || "",
-        nuit:      d.nuit || "",
-        matricula: d.matricula || "",
-        artigo:    d.sku_label || "",
-        gtu:       d.gtu || "",
-        distrito:  (d.distrito || "").toUpperCase(),
-        volumes:   d.volumes || d.qty || 0,
-        peso:      d.peso || d.qty || 0,
-      });
-      totalVolumes += Number(d.volumes || d.qty || 0);
-      totalPeso += Number(d.peso || d.qty || 0);
+      const key = d._source_file || "(sem-ficheiro)";
+      if (!byFile.has(key)) byFile.set(key, []);
+      byFile.get(key).push(d);
     }
-    // Linha TOTAL no fim (estilo do exemplo)
-    const totalRow = ws.addRow({
-      adsn: "TOTAL",
-      volumes: totalVolumes,
-      peso: totalPeso,
-    });
-    totalRow.eachCell((c) => { c.font = { bold: true }; });
-    totalRow.getCell("adsn").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
 
-    // 4. Nome do ficheiro: deriva do 1º ficheiro (ou genérico)
+    // Helper: aplica style a uma linha inteira
+    function applyToRow(row, style) {
+      for (let c = 1; c <= 15; c++) {
+        const cell = row.getCell(c);
+        Object.assign(cell, style);
+      }
+    }
+
+    // Itera blocos (1 por PDF)
+    let camNum = 0;
+    const todayIso = new Date(); todayIso.setHours(0, 0, 0, 0);
+    for (const [fileName, deliveries] of byFile) {
+      camNum++;
+      // Totais do bloco
+      const totalVol = deliveries.reduce((s, d) => s + Number(d.volumes || d.qty || 0), 0);
+      const totalKg  = deliveries.reduce((s, d) => s + Number(d.peso    || d.qty || 0), 0);
+      // Destino dominante (distrito mais frequente)
+      const distFreq = new Map();
+      for (const d of deliveries) {
+        const k = (d.distrito || "—").trim();
+        distFreq.set(k, (distFreq.get(k) || 0) + 1);
+      }
+      const destino = [...distFreq.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      // Estado mais frequente (TRANSITO/FINALIZADO/CRIADO/DESCARTADO)
+      const stateFreq = new Map();
+      for (const d of deliveries) {
+        const k = String(d.estado || "EM TRANSITO").trim().toUpperCase();
+        const norm = k === "TRANSITO" ? "EM TRANSITO" : k;
+        stateFreq.set(norm, (stateFreq.get(norm) || 0) + 1);
+      }
+      const blockState = [...stateFreq.entries()].sort((a, b) => b[1] - a[1])[0][0];
+
+      // ── Header de bloco (linha 1 do bloco) ──
+      const blockId = `ADC-${String(camNum).padStart(3, "0")}`;
+      const headerText =
+        `${blockId} | CAMIÃO ${camNum} | ${totalVol.toLocaleString("pt-PT")} un | ` +
+        `Destino: ${destino} | ${deliveries.length} extensionista(s) | Fonte: ${fileName}`;
+      const blockRow = ws.addRow([headerText]);
+      ws.mergeCells(blockRow.number, 1, blockRow.number, 15);
+      blockRow.getCell(1).font      = STYLES.blockHeader.font;
+      blockRow.getCell(1).fill      = STYLES.blockHeader.fill;
+      blockRow.getCell(1).alignment = STYLES.blockHeader.alignment;
+      blockRow.height = 22;
+
+      // ── Headers da tabela ──
+      const hdrRow = ws.addRow(TABLE_HEADERS);
+      applyToRow(hdrRow, STYLES.tableHeader);
+      hdrRow.height = 28;
+
+      // ── Linhas data ──
+      for (const d of deliveries) {
+        const vol  = Number(d.volumes || d.qty || 0);
+        const peso = Number(d.peso    || d.qty || 0);
+        const ton  = peso / 1000;
+        const estado = (String(d.estado || "TRANSITO").toUpperCase() === "TRANSITO")
+          ? "EM TRANSITO" : String(d.estado || "EM TRANSITO").toUpperCase();
+        ws.addRow([
+          d.matricula || "",                  // A
+          todayIso,                            // B — Data saída (hoje, formato data)
+          d.adsn || "",                        // C
+          d.destinatario || "",                // D
+          d.telefone_destinatario || "",       // E
+          "",                                  // F BATEDOR (não vem do PDF)
+          "",                                  // G Telef Batedor
+          "",                                  // H Telf Supervisor
+          (d.distrito || "").toUpperCase(),    // I
+          d.nuit || "",                        // J
+          d.sku_label || "",                   // K
+          vol,                                 // L
+          peso,                                // M
+          Number(ton.toFixed(3)),              // N
+          estado,                              // O
+        ]);
+      }
+
+      // ── Linha TOTAL ──
+      const totalRow = ws.addRow([
+        "", "", "", "", "", "", "", "", "", "",
+        "TOTAL", totalVol, totalKg, Number((totalKg / 1000).toFixed(3)), blockState,
+      ]);
+      applyToRow(totalRow, STYLES.total);
+
+      // ── Linha vazia entre blocos ──
+      if (camNum < byFile.size) ws.addRow([]);
+    }
+
+    // Format coluna B (data) e numéricos
+    ws.getColumn(2).numFmt = "dd/mm/yyyy";
+    ws.getColumn(12).numFmt = "#,##0";       // Volumes
+    ws.getColumn(13).numFmt = "#,##0.00";    // Peso
+    ws.getColumn(14).numFmt = "#,##0.000";   // Ton
+
+    // 3. Nome do ficheiro: deriva do 1º ficheiro (ou genérico)
     const baseName = req.files.length === 1
       ? req.files[0].originalname.replace(/\.pdf$/i, "")
       : `guias_extraidas_${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
