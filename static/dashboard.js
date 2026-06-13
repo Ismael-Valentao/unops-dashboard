@@ -688,14 +688,14 @@
 
     // Breakdown da quantidade entregue por categoria.
     // Sementes/Químicos/Outros em kg. Sacos em unidades (kg interno / SACO_KG_PER_UNIT).
-    const cats = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (un)": 0, "Outros (kg)": 0 };
+    const cats = { "Sementes (kg)": 0, "Químicos (Lts)": 0, "Sacos (un)": 0, "Outros (kg)": 0 };
     rows.forEach((r) => {
       const q = Number(r.delivered_qty) || 0;
       if (q <= 0) return;
       const name = String(r.product || "").toLowerCase();
       if (/milho|feij|arroz|maize|bean|rice|seed/.test(name)) cats["Sementes (kg)"] += q;
       // Imidacloprid + typo recorrente "Imadocloprid" — apanha im[ai]d[ao]clop
-      else if (/emamectin|im[ai]d[ao]clop|mcpa/.test(name)) cats["Químicos (kg)"] += q;
+      else if (/emamectin|im[ai]d[ao]clop|mcpa/.test(name)) cats["Químicos (Lts)"] += q;
       else if (/saco|hermetic/.test(name)) cats["Sacos (un)"] += q / SACO_KG_PER_UNIT; // kg stored → back to units
       else cats["Outros (kg)"] += q;
     });
@@ -1935,14 +1935,14 @@
       $("#m-gap").textContent = fmtDec(gap);
     }
 
-    const categories = { "Sementes (kg)": 0, "Químicos (kg)": 0, "Sacos (un)": 0, "Outros (kg)": 0 };
+    const categories = { "Sementes (kg)": 0, "Químicos (Lts)": 0, "Sacos (un)": 0, "Outros (kg)": 0 };
     (pvdData.by_product || []).forEach((p) => {
       const g = Math.max(0, (p.planned_kg || 0) - (p.delivered_kg || 0));
       if (g <= 0.5) return;
       const name = String(p.product || p.product_plan || "").toLowerCase();
       if (/milho|feij|arroz|maize|bean|rice|sementes?|seed/.test(name)) categories["Sementes (kg)"] += g;
       // Imidacloprid + typo recorrente "Imadocloprid" — apanha im[ai]d[ao]clop
-      else if (/emamectin|im[ai]d[ao]clop|mcpa|qu[ií]m|chem/.test(name)) categories["Químicos (kg)"] += g;
+      else if (/emamectin|im[ai]d[ao]clop|mcpa|qu[ií]m|chem/.test(name)) categories["Químicos (Lts)"] += g;
       else if (/saco|hermetic/.test(name)) categories["Sacos (un)"] += g / SACO_KG_PER_UNIT; // back to units for display
       else categories["Outros (kg)"] += g;
     });
