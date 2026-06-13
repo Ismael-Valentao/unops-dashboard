@@ -694,7 +694,8 @@
       if (q <= 0) return;
       const name = String(r.product || "").toLowerCase();
       if (/milho|feij|arroz|maize|bean|rice|seed/.test(name)) cats["Sementes (kg)"] += q;
-      else if (/emamectin|imidaclop|mcpa/.test(name)) cats["Químicos (kg)"] += q;
+      // Imidacloprid + typo recorrente "Imadocloprid" — apanha im[ai]d[ao]clop
+      else if (/emamectin|im[ai]d[ao]clop|mcpa/.test(name)) cats["Químicos (kg)"] += q;
       else if (/saco|hermetic/.test(name)) cats["Sacos (un)"] += q / SACO_KG_PER_UNIT; // kg stored → back to units
       else cats["Outros (kg)"] += q;
     });
@@ -1940,7 +1941,8 @@
       if (g <= 0.5) return;
       const name = String(p.product || p.product_plan || "").toLowerCase();
       if (/milho|feij|arroz|maize|bean|rice|sementes?|seed/.test(name)) categories["Sementes (kg)"] += g;
-      else if (/emamectin|imidaclop|mcpa|qu[ií]m|chem/.test(name)) categories["Químicos (kg)"] += g;
+      // Imidacloprid + typo recorrente "Imadocloprid" — apanha im[ai]d[ao]clop
+      else if (/emamectin|im[ai]d[ao]clop|mcpa|qu[ií]m|chem/.test(name)) categories["Químicos (kg)"] += g;
       else if (/saco|hermetic/.test(name)) categories["Sacos (un)"] += g / SACO_KG_PER_UNIT; // back to units for display
       else categories["Outros (kg)"] += g;
     });
