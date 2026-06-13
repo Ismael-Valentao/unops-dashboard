@@ -2746,3 +2746,143 @@
 
   document.addEventListener("DOMContentLoaded", init);
 })();
+
+// ── What's New modal ─────────────────────────────────────────
+// Compara estado actual com a última visita (localStorage). Abre
+// automaticamente quando há mudanças significativas. Standalone IIFE
+// — totalmente isolado do resto do bundle.
+(function whatsNew() {
+  if (location.pathname !== "/" && location.pathname !== "/index.html") return;
+
+  const STORAGE_KEY = "aqi_whatsNewLastSeen";
+  const SIG_MIN_SUBS = 1;       // ≥ 1 nova submissão = mostra
+  const SIG_MIN_DELTA_PP = 0.1; // ≥ 0.1pp mudança em algum produto = mostra
+
+  function getLastSeen() {
+    try { return localStorage.getItem(STORAGE_KEY); } catch (_) { return null; }
+  }
+  function setLastSeen(iso) {
+    try { localStorage.setItem(STORAGE_KEY, iso); } catch (_) {}
+  }
+  function fmtN(n) { return (Number(n) || 0).toLocaleString("pt-PT"); }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+  function relativeLabel(sinceIso) {
+    const sinceDate = new Date(sinceIso);
+    const ms = Date.now() - sinceDate.getTime();
+    const mins = Math.round(ms / 60000);
+    if (mins < 1) return "há instantes";
+    if (mins < 60) return "há " + mins + " min";
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return "há " + hrs + " hora" + (hrs === 1 ? "" : "s");
+    const days = Math.round(hrs / 24);
+    if (days < 7) return "há " + days + " dia" + (days === 1 ? "" : "s");
+    if (days < 30) return "há " + Math.round(days / 7) + " semana" + (days < 14 ? "" : "s");
+    return "há mais de " + Math.round(days / 30) + " mês" + (days < 60 ? "" : "es");
+  }
+
+  async function check() {
+    let since = getLastSeen();
+    // 1.ª visita: grava timestamp, não mostra modal (não há baseline)
+    if (!since) {
+      setLastSeen(new Date().toISOString());
+      return;
+    }
+    try {
+      const res = await fetch("/api/whats-new?since=" + encodeURIComponent(since));
+      if (!res.ok) return;
+      const data = await res.json();
+      // Significância: alguma submissão nova OU algum produto com delta_pp ≥ 0.1
+      const sigSubs = (data.submissions && data.submissions.count >= SIG_MIN_SUBS);
+      const sigPct  = (data.by_product || []).some(
+        (p) => p.delta_pp != null && Math.abs(p.delta_pp) >= SIG_MIN_DELTA_PP
+      );
+      if (!sigSubs && !sigPct) {
+        // Sem mudanças relevantes — só actualiza timestamp para não mostrar info repetida
+        setLastSeen(data.now);
+        return;
+      }
+      render(data);
+    } catch (e) {
+      console.warn("[whats-new] falhou:", e);
+    }
+  }
+
+  function render(data) {
+    const modal = document.getElementById("whats-new-modal");
+    if (!modal) return;
+
+    const sinceLabelEl = document.getElementById("wn-since-label");
+    if (sinceLabelEl) {
+      const since = new Date(data.since).toLocaleString("pt-PT");
+      sinceLabelEl.innerHTML = "Comparando com a última vez que esteve aqui (" +
+        "<strong>" + esc(relativeLabel(data.since)) + "</strong> · " + esc(since) + ")";
+    }
+
+    // Secção 1 — Submissões
+    const subs = data.submissions || { count: 0, kg: 0 };
+    const subsHtml = subs.count > 0
+      ? `<div class="wn-stats">
+           <div class="wn-stat"><span class="wn-stat-num">${fmtN(subs.count)}</span><span class="wn-stat-lbl">novas submissões</span></div>
+           <div class="wn-stat"><span class="wn-stat-num">${fmtN(subs.kg)}</span><span class="wn-stat-lbl">kg adicionados</span></div>
+         </div>` +
+        ((data.top_submitters && data.top_submitters.length)
+          ? '<div style="margin-top:.85rem;font-size:.78rem;color:#475569"><strong>Top contribuidores:</strong> ' +
+            data.top_submitters.slice(0, 3).map((s) =>
+              esc((s.email || "").split("@")[0]) + " (" + fmtN(s.kg) + " kg)"
+            ).join(" · ") +
+            "</div>"
+          : "")
+      : `<div class="wn-empty">Nenhuma nova submissão nesse intervalo.</div>`;
+    document.getElementById("wn-submissions").innerHTML = subsHtml;
+
+    // Secção 2 — Produtos
+    const products = (data.by_product || []).filter(
+      (p) => (p.delta_pp != null && Math.abs(p.delta_pp) >= 0.05) || p.new_kg > 0
+    );
+    const prodHtml = products.length
+      ? products.map((p) => {
+          const arrow = (p.delta_pp || 0) > 0 ? "▲" : ((p.delta_pp || 0) < 0 ? "▼" : "·");
+          const color = (p.delta_pp || 0) > 0 ? "#16a34a"
+                      : (p.delta_pp || 0) < 0 ? "#dc2626" : "#94a3b8";
+          const progress = p.pct_now != null
+            ? `${p.pct_before}% → <strong>${p.pct_now}%</strong>`
+            : `+${fmtN(p.new_kg)} kg`;
+          const deltaTxt = p.delta_pp != null
+            ? `<span style="color:${color}">${arrow} ${Math.abs(p.delta_pp)}pp</span> ·  +${fmtN(p.new_kg)} kg`
+            : `<span style="color:${color}">+${fmtN(p.new_kg)} kg</span>`;
+          return `<div class="wn-product">
+            <div class="wn-product-name">${esc(p.product)}</div>
+            <div class="wn-product-progress">${progress}</div>
+            <div class="wn-product-delta">${deltaTxt}</div>
+          </div>`;
+        }).join("")
+      : `<div class="wn-empty">Sem avanços notáveis nas metas.</div>`;
+    document.getElementById("wn-products").innerHTML = prodHtml;
+
+    // Mostra modal + wire-up
+    modal.style.display = "flex";
+    modal.setAttribute("aria-hidden", "false");
+
+    const close = () => {
+      modal.style.display = "none";
+      modal.setAttribute("aria-hidden", "true");
+      setLastSeen(data.now);
+    };
+    const closeBtn = document.getElementById("wn-close");
+    const ackBtn   = document.getElementById("wn-ack");
+    const backdrop = modal.querySelector(".wn-backdrop");
+    if (closeBtn) closeBtn.onclick = close;
+    if (ackBtn)   ackBtn.onclick   = close;
+    if (backdrop) backdrop.onclick = close;
+    document.addEventListener("keydown", function onEsc(e) {
+      if (e.key === "Escape") { close(); document.removeEventListener("keydown", onEsc); }
+    });
+  }
+
+  // Corre quando o resto da página já carregou os dados — pequena espera
+  // para não competir com fetch inicial e para esperar pelas charts.
+  window.addEventListener("load", () => setTimeout(check, 1200));
+})();

@@ -622,6 +622,75 @@
     </section>
   </main>
 
+  <!-- What's New modal — abre automaticamente quando há mudanças desde a última visita -->
+  <div id="whats-new-modal" class="wn-modal" style="display:none" aria-hidden="true">
+    <div class="wn-backdrop"></div>
+    <div class="wn-dialog" role="dialog" aria-labelledby="wn-title">
+      <div class="wn-header">
+        <h2 id="wn-title">🔔 Novidades desde a sua última visita</h2>
+        <button class="wn-close" id="wn-close" title="Fechar (Esc)">×</button>
+      </div>
+      <div class="wn-since" id="wn-since-label"></div>
+      <div class="wn-section">
+        <h3>📥 Novas submissões</h3>
+        <div id="wn-submissions"></div>
+      </div>
+      <div class="wn-section">
+        <h3>📊 Avanço da meta por produto</h3>
+        <div id="wn-products"></div>
+      </div>
+      <div class="wn-footer">
+        <button class="wn-ack" id="wn-ack">Já vi · Marcar como lido</button>
+      </div>
+    </div>
+  </div>
+  <style>
+    .wn-modal { position: fixed; inset: 0; z-index: 9999; display: flex;
+      align-items: center; justify-content: center; padding: 1rem; }
+    .wn-backdrop { position: absolute; inset: 0; background: rgba(15,23,42,.55);
+      backdrop-filter: blur(3px); animation: wn-fade .2s ease; }
+    @keyframes wn-fade { from { opacity: 0 } to { opacity: 1 } }
+    .wn-dialog { position: relative; background: #fff; border-radius: 12px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.3); width: 100%; max-width: 640px;
+      max-height: 90vh; overflow-y: auto; animation: wn-pop .25s cubic-bezier(.4,1.4,.6,1); }
+    @keyframes wn-pop { from { transform: scale(.92); opacity: 0 }
+      to { transform: scale(1); opacity: 1 } }
+    .wn-header { display: flex; justify-content: space-between; align-items: center;
+      padding: 1.1rem 1.4rem; border-bottom: 1px solid #e2e8f0; }
+    .wn-header h2 { margin: 0; font-size: 1.15rem; font-weight: 800; color: #0f172a; }
+    .wn-close { background: none; border: none; font-size: 1.8rem; cursor: pointer;
+      color: #64748b; line-height: 1; padding: 0 .25rem; }
+    .wn-close:hover { color: #dc2626; }
+    .wn-since { padding: .5rem 1.4rem; color: #64748b; font-size: .82rem;
+      background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+    .wn-since strong { color: #0f4c75; font-weight: 700; }
+    .wn-section { padding: 1.1rem 1.4rem; border-bottom: 1px solid #f1f5f9; }
+    .wn-section h3 { margin: 0 0 .75rem; font-size: .82rem; font-weight: 700;
+      color: #475569; text-transform: uppercase; letter-spacing: .03em; }
+    .wn-section:last-of-type { border-bottom: none; }
+    .wn-stats { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+    .wn-stat-num { display: block; font-size: 2rem; font-weight: 800; color: #0f4c75;
+      line-height: 1; font-variant-numeric: tabular-nums; }
+    .wn-stat-lbl { display: block; font-size: .75rem; color: #64748b; margin-top: .15rem; }
+    .wn-product { display: grid; grid-template-columns: 1fr auto auto;
+      gap: .75rem; padding: .55rem 0; border-bottom: 1px dashed #e2e8f0;
+      align-items: center; }
+    .wn-product:last-child { border-bottom: none; }
+    .wn-product-name { font-weight: 700; color: #0f172a; font-size: .92rem; }
+    .wn-product-progress { font-size: .82rem; color: #475569;
+      font-variant-numeric: tabular-nums; }
+    .wn-product-progress strong { color: #0f172a; font-weight: 800; }
+    .wn-product-delta { font-size: .78rem; font-weight: 700;
+      font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .wn-empty { color: #94a3b8; font-style: italic; padding: .5rem 0; }
+    .wn-footer { padding: 1rem 1.4rem; background: #f8fafc; border-top: 1px solid #e2e8f0;
+      display: flex; justify-content: flex-end; }
+    .wn-ack { background: #0f4c75; color: #fff; border: 0; padding: .55rem 1.1rem;
+      border-radius: 6px; font-weight: 700; font-size: .85rem; cursor: pointer;
+      transition: background .12s; }
+    .wn-ack:hover { background: #1e6ba8; }
+  </style>
+
   <script src="/static/dashboard.js"></script>
 </body>
 </html>

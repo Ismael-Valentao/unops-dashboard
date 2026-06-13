@@ -1136,6 +1136,139 @@ app.get("/api/data", (_req, res) => {
   res.json({ rows: cache.data, last_updated: cache.lastUpdated });
 });
 
+// ── What's New ───────────────────────────────────────────────
+// Devolve um resumo do que mudou desde `since` (timestamp ISO).
+// Usado pelo modal "🔔 Novidades" na home — comparação local-storage
+// no cliente, sem necessidade de auth.
+app.get("/api/whats-new", async (req, res) => {
+  const since = req.query.since;
+  if (!since || !/^\d{4}-\d{2}-\d{2}T/.test(String(since))) {
+    return res.status(400).json({ error: "Parâmetro 'since' obrigatório (ISO timestamp)" });
+  }
+  try {
+    const { query } = require("./db/mysql");
+
+    // Helper: canonicaliza nomes de produto (EN/PT/variantes) p/ agrupar
+    function canonical(name) {
+      const s = String(name || "").toLowerCase();
+      if (/maize|milho/.test(s))            return "Milho";
+      if (/common bean|feij/.test(s))       return "Feijão";
+      if (/rice|arroz/.test(s))             return "Arroz";
+      if (/hermetic|saco/.test(s))          return "Sacos Hermét.";
+      if (/emamect/.test(s))                return "Emamectim";
+      if (/im[ai]d[ao]clop/.test(s))        return "Imidacloprid";
+      if (/mcpa/.test(s))                   return "MCPA";
+      return String(name || "—");
+    }
+
+    // 1. Total de submissões novas (count + kg)
+    const totals = await query(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(delivered_qty), 0) AS kg
+       FROM delivery_audit
+       WHERE deleted_at IS NULL AND detected_at > ?`,
+      [since]
+    );
+
+    // 2. Submissões novas POR produto + email submetedor
+    const newByProduct = await query(
+      `SELECT product, COUNT(*) AS n, COALESCE(SUM(delivered_qty), 0) AS kg
+       FROM delivery_audit
+       WHERE deleted_at IS NULL AND detected_at > ?
+       GROUP BY product`,
+      [since]
+    );
+
+    // 3. Total kg POR produto AGORA (para calcular pct vs meta)
+    const totalNowByProduct = await query(
+      `SELECT product, COALESCE(SUM(delivered_qty), 0) AS kg
+       FROM delivery_audit
+       WHERE deleted_at IS NULL
+       GROUP BY product`
+    );
+
+    // 4. Submitters distintos novos (apareceram só após 'since')
+    const newSubmitters = await query(
+      `SELECT submitted_by AS email, COUNT(*) AS n, COALESCE(SUM(delivered_qty), 0) AS kg
+       FROM delivery_audit
+       WHERE deleted_at IS NULL AND detected_at > ?
+         AND submitted_by IS NOT NULL AND submitted_by <> ''
+       GROUP BY submitted_by
+       ORDER BY kg DESC
+       LIMIT 5`,
+      [since]
+    );
+
+    // Agrega por produto canónico
+    const newAgg = new Map();
+    for (const r of newByProduct) {
+      const k = canonical(r.product);
+      if (!newAgg.has(k)) newAgg.set(k, { product: k, new_kg: 0, new_count: 0 });
+      const e = newAgg.get(k);
+      e.new_kg    += Number(r.kg) || 0;
+      e.new_count += Number(r.n)  || 0;
+    }
+    const totalAgg = new Map();
+    for (const r of totalNowByProduct) {
+      const k = canonical(r.product);
+      if (!totalAgg.has(k)) totalAgg.set(k, 0);
+      totalAgg.set(k, totalAgg.get(k) + (Number(r.kg) || 0));
+    }
+
+    // Metas — usa product_metas (DB) como fonte de verdade
+    let metas = {};
+    try {
+      const { listAllProductMetas, primeProductMetasCache } = require("./lib/product-metas");
+      await primeProductMetasCache();
+      metas = listAllProductMetas() || {};
+    } catch (_) { /* sem metas = pct null */ }
+
+    const byProduct = [];
+    for (const [k, e] of newAgg) {
+      const totalNow = totalAgg.get(k) || e.new_kg;
+      const metaInfo = metas[k];
+      const meta = metaInfo && metaInfo.qty ? Number(metaInfo.qty) : null;
+      let pct_now = null, pct_before = null, delta_pp = null;
+      if (meta && meta > 0) {
+        pct_now    = Math.round((totalNow / meta) * 1000) / 10;
+        pct_before = Math.round(((totalNow - e.new_kg) / meta) * 1000) / 10;
+        delta_pp   = Math.round((pct_now - pct_before) * 10) / 10;
+      }
+      byProduct.push({
+        product:    k,
+        new_kg:     Math.round(e.new_kg),
+        new_count:  e.new_count,
+        total_kg:   Math.round(totalNow),
+        meta_kg:    meta ? Math.round(meta) : null,
+        pct_before, pct_now, delta_pp,
+      });
+    }
+    // Ordena: produtos com delta_pp não-nulo primeiro, desc; depois por new_kg
+    byProduct.sort((a, b) => {
+      const ap = a.delta_pp == null ? -1 : a.delta_pp;
+      const bp = b.delta_pp == null ? -1 : b.delta_pp;
+      if (bp !== ap) return bp - ap;
+      return b.new_kg - a.new_kg;
+    });
+
+    res.json({
+      since,
+      now: new Date().toISOString(),
+      submissions: {
+        count: Number(totals[0]?.n)  || 0,
+        kg:    Math.round(Number(totals[0]?.kg) || 0),
+      },
+      by_product: byProduct,
+      top_submitters: newSubmitters.map((s) => ({
+        email: s.email,
+        count: Number(s.n) || 0,
+        kg:    Math.round(Number(s.kg) || 0),
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Integração ADICIONAL DMS API ────────────────────────────
 // Diagnostic + smoke test para a integração com a API de Servicos
 // do sistema ADICIONAL (portaldms.adicional.co.mz). Permite ao
