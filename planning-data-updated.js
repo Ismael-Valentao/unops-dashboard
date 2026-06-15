@@ -225,6 +225,33 @@ function load() {
     console.log(`[PLANNING-MAAP] Override: ${overridden} rows actualizadas, ${zeroed} zeradas (não no MAAP), ${added} novas adicionadas`);
   }
 
+  // ── Exclusões manuais (província × produto) ───────────────────
+  // Combinações que foram retiradas do escopo do projecto. Cada entrada
+  // zera weight_kg/weight_updated nas rows que batem — efectivamente
+  // remove esses kg do "planned" agregado em todos os endpoints.
+  // Adicionar/remover entries aqui propaga imediatamente para /, /api/
+  // planned-vs-delivered, /admin/realocacao, etc.
+  const EXCLUDED_PROVINCE_PRODUCT = [
+    { province: "Tete", product_plan: "Arroz" },  // 2026-06: Tete deixou de receber Arroz (1 benef. em Tsangano, 1000 kg)
+  ];
+  let exclKg = 0, exclN = 0;
+  for (const r of rows) {
+    const hit = EXCLUDED_PROVINCE_PRODUCT.some((x) =>
+      String(r.province || "").trim().toLowerCase() === x.province.toLowerCase()
+      && String(r.product_plan || "").trim().toLowerCase() === x.product_plan.toLowerCase()
+    );
+    if (hit && r.weight_kg > 0.001) {
+      exclKg += r.weight_kg;
+      exclN++;
+      r.weight_kg = 0;
+      r.weight_updated = 0;
+      r.weight_was_updated = true;
+    }
+  }
+  if (exclN) {
+    console.log(`[PLANNING-EXCL] ${exclN} rows excluídas manualmente · ${Math.round(exclKg)} kg removidos do planeado`);
+  }
+
   // Removed rows = beneficiários com Qtd Actualizada = 0 explicitamente (foram retirados do plano).
   const removedRows = rows.filter((r) => r.weight_was_updated && r.weight_updated <= 0.001 && r.weight_original > 0.001);
   // Reduced rows = Qtd Actualizada > 0 MAS < Peso original (meta reduziu mas não foi a 0)
