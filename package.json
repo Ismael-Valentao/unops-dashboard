@@ -4,7 +4,7 @@
   "description": "AQI Delivery Monitoring Dashboard",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
+    "start": "node --max-old-space-size=460 app.js",
     "service:diagnose": "node scripts/diagnose-services.js",
     "service:install": "node scripts/install-all-services.js",
     "service:uninstall": "node scripts/uninstall-all-services.js",

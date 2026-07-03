@@ -204,33 +204,50 @@ function enrichWithADSN(rows) {
 }
 
 // ── Refresh cache ─────────────────────────────────────────────
-async function refreshCache() {
-  try {
-    // Cache-bust: append a timestamp query-param para impedir o CDN de Google
-    // (ou intermediários) de servir uma cópia em cache. O Sheets ignora params
-    // desconhecidos no /export, mas o URL único força uma chave de cache nova.
-    const url = SHEET_CSV_URL + (SHEET_CSV_URL.includes("?") ? "&" : "?") + "t=" + Date.now();
-    const text = await fetchCSV(url);
-    cache.data = parseCSV(text);
-    enrichWithADSN(cache.data);
-    cache.lastUpdated = new Date().toISOString();
-    console.log(`[OK] Loaded ${cache.data.length} rows at ${cache.lastUpdated}`);
+// Coalesce + rate-limit para refreshCache:
+//   - _refreshInflight: se já corre um refresh, chamadas subsequentes esperam-no
+//     em vez de dispararem novos. Evita concorrência tipo "10 clients hit /api/refresh
+//     ao mesmo tempo → 10× fetch CSV + 10× captureRows a saturar MySQL pool".
+//   - _refreshLastCompleted: usado pelo endpoint /api/refresh para negar refreshes
+//     redundantes (< 30s desde o último). O setInterval de 5min continua a correr
+//     normalmente porque o cache endurece antes do intervalo dele.
+let _refreshInflight = null;
+let _refreshLastCompleted = 0;
+const REFRESH_MIN_INTERVAL_MS = Number(process.env.REFRESH_MIN_INTERVAL_MS) || 30 * 1000;
 
-    // SIDE-EFFECT: persiste rows novas/alteradas em delivery_audit para
-    // termos histórico imutável mesmo se o sheet perder dados depois.
-    // Falhas aqui não bloqueiam o pipeline — só logam warning.
+async function refreshCache() {
+  if (_refreshInflight) return _refreshInflight;
+  _refreshInflight = (async () => {
     try {
-      const { captureRows } = require("./lib/audit-capture");
-      const stats = await captureRows(cache.data);
-      if (stats.inserted > 0 || stats.updated_status > 0) {
-        console.log(`[AUDIT] +${stats.inserted} novas, ${stats.updated_status} status mudou, ${stats.seen} já vistas (${stats.total} total)${stats.errors.length ? ", " + stats.errors.length + " erros" : ""}`);
+      // Nota: URL SEM cache-bust (`?t=Date.now()` foi removido). O Google Sheets
+      // /export não usa cache-key baseada em query, e URLs únicos podiam causar
+      // HTTP 400 em bombardeamento a partir da mesma origem.
+      const text = await fetchCSV(SHEET_CSV_URL);
+      cache.data = parseCSV(text);
+      enrichWithADSN(cache.data);
+      cache.lastUpdated = new Date().toISOString();
+      console.log(`[OK] Loaded ${cache.data.length} rows at ${cache.lastUpdated}`);
+
+      // SIDE-EFFECT: persiste rows novas/alteradas em delivery_audit para
+      // termos histórico imutável mesmo se o sheet perder dados depois.
+      // Falhas aqui não bloqueiam o pipeline — só logam warning.
+      try {
+        const { captureRows } = require("./lib/audit-capture");
+        const stats = await captureRows(cache.data);
+        if (stats.inserted > 0 || stats.updated_status > 0) {
+          console.log(`[AUDIT] +${stats.inserted} novas, ${stats.updated_status} status mudou, ${stats.seen} já vistas (${stats.total} total)${stats.errors.length ? ", " + stats.errors.length + " erros" : ""}`);
+        }
+      } catch (e) {
+        console.warn("[AUDIT] capture failed (non-fatal):", e.message);
       }
-    } catch (e) {
-      console.warn("[AUDIT] capture failed (non-fatal):", e.message);
+    } catch (err) {
+      console.error("[WARN] Failed to refresh data:", err.message || err);
+    } finally {
+      _refreshLastCompleted = Date.now();
+      _refreshInflight = null;
     }
-  } catch (err) {
-    console.error("[WARN] Failed to refresh data:", err.message);
-  }
+  })();
+  return _refreshInflight;
 }
 
 // ── Static files ──────────────────────────────────────────────
@@ -2138,14 +2155,32 @@ app.get("/api/admin/adicional/projects", auth.requireRole("admin", "superadmin")
   }
 });
 
+// /api/refresh — clientes que peçam refresh são debounced por 30s.
+// Se cache foi actualizada há < REFRESH_MIN_INTERVAL_MS, devolve a
+// cache existente sem fazer novo fetch. Evita rajadas de refreshes
+// paralelos quando múltiplos browsers têm o dashboard aberto (o
+// countdown de auto-refresh pode acabar a bater simultaneamente em
+// vários clientes).
 app.post("/api/refresh", async (_req, res) => {
+  const age = Date.now() - _refreshLastCompleted;
+  if (_refreshLastCompleted && age < REFRESH_MIN_INTERVAL_MS) {
+    return res.json({
+      rows: cache.data,
+      last_updated: cache.lastUpdated,
+      _skipped: true,
+      _cache_age_ms: age,
+    });
+  }
   await refreshCache();
   res.json({ rows: cache.data, last_updated: cache.lastUpdated });
 });
 
 // ── Cron keep-alive + refresh endpoint ────────────────────────
 app.get("/cron", async (_req, res) => {
-  await refreshCache();
+  const age = Date.now() - _refreshLastCompleted;
+  if (!_refreshLastCompleted || age >= REFRESH_MIN_INTERVAL_MS) {
+    await refreshCache();
+  }
   const today = snapDb.todayStr();
   res.json({
     status: "ok",
