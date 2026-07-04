@@ -19,15 +19,20 @@ const SHEET_NAME = "Planeamento Adicional";
 
 // Mapeamento Referencia (Excel) → label do KIT_RECIPE (MAAP).
 // Quando uma row da Excel tem product_plan que mapeia, sobrescrevemos
-// a quantidade usando MAAP × recipe. Sacos Hermeticos NÃO está no recipe
-// (não faz parte do kit), por isso fica null e mantém valor original.
+// a quantidade usando MAAP × recipe.
+//
+// Nota histórica: Sacos ficaram FORA deste map durante muito tempo — o
+// Excel de planeamento era fonte-de-verdade só para sacos. Isso causava
+// discrepância: 145 novos extensionistas MAAP não ganhavam row de sacos
+// no plano (14 100 sacos "em falta"). Adicionado 2026-07 para consistência.
 const PLAN_TO_MAAP = {
-  "Milho":         "Milho",
-  "Feijão":        "Feijão Vulgar",
-  "Arroz":         "Arroz",
-  "Emamectin":     "Emamectim Benzoato",
-  "Imadocloprid":  "Imidacloprid",
-  "MCPA":          "MCPA",
+  "Milho":            "Milho",
+  "Feijão":           "Feijão Vulgar",
+  "Arroz":            "Arroz",
+  "Emamectin":        "Emamectim Benzoato",
+  "Imadocloprid":     "Imidacloprid",
+  "MCPA":             "MCPA",
+  "Sacos Hermeticos": "Sacos Hermeticos",
 };
 
 const PRODUCT_MAP = {
