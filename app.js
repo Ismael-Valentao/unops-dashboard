@@ -50,10 +50,23 @@ const cache = sheetCache.cache;
 const SACO_KG_PER_UNIT = 0.145;
 
 // ── Fetch CSV from Google Sheets ──────────────────────────────
+// TIMEOUT DEFENSIVO: sem timeout, se o socket ficar mudo (rede caiu,
+// Google devolve headers mas nunca body, etc.) o Promise pende para
+// sempre e bloqueia _refreshInflight indefinidamente → todos os
+// clientes ficam com dados antigos ATÉ ao restart do servidor.
+const FETCH_CSV_TIMEOUT_MS = Number(process.env.FETCH_CSV_TIMEOUT_MS) || 45 * 1000;
 function fetchCSV(url) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let currentReq = null;
+    const done = (fn, arg) => { if (!settled) { settled = true; fn(arg); } };
+
+    const timer = setTimeout(() => {
+      try { if (currentReq) currentReq.destroy(new Error("fetchCSV timeout")); } catch (_) {}
+      done(reject, new Error(`fetchCSV timeout ${FETCH_CSV_TIMEOUT_MS}ms — Google Sheets sem resposta`));
+    }, FETCH_CSV_TIMEOUT_MS);
+
     const get = (u) => {
-      // Headers para impedir caching por intermediários/CDN.
       const opts = {
         headers: {
           "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -61,20 +74,27 @@ function fetchCSV(url) {
           "Expires": "0",
         },
       };
-      https.get(u, opts, (res) => {
+      currentReq = https.get(u, opts, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           get(res.headers.location);
           return;
         }
         if (res.statusCode !== 200) {
-          reject(new Error(`HTTP ${res.statusCode}`));
+          clearTimeout(timer);
+          done(reject, new Error(`HTTP ${res.statusCode}`));
           return;
         }
         const chunks = [];
         res.on("data", (c) => chunks.push(c));
-        res.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-        res.on("error", reject);
-      }).on("error", reject);
+        res.on("end", () => { clearTimeout(timer); done(resolve, Buffer.concat(chunks).toString("utf-8")); });
+        res.on("error", (e) => { clearTimeout(timer); done(reject, e); });
+      });
+      currentReq.on("error", (e) => { clearTimeout(timer); done(reject, e); });
+      // Socket-level timeout: detecta stall no read do body (não apanhado
+      // pelo setTimeout global se o body começa a chegar aos poucos).
+      currentReq.setTimeout(FETCH_CSV_TIMEOUT_MS, () => {
+        try { currentReq.destroy(new Error("socket idle timeout")); } catch (_) {}
+      });
     };
     get(url);
   });
