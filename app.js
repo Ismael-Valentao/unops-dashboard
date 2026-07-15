@@ -3001,14 +3001,34 @@ async function main() {
     console.warn("[DB] MySQL not available - /admin disabled:", e.message);
   }
 
-  console.log("Fetching initial data from Google Sheets...");
-  await refreshCache();
+  // ── Bind port ASAP ─────────────────────────────────────────
+  // O Render (e outros PaaS) matam o deploy se a porta não bindar em
+  // ~90s. Antes o app fazia await refreshCache() ANTES de app.listen(),
+  // e como refreshCache pode demorar >1min quando a rede está lenta,
+  // o port scanning nunca detectava e o deploy falhava com
+  // "No open ports detected".
+  //
+  // Agora bindamos a porta primeiro — endpoints ficam disponíveis logo
+  // (com cache vazio durante o initial load; frontend já tolera isso).
+  // O initial refresh e os background timers arrancam a seguir, sem
+  // bloquear o startup.
+  app.listen(PORT, () => {
+    console.log(`Dashboard running at http://localhost:${PORT}`);
+  });
 
-  // Save initial snapshot for today if none exists
-  const today = snapDb.todayStr();
-  if (!snapDb.hasSnapshot(today) && cache.data.length > 0) {
-    snapDb.saveSnapshot(today, cache.data);
-  }
+  // Fire-and-forget initial refresh (não bloqueia startup).
+  // Se falhar, o setInterval abaixo vai tentar de novo em 5 min.
+  console.log("Fetching initial data from Google Sheets...");
+  refreshCache()
+    .then(() => {
+      // Save initial snapshot for today if none exists (só depois do
+      // primeiro load — antes disso cache.data está vazio).
+      const today = snapDb.todayStr();
+      if (!snapDb.hasSnapshot(today) && cache.data.length > 0) {
+        snapDb.saveSnapshot(today, cache.data);
+      }
+    })
+    .catch((e) => console.warn("[BOOT] initial refresh falhou (non-fatal):", e.message));
 
   // Background data refresh every 5 minutes
   setInterval(refreshCache, 5 * 60 * 1000);
@@ -3061,9 +3081,9 @@ async function main() {
     console.warn("[prewarm] falhou ao iniciar (non-fatal):", e.message);
   }
 
-  app.listen(PORT, () => {
-    console.log(`Dashboard running at http://localhost:${PORT}`);
-  });
+  // NOTA: app.listen() foi movido para o INÍCIO de main() (antes do
+  // refreshCache) para o port bindar rapidamente e satisfazer o
+  // health-check do Render. Ver comentário lá acima.
 }
 
 main();
