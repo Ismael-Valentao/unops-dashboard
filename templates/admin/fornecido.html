@@ -579,7 +579,7 @@
           if (hasMeta && p.meta_pendente > 0 && p.suppliers && p.suppliers.length > 0) {
             const rows = p.suppliers.map((s) => {
               const sPct = s.meta_pct;
-              const pctTxt  = sPct == null ? "—" : sPct + "%";
+              const pctTxt  = fmtPct(sPct);
               const barCls  = pctBarClass(sPct);
               const barW    = sPct == null ? 0 : Math.min(100, sPct);
 
@@ -647,7 +647,7 @@
               <div class="progress-wrap"><div class="${barCls}" style="width:${barWidth}%"></div></div>
               <div class="pct-row">
                 <span>${hasMeta ? "Progresso vs Contratado" : "Sem meta"}</span>
-                <span class="pct-val">${p.meta_pct == null ? "—" : p.meta_pct + "%"}</span>
+                <span class="pct-val">${fmtPct(p.meta_pct)}</span>
               </div>
               ${suppsHtml}
             </div>
@@ -655,12 +655,22 @@
         }).join("");
       }
 
+      // Formata pct para display — cap em "100%" quando ≥ 100 (não faz sentido
+      // mostrar 100.1% ou 125% na UI; o valor numérico continua no dataset
+      // para ordenação e cor). Null/inválido → "—".
+      function fmtPct(pct) {
+        if (pct == null) return "—";
+        const n = Number(pct);
+        if (!Number.isFinite(n)) return "—";
+        if (n >= 100) return "100%";
+        return n + "%";
+      }
       function pctBar(pct) {
         if (pct == null) return `<span style="color:#94a3b8">—</span>`;
         const cls = pctClass(pct);
         return `<span class="pct-bar">
           <span class="bar"><div class="${cls}" style="width:${Math.min(100, pct)}%"></div></span>
-          <span>${pct}%</span>
+          <span>${fmtPct(pct)}</span>
         </span>`;
       }
 
@@ -741,7 +751,7 @@
           } else {
             metaTxt = "—"; recbTxt = fmtNum(s.forn_kg); pendTxt = "—"; metaUnitLbl = "kg";
           }
-          const pctTxt = s.has_meta ? `${s.meta_pct}% levantado` : "sem meta";
+          const pctTxt = s.has_meta ? `${fmtPct(s.meta_pct)} levantado` : "sem meta";
 
           return `
             <article class="sup-card ${cardCls}" data-idx="${idx}">
@@ -832,7 +842,7 @@
           renderSuppliers(data.suppliers);
           const dt = ((Date.now() - t0) / 1000).toFixed(1);
           const src = data.cache?.from_cache ? "(cache)" : "(fresh)";
-          if (toast) toast(`${data.suppliers.length} fornecedores · ${data.totals.meta_pct_global || "?"}% da meta ${src} ${dt}s`, { kind: "ok" });
+          if (toast) toast(`${data.suppliers.length} fornecedores · ${fmtPct(data.totals.meta_pct_global)} da meta ${src} ${dt}s`, { kind: "ok" });
         } catch (e) {
           $("#suppliers-wrap").innerHTML = `<div class="error">Erro: ${esc(e.message)}</div>`;
           $("#cache-info").textContent = "";

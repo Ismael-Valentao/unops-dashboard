@@ -647,7 +647,7 @@
     const packagesEl = $("#m-packages");
     if (packagesEl) packagesEl.textContent = fmt(pkgs);
     // Gap will be updated when PvD loads
-    $("#m-verified-pct").textContent = pct + "%";
+    $("#m-verified-pct").textContent = fmtPct(pct);
     // Per-status weight subtitle. Flip to "un" if the saco filter is active
     // (saco delivered_qty is stored in kg = units × SACO_KG_PER_UNIT, see parseCSV in app.js).
     const fmtWeight = filterIsSacos
@@ -714,6 +714,15 @@
 
   function fmt(n) {
     return Number(n).toLocaleString("pt-PT");
+  }
+  // Cap percentages at 100% for display (100.1%, 125%, etc. → "100%").
+  // Preserva decimais nativos abaixo de 100 (ex: 99.5 → "99.5%").
+  function fmtPct(pct) {
+    if (pct == null) return "—";
+    const n = Number(pct);
+    if (!Number.isFinite(n)) return "—";
+    if (n >= 100) return "100%";
+    return n.toString() + "%";
   }
   function fmtDec(n) {
     return Number(n).toLocaleString("pt-PT", {
@@ -839,7 +848,7 @@
                   lines.push("  " + prod);
                   lines.push("    Planeado: " + planTxt + " kg");
                   lines.push("    Entregue: " + fmtNum(deliv) + " kg" +
-                    (plan > 0 ? "  (" + pct + "%)" : ""));
+                    (plan > 0 ? "  (" + fmtPct(pct) + ")" : ""));
                 });
                 return lines;
               },
@@ -1891,13 +1900,13 @@
       if (plannedUnit) plannedUnit.textContent = "kg";
       if (deliveredUnit) deliveredUnit.textContent = "kg";
     }
-    $("#pvd-pct").textContent = t.pct + "%";
+    $("#pvd-pct").textContent = fmtPct(t.pct);
     $("#pvd-progress-bar").style.width = Math.min(t.pct, 100) + "%";
 
     // Seeds-only sub-bar (always Milho + Feijao + Arroz, ignores product filter)
     const seeds = pvdData.totals_seeds;
     if (seeds) {
-      $("#pvd-seeds-pct").textContent = seeds.pct + "%";
+      $("#pvd-seeds-pct").textContent = fmtPct(seeds.pct);
       $("#pvd-seeds-bar").style.width = Math.min(seeds.pct, 100) + "%";
     }
 
@@ -1998,7 +2007,7 @@
     // Build "Entregue (X%)" labels with the execution % per product
     const deliveredLabels = items.map((p) => {
       const pct = p.planned_kg > 0 ? (p.delivered_kg / p.planned_kg * 100) : 0;
-      return pct.toFixed(1) + "%";
+      return fmtPct(pct);
     });
 
     if (chartPvdProduct) chartPvdProduct.destroy();
@@ -2025,7 +2034,7 @@
                 if (ctx.datasetIndex === 1) {
                   const p = items[ctx.dataIndex];
                   const pct = p.planned_kg > 0 ? (p.delivered_kg / p.planned_kg * 100) : 0;
-                  return base + "  (" + pct.toFixed(1) + "% do planeado)";
+                  return base + "  (" + fmtPct(pct) + " do planeado)";
                 }
                 return base;
               }
