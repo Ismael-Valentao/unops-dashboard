@@ -572,11 +572,15 @@
           const metaDisplay = hasMeta ? fmtNum(p.meta_qty) : "—";
           const pendDisplay = hasMeta ? fmtNum(p.meta_pendente) : "—";
 
-          // Fornecedores deste produto — só mostra se há pendente real.
+          // Fornecedores deste produto — mostra sempre que há fornecedores
+          // com meta, mesmo quando a meta GLOBAL já está atingida. Útil
+          // para ver quem já completou vs quem ainda precisa fornecer,
+          // e quem contribuiu com quanto para chegar aos 100%.
+          //
           // Cada fornecedor renderiza como mini-card de 3 linhas:
           //   header (nome + %), barra de progresso, rodapé (levantado / falta)
           let suppsHtml = "";
-          if (hasMeta && p.meta_pendente > 0 && p.suppliers && p.suppliers.length > 0) {
+          if (hasMeta && p.suppliers && p.suppliers.length > 0) {
             const rows = p.suppliers.map((s) => {
               const sPct = s.meta_pct;
               const pctTxt  = fmtPct(sPct);
